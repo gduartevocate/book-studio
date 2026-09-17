@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Book Studio</title>
+  <link rel="stylesheet" href="/styles.css?v=20260917-updates">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand-lockup">
+      <h1>Book Studio</h1>
+      <p>Course book production for instructional designers</p>
+    </div>
+    <nav class="topbar-actions" aria-label="Application navigation">
+      <button id="booksButton" class="secondary" type="button">Books</button>
+      <button id="newBookButton" type="button">New book</button>
+      <button id="settingsButton" class="icon-button" type="button">Settings</button>
+      <div id="appVersion" class="app-version">Book Studio ID</div>
+      <button id="updateBadge" class="update-badge" type="button" hidden></button>
+    </nav>
+  </header>
+
+  <main class="app-shell">
+    <aside class="book-library" aria-labelledby="libraryHeading">
+      <div class="library-heading">
+        <div><p class="eyebrow">Workspace</p><h2 id="libraryHeading">My books</h2></div>
+        <span id="bookCount" class="library-count"></span>
+      </div>
+      <p class="library-intro">Choose a book to continue where you left off.</p>
+      <div id="bookList" class="book-list"></div>
+      <div id="bookListEmpty" class="empty-state compact" hidden>No books yet. Start your first book or import an existing package.</div>
+      <button id="libraryNewBook" class="library-new-book" type="button">+ New book</button>
+      <details class="library-import">
+        <summary>Import an existing book</summary>
+        <form id="importForm">
+          <label><span>Generated package</span><select id="packageSelect" name="outputFolder"></select></label>
+          <div id="packageMeta" class="package-meta"></div>
+          <label><span>Package ZIP</span><input id="packageZipInput" type="file" accept=".zip,application/zip"></label>
+          <div class="actions"><button id="importButton" type="submit">Import package</button><button id="importZipButton" class="secondary" type="button">Import ZIP</button><span id="importStatus" role="status" aria-live="polite"></span></div>
+        </form>
+        <button id="refreshPackages" class="text-button" type="button">Refresh package list</button>
+      </details>
+    </aside>
+
+    <section class="workspace-main" aria-live="polite">
+      <section id="booksHome" class="books-home" hidden>
+        <p class="eyebrow">Book Studio</p>
+        <h2>What would you like to work on?</h2>
+        <p class="home-intro">Start a new course book, or select an existing book from the left to continue its review.</p>
+        <div class="home-actions"><button id="homeNewBook" type="button">Start a new book</button><button id="homeImportBook" class="secondary" type="button">Import an existing book</button></div>
+      </section>
+
+      <section id="newBookView" class="new-book-view" hidden aria-labelledby="createHeading">
+        <div class="view-heading">
+          <div><p class="eyebrow">New book</p><h2 id="createHeading">Set up your course book</h2><p class="view-intro">Book Studio will prepare a format preview first. You approve the structure before the full manuscript is generated.</p></div>
+          <button id="cancelNewBook" class="text-button" type="button">Back to books</button>
+        </div>
+        <div class="wizard-progress" aria-label="New book steps">
+          <span id="wizardStepLabel">Step 1 of 3 · Course details</span>
+          <ol><li data-wizard-indicator="1" class="current">Course details</li><li data-wizard-indicator="2">Source documents</li><li data-wizard-indicator="3">Production preferences</li></ol>
+        </div>
+        <section class="create-panel">
+          <form id="bookForm">
+            <div class="wizard-step" data-wizard-step="1">
+              <h3>1. Course details</h3><p class="step-intro">Tell Book Studio which course this book belongs to.</p>
+              <div class="field-grid"><label><span>Course code</span><input name="courseCode" autocomplete="off" placeholder="HU2000"></label><label><span>Book title</span><input name="title" autocomplete="off" placeholder="Critical Thinking and Problem Solving"></label></div>
+            </div>
+            <div class="wizard-step" data-wizard-step="2" hidden>
+              <h3>2. Source documents</h3><p class="step-intro">Upload the course outcomes, weekly content, and assigned sources. All documents must be readable and fit within the source limits.</p>
+              <label><span>Course documents (DOCX, TXT, Markdown, HTML, JSON)</span><input name="files" type="file" accept=".docx,.txt,.md,.html,.htm,.json" multiple required></label>
+              <p class="hint">Up to 50 documents, each smaller than 5 MB; 40 MB total. Convert PDFs and scans to readable DOCX or TXT first.</p>
+              <label><span>Authoritative course blueprint / objectives</span><select name="primaryFileIndex" id="primarySourceSelect" required><option value="">Choose files first</option></select></label>
+              <label><span>Sources to use</span><select name="sourceMode" id="sourceMode"><option value="UploadedOnly">Uploaded documents only (recommended)</option><option value="Discovery">Discover additional sources (advanced)</option></select></label>
+              <p class="hint">Uploaded-only mode keeps your documents as the source boundary. Discovery is available only when you intentionally want additional reading research.</p>
+            </div>
+            <div class="wizard-step" data-wizard-step="3" hidden>
+              <h3>3. Production preferences</h3><p class="step-intro">Add guidance for the draft. You can refine the book later during instructional-designer review.</p>
+              <label><span>Production notes</span><textarea name="specialInstructions" placeholder="Audience, tone, special requirements, chapter emphasis, or exclusions"></textarea></label>
+              <details class="advanced-options"><summary>Advanced generation options</summary><div class="controls-row">
+                <label class="small-field"><span>Research per chapter</span><input name="maxResearchPerChapter" type="number" min="1" max="8" value="3"></label>
+                <label class="check-field"><input name="skipResearch" type="checkbox"><span>Skip research</span></label>
+                <label class="check-field"><input name="skipOpenStaxFetch" type="checkbox"><span>Offline OpenStax</span></label>
+                <label class="check-field"><input name="useCodexDrafting" type="checkbox" checked><span>Codex AI drafting</span></label>
+                <label class="check-field"><input name="useCodexImages" type="checkbox" checked><span>Generate real chapter images (required for a complete book)</span></label>
+              </div></details>
+              <div class="review-before-start"><strong>Next</strong><span>Book Studio will create a format preview for you to review before generating the manuscript.</span></div>
+            </div>
+            <div class="wizard-actions"><button id="newBookBack" class="secondary" type="button" hidden>Back</button><button id="newBookNext" type="button">Continue</button><button id="generateButton" type="submit" hidden>Create format preview</button><span id="formStatus" role="status" aria-live="polite"></span></div>
+          </form>
+        </section>
+      </section>
+
+      <section id="activeBookView" class="active-book-view" hidden aria-labelledby="activeBookTitle">
+        <div class="active-book-header">
+          <div><button id="activeBookBack" class="back-link" type="button">← All books</button><p id="activeBookStage" class="eyebrow"></p><h2 id="activeBookTitle"></h2><p id="activeBookMeta" class="active-book-meta"></p></div>
+          <div id="activeBookAction" class="active-book-action"></div>
+        </div>
+        <div id="activeBookProgress" class="active-book-progress"></div>
+        <section class="jobs-panel active-job-panel" aria-labelledby="jobDetailsHeading">
+          <div class="section-heading"><div><h2 id="jobDetailsHeading">Current work</h2><p class="section-subtitle">Review the current stage, evidence, and next action for this book.</p></div><button id="refreshJobs" class="icon-button small-button" type="button" title="Refresh book status">Refresh</button></div>
+          <div id="jobsList" class="jobs-list"></div>
+        </section>
+        <section id="bookChatPanel" class="chat-panel" hidden aria-labelledby="bookChatHeading">
+          <div class="section-heading"><div><p class="eyebrow">Review workspace</p><h2 id="bookChatHeading">Review with Codex</h2><p class="section-subtitle">Ask about the format preview or generated book, then request advice or a focused revision.</p></div><span class="visual-status">Available after preview</span></div>
+          <form id="bookChatForm">
+            <div class="book-chat-context"><label><span>Book</span><select id="bookChatJobSelect"></select></label><label><span>Scope</span><select id="bookChatScopeSelect"></select></label></div>
+            <div class="book-chat-toolbar"><button id="bookChatNew" type="button" class="secondary">New conversation</button><span class="hint">Starts a clean conversation while keeping the book and review evidence.</span></div>
+            <div id="bookChatThread" class="ai-request-list"></div>
+            <div class="book-chat-composer"><label class="chat-message-label" for="bookChatMessage">What would you like Codex to review or change?</label><textarea id="bookChatMessage" class="ai-request-text" aria-describedby="bookChatConnectionStatus" placeholder="Ask about quality, sources, format, or a specific chapter..."></textarea><div class="book-chat-connection"><span id="bookChatConnectionStatus" role="status" aria-live="polite">Test the connection before sending.</span><button id="bookChatTestConnection" type="button" class="secondary">Test connection</button><a id="bookChatConnectionHelp" href="#codexHeading">Connection help</a></div><details id="bookChatConnectionDetails" class="book-chat-connection-details" hidden><summary>Latest connection-test details</summary><pre></pre></details><div class="book-chat-options"><label class="chat-toggle"><input id="bookChatAllowEdits" type="checkbox"><span>Allow Codex to edit book source files</span></label><span class="hint">Leave this off for recommendations only. Turn it on only when you want Codex to edit chapter Markdown/JSON and rebuild the package.</span></div><div class="chat-quick-actions" aria-label="Suggested review requests"><button type="button" class="secondary quick-chat-button" data-chat-prompt="Review the current book against the quality gates and tell me the highest-priority fixes.">Review quality</button><button type="button" class="secondary quick-chat-button" data-chat-prompt="Review the current book's source fidelity and identify any claims or citations that need attention.">Review sources</button><button type="button" class="secondary quick-chat-button" data-chat-prompt="Review the selected chapter for clarity, instructional flow, and consistency with its course objectives.">Review chapter</button></div><div class="book-chat-actions"><span id="bookChatStatus" role="status" aria-live="polite"></span><button id="bookChatSend" type="submit">Send to Codex</button></div></div>
+          </form>
+        </section>
+      </section>
+
+      <section id="settingsView" class="settings-view" hidden aria-labelledby="settingsHeading">
+        <div class="view-heading"><div><p class="eyebrow">Settings</p><h2 id="settingsHeading">Connection and diagnostics</h2><p class="view-intro">These technical settings are only needed when Book Studio cannot connect to Codex.</p></div><button id="settingsBack" class="text-button" type="button">Back to books</button></div>
+        <section class="codex-panel" aria-labelledby="codexHeading"><div class="section-heading"><h2 id="codexHeading">Codex connection</h2><button id="refreshCodex" class="icon-button small-button" type="button">Refresh status</button></div><div id="codexStatus" class="codex-status">Checking Codex...</div><form id="codexPathForm" class="codex-path-form"><label><span>Codex executable path</span><input id="codexPathInput" type="text" placeholder="C:\Users\...\codex.exe"></label><div class="actions"><button id="saveCodexPath" type="submit">Save path</button><button id="clearCodexPath" class="secondary" type="button">Clear</button><span id="codexPathStatus" role="status" aria-live="polite"></span></div></form><div class="command-list"><div><span>Sign in</span><code id="codexLoginCommand">codex login</code></div><div><span>Open app</span><code id="codexAppCommand">codex app .</code></div></div><button id="testCodexConnection" type="button">Test connection</button><p class="hint">Sends a short test message through your Codex account. No book files are read or edited.</p><details><summary>Sign-in recovery (PowerShell)</summary><p>Use the same profile shown below. Signing out may also sign out other Codex clients that share it.</p><pre id="codexRecoveryCommand"></pre></details><div id="codexNotes" class="codex-notes"></div></section>
+        <section class="codex-panel updates-panel" aria-labelledby="updatesHeading"><div class="section-heading"><h2 id="updatesHeading">Updates</h2><button id="checkUpdates" class="icon-button small-button" type="button">Check for updates</button></div><div id="updatesStatus" class="codex-status">Checking the installed version...</div><ul id="updatesChanges" class="updates-changes" hidden></ul><div class="actions"><button id="applyUpdate" type="button" hidden>Get latest updates</button></div><p class="hint">Downloads the latest Book Studio from the update server and restarts it. Your books, uploads, and settings stay in place. Updates wait until no book is generating and no Codex request is running.</p><div id="updatesProgress" class="qa-repair-status" role="status" aria-live="polite" hidden><p></p><pre id="updatesLog"></pre></div></section>
+      </section>
+    </section>
+  </main>
+
+  <template id="jobTemplate"><article class="job-row"><div class="job-main"><div class="job-title"></div><div class="job-meta"></div></div><div class="job-status"></div><div class="job-actions"></div><div class="workflow-panel"></div><div class="job-log"></div><div class="artifact-list"></div><div class="format-review-panel" hidden></div><div class="chapter-panel" hidden></div><div class="codex-prompt-panel" hidden></div><div class="visual-panel" hidden></div></article></template>
+  <script src="/app.js?v=20260917-updates"></script>
+</body>
+</html>

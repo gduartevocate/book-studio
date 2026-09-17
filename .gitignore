@@ -1,0 +1,13 @@
+# Local Book Studio data never belongs in the distribution repository.
+.bookstudio/
+.bookstudio-cloud/
+dist/
+temp/
+releases/
+codex-path.txt
+.env
+.env.*
+!.env.example
+*.log
+Thumbs.db
+Desktop.ini

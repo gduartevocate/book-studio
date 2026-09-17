@@ -1,0 +1,36 @@
+{
+  "id": "gm1000-book-standard-v1",
+  "name": "GM1000 book layout standard",
+  "basis": "GM1000 v4 layout and section structure, with the reviewer-requested Business Case label. This is a formatting standard, not approval of another course's content.",
+  "businessCaseLabel": "Business Case",
+  "font": "Aptos",
+  "bodyPoints": 12,
+  "chapterPoints": 20,
+  "sectionPoints": 15,
+  "subsectionPoints": 14,
+  "sectionColor": "0F4761",
+  "coverPage": false,
+  "sections": [
+    { "number": 1, "name": "Understanding the context", "contains": "Opening Scenario with a named Business Case, Chapter Roadmap, and course-specific concepts." },
+    { "number": 2, "name": "Developing the concepts", "contains": "Course-specific explanations, worked examples, and relevant visual models or tables." },
+    { "number": 3, "name": "Applying the concepts", "contains": "Case Study Progression, Communication Toolbox, and Practical Field Guide." },
+    { "number": 4, "name": "Integrating the concepts at work", "contains": "Developed synthesis prose, Key Takeaways, Vocabulary Review, Looking Ahead or final Conclusion, and Scholarly Sources." }
+  ],
+  "requiredHeadingPatterns": [
+    "^Introduction$",
+    "^Learning Objectives$",
+    "^Section {chapter}\\.1\\s+-\\s+.+",
+    "^Opening Scenario(?:\\s*:.*)?$",
+    "^Chapter Roadmap$",
+    "^Section {chapter}\\.2\\s+-\\s+.+",
+    "^Section {chapter}\\.3\\s+-\\s+.+",
+    "^Case Study Progression(?:\\s*:.*)?$",
+    "^Communication Toolbox(?:\\s*:.*)?$",
+    "^(?:Practical )?Field Guide(?:\\s*:.*)?$",
+    "^Section {chapter}\\.4\\s+-\\s+Integrating\\b.+",
+    "^Key Takeaways$",
+    "^Vocabulary Review$",
+    "^{closing}$",
+    "^Scholarly Sources$"
+  ]
+}

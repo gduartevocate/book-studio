@@ -1,0 +1,139 @@
+{
+  "name": "Ultimate Medical Academy",
+  "shortName": "UMA",
+  "sourceGuide": "C:\\Users\\GiovanniDuarte\\OneDrive - Vocate Education Solutions, Inc\\Documents\\ITS Development\\2023_UMA_Full_Brand_Guide_V3.pdf",
+  "sourceNote": "Condensed implementation profile derived from the 2023 UMA Full Brand Guide V3.",
+  "brandPlatform": "Care Pays Back",
+  "voice": {
+    "principles": [
+      "care",
+      "optimism",
+      "energy",
+      "natural empathy",
+      "future-facing solutions"
+    ],
+    "contentRules": [
+      "Use a supportive, clear, student-centered tone.",
+      "Frame challenges as practical problems with paths forward.",
+      "Break complex information into focused steps that reduce cognitive load.",
+      "Use realistic scenarios and direct application rather than generic motivation.",
+      "Use active voice and plain language with a Flesch-Kincaid grade 8 target.",
+      "Keep the tone warm, direct, and conversational rather than overly formal.",
+      "Use examples and details relevant to entry-level allied healthcare roles when the topic allows.",
+      "Avoid internal production notes, marketing jargon, and overly clever language."
+    ]
+  },
+  "typography": {
+    "headline": "Merriweather UltraBold Italic",
+    "body": "Roboto",
+    "condensed": "Roboto Condensed",
+    "fallback": "Arial",
+    "rules": [
+      "Use Merriweather UltraBold Italic for large titles, headlines, and callouts when available.",
+      "Use Roboto for subheads, body copy, paragraphs, buttons, and emphasized words.",
+      "Use Arial when Merriweather or Roboto are unavailable.",
+      "Do not introduce additional font families."
+    ]
+  },
+  "colors": {
+    "primary": [
+      {
+        "name": "Legend Blue",
+        "hex": "#0D3553"
+      },
+      {
+        "name": "Hero Blue",
+        "hex": "#1D6BA6"
+      },
+      {
+        "name": "Horizon Blue",
+        "hex": "#0095C8"
+      }
+    ],
+    "cta": {
+      "name": "Journey Green",
+      "hex": "#15EAC4",
+      "usage": "Use for calls to action, buttons, and small icon highlights. Use Legend Blue text on Journey Green."
+    },
+    "neutral": [
+      {
+        "name": "Gracious Gray",
+        "hex": "#F9F9F9"
+      },
+      {
+        "name": "Medium Gray 1",
+        "hex": "#DBDBDB"
+      },
+      {
+        "name": "Medium Gray 2",
+        "hex": "#A5A5A5"
+      },
+      {
+        "name": "Integrity Gray",
+        "hex": "#444444"
+      }
+    ],
+    "tertiary": [
+      {
+        "name": "Puma Pink 1",
+        "hex": "#EA4B5F"
+      },
+      {
+        "name": "Puma Pink 2",
+        "hex": "#FF8AA6"
+      },
+      {
+        "name": "Puma Purple 1",
+        "hex": "#8444D8"
+      },
+      {
+        "name": "Puma Purple 2",
+        "hex": "#AC8AFF"
+      }
+    ],
+    "rules": [
+      "Use primary brand blues for the majority of visual design.",
+      "Include at least one primary blue in every visual design.",
+      "Use secondary and tertiary colors only as supplements, highlights, or illustration details.",
+      "Do not use secondary colors by themselves as the main design color.",
+      "Use Legend Blue, Hero Blue, Horizon Blue, Integrity Gray, black, or white for text.",
+      "Do not use Journey Green for body text."
+    ]
+  },
+  "visualStyle": {
+    "graphics": [
+      "Use angular shapes such as triangles, rectangles, and squares to echo UMA logo geometry.",
+      "Use rounded corners selectively to add softness.",
+      "Use brand-blue color blocking for structure.",
+      "Use accent lines to highlight important content."
+    ],
+    "illustrations": [
+      "Use organic shapes and lines for a softer human element.",
+      "Keep illustrations playful but realistic.",
+      "Keep at least one UMA brand blue present.",
+      "Use Journey Green sparingly as a highlight."
+    ],
+    "icons": [
+      "Use familiar, easily recognized symbols.",
+      "Keep icons readable at small sizes with less detail.",
+      "Keep visual weight consistent.",
+      "Use Hero Blue as the primary icon color, supported by Horizon Blue and sparse Journey Green."
+    ],
+    "photography": [
+      "Use high-quality lifestyle imagery.",
+      "Represent diverse students, alumni, and professionals respectfully and accurately.",
+      "Keep environments appropriate, warm, friendly, and free of unnecessary distractions.",
+      "Use realistic props and modern technology where appropriate."
+    ],
+    "promptGuidance": "UMA brand style: caring, optimistic, future-facing, supportive, and professional. Use Legend Blue #0D3553, Hero Blue #1D6BA6, and Horizon Blue #0095C8 as the dominant palette. Use Journey Green #15EAC4 only as a small highlight. Favor clean layouts, soft corners, angular blue color blocking, approachable realistic imagery, and accessible contrast. Avoid logos, watermarks, clutter, unreadable text, disrespectful imagery, and off-brand colors."
+  },
+  "accessibility": {
+    "rules": [
+      "Meet WCAG AA contrast expectations.",
+      "Do not rely solely on color to convey meaning.",
+      "Use alt text for visuals.",
+      "Keep layouts clean, focused, and easy to scan.",
+      "Support mobile-friendly, touch-friendly, and screen-reader-friendly experiences."
+    ]
+  }
+}

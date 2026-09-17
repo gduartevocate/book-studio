@@ -1,0 +1,45 @@
+function Get-BookStudioFormatPlanSignature {
+    param([string]$Path)
+    $plan=Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+    @($plan.chapters | Sort-Object number | Select-Object number,title,focus,learningTargetRecords) | ConvertTo-Json -Depth 12 -Compress
+}
+
+function Get-BookStudioFormatState {
+    param([object]$Job)
+    if (-not $Job.outputFolder) { return $null }
+    $preview = Join-Path $Job.outputFolder 'book-format-preview.html'
+    $plan = Join-Path $Job.outputFolder 'ebook-plan.json'
+    if (-not (Test-Path -LiteralPath $preview) -or -not (Test-Path -LiteralPath $plan)) { return $null }
+    $settings = Join-Path $Job.outputFolder 'book-format-settings.json'
+    $layout = 'standard'
+    if (Test-Path -LiteralPath $settings) { $layout = (Get-Content -LiteralPath $settings -Raw -Encoding UTF8 | ConvertFrom-Json).layout }
+    $planSignature=Get-BookStudioFormatPlanSignature $plan
+    $templateHash=(Get-FileHash -LiteralPath (Join-Path (Split-Path $PSScriptRoot -Parent) 'config/book-publication-template.json')).Hash
+    $parts = @((Get-FileHash -LiteralPath $preview).Hash, $planSignature, $layout, $templateHash)
+    $manifestPath=Join-Path $Job.outputFolder 'book-format-preview.json'
+    $manifest=if(Test-Path -LiteralPath $manifestPath){Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json}
+    $needsRefresh=-not $manifest -or $manifest.planSignature -cne $planSignature -or $manifest.templateHash -ne $templateHash -or $manifest.layout -ne $layout -or $manifest.previewSha256 -ne $parts[0]
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { $fingerprint = [BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes(($parts -join '|')))).Replace('-','') }
+    finally { $sha.Dispose() }
+    [pscustomobject]@{ layout=$layout; fingerprint=$fingerprint; previewSha256=$parts[0]; needsRefresh=$needsRefresh }
+}
+
+function Assert-BookStudioGenerationReady {
+    param([object]$Job, [string]$ProjectRoot)
+    if ($Job.status -in @('Running','Queued') -and $Job.runnerProcessId -and (Get-Process -Id $Job.runnerProcessId -ErrorAction SilentlyContinue)) {
+        throw 'This book already has an active generation process.'
+    }
+    if ($Job.formatReview.required -or $Job.workflowStage -eq 'format-review') {
+        $state = Get-BookStudioFormatState $Job
+        if (-not $state -or $state.needsRefresh -or $Job.formatReview.status -ne 'Approved' -or $Job.formatReview.fingerprint -ne $state.fingerprint) {
+            throw 'Review and approve the current format preview. A missing or outdated approval cannot start full generation.'
+        }
+    }
+    $drafting = $null -eq $Job.options.useCodexDrafting -or [bool]$Job.options.useCodexDrafting
+    if ($drafting -or $Job.options.useCodexImages) {
+        $command = Resolve-BookStudioCodexCommand -ProjectRoot $ProjectRoot
+        $connection = if ($command) { Get-BookStudioConnectionResult -ProjectRoot $ProjectRoot -CommandPath $command.Source }
+        if (-not $connection -or $connection.status -ne 'PASS') { throw 'Run Test connection successfully before starting AI generation. Cached sign-in is not a working-connection check.' }
+    }
+}

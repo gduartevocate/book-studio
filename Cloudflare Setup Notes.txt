@@ -1,0 +1,22 @@
+Cloudflare Publishing
+
+Book Studio can generate books locally without Cloudflare.
+
+Without a real .env file:
+- IDs can generate books.
+- IDs can edit chapters.
+- IDs can export Word, HTML, and Markdown.
+- IDs cannot publish SME review links to Cloudflare.
+- IDs cannot retrieve SME web feedback from Cloudflare.
+
+With a real .env file:
+- Place .env in the same folder as Start Book Studio.cmd.
+- The .env file must include a Cloudflare API token with the needed Worker and KV permissions.
+- The app can publish SME review packages and retrieve SME feedback.
+
+For the pilot, the safest model is usually:
+- IDs generate and edit locally.
+- IDs export Word or send the package to the central publisher.
+- A trusted machine with Cloudflare credentials publishes SME review links.
+
+Only give IDs Cloudflare credentials if they are approved to publish externally.

@@ -1,0 +1,20 @@
+function Test-BookStudioUploadRequest {
+    param([Parameter(Mandatory)][object]$Request)
+    $files=@($Request.files)
+    if($files.Count -lt 1 -or $files.Count -gt 50){throw 'Upload 1 to 50 documents. Nothing was saved.'}
+    $primary=0
+    if($files.Count -gt 1 -and $null -eq $Request.primaryFileIndex){throw 'Select the authoritative course blueprint before uploading multiple files.'}
+    if($null -ne $Request.primaryFileIndex -and (-not [int]::TryParse([string]$Request.primaryFileIndex,[ref]$primary) -or $primary -lt 0 -or $primary -ge $files.Count)){throw 'The selected course blueprint is not in this upload.'}
+    if($Request.sourceMode -and $Request.sourceMode -notin @('UploadedOnly','Discovery')){throw 'Unknown source mode.'}
+    $total=0L;$decoded=New-Object Collections.ArrayList
+    foreach($file in $files){
+        $extension=[IO.Path]::GetExtension([string]$file.name).ToLowerInvariant()
+        if($extension -notin @('.docx','.txt','.md','.json','.html','.htm')){throw "Unsupported source: $($file.name). Use DOCX, TXT, Markdown, HTML, or JSON. Convert PDF/scanned files to readable DOCX or TXT first."}
+        try{$bytes=[Convert]::FromBase64String([string]$file.contentBase64)}catch{throw "Invalid upload data: $($file.name)"}
+        if($bytes.Length -eq 0 -or $bytes.Length -ge 5000000){throw "Each document must be nonempty and smaller than 5 MB: $($file.name)"}
+        $total+=$bytes.Length
+        if($total -gt 40000000){throw 'This upload exceeds 40 MB. Split or reduce the source documents.'}
+        [void]$decoded.Add([pscustomobject]@{originalName=[string]$file.name;bytes=$bytes})
+    }
+    [pscustomobject]@{primaryFileIndex=$primary;files=@($decoded);sourceMode=$(if($Request.sourceMode){$Request.sourceMode}else{'UploadedOnly'})}
+}

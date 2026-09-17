@@ -1,0 +1,356 @@
+{
+  "sourcePolicy": {
+    "summary": "Use OpenStax as openly licensed textbook grounding and OpenAlex as research discovery metadata. Generated chapters should cite sources, avoid copying long passages, and keep OpenStax attribution with the page URL and license note.",
+    "openStaxAttributionNote": "Review the Citation/Attribution section on each OpenStax page before distribution. OpenStax pages may include different licenses for text, images, and third-party material."
+  },
+  "topicRules": [
+    {
+      "name": "Critical thinking habits and reasoning",
+      "keywords": ["critical thinking", "logical reasoning", "reasoning skills", "habits", "clarity", "assumptions", "conclusion"],
+      "openStaxPages": [
+        {
+          "book": "Introduction to Philosophy",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/introduction-philosophy/pages/5-1-philosophical-methods-for-discovering-truth",
+          "licenseNote": "See page Citation/Attribution."
+        },
+        {
+          "book": "Introduction to Philosophy",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/introduction-philosophy/pages/5-3-arguments",
+          "licenseNote": "See page Citation/Attribution."
+        }
+      ]
+    },
+    {
+      "name": "Information literacy and source evaluation",
+      "keywords": ["universal intellectual standards", "credibility", "relevance", "sufficiency", "information sources", "ai-generated", "source evaluation", "accuracy"],
+      "openStaxPages": [
+        {
+          "book": "College Success",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/college-success/pages/7-7-information-literacy",
+          "licenseNote": "See page Citation/Attribution."
+        },
+        {
+          "book": "College Success",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/college-success/pages/a-conducting-and-presenting-research",
+          "licenseNote": "See page Citation/Attribution."
+        }
+      ]
+    },
+    {
+      "name": "Argument reasoning and evidence",
+      "keywords": ["inductive", "deductive", "argument", "conclusions logically follow", "strength of reasoning", "premises", "evidence", "fallacies"],
+      "openStaxPages": [
+        {
+          "book": "Introduction to Philosophy",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/introduction-philosophy/pages/5-3-arguments",
+          "licenseNote": "See page Citation/Attribution."
+        },
+        {
+          "book": "Writing Guide with Handbook",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/writing-guide/pages/10-3-glance-at-genre-thesis-reasoning-and-evidence",
+          "licenseNote": "See page Citation/Attribution."
+        }
+      ]
+    },
+    {
+      "name": "Ethical reasoning and persuasive positions",
+      "keywords": ["ethical", "ethical issue", "ethical position", "persuasive argument", "personal position", "stakeholders", "values"],
+      "openStaxPages": [
+        {
+          "book": "Introduction to Philosophy",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/introduction-philosophy/pages/9-introduction",
+          "licenseNote": "See page Citation/Attribution."
+        },
+        {
+          "book": "Writing Guide with Handbook",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/writing-guide/pages/10-5-writing-process-creating-a-position-argument",
+          "licenseNote": "See page Citation/Attribution."
+        }
+      ]
+    },
+    {
+      "name": "Windows and software basics",
+      "keywords": ["windows operating system", "operating system", "windows", "software basics", "software environment", "computer applications"],
+      "openStaxPages": [
+        {
+          "book": "Workplace Software and Skills",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/workplace-software-skills/pages/2-1-software-basics",
+          "licenseNote": "See page Citation/Attribution."
+        },
+        {
+          "book": "Workplace Software and Skills",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/workplace-software-skills/pages/1-2-computer-hardware-and-networks",
+          "licenseNote": "See page Citation/Attribution."
+        },
+        {
+          "book": "Introduction to Computer Science",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/introduction-computer-science/pages/6-6-reliability-and-security",
+          "licenseNote": "See page Citation/Attribution."
+        }
+      ]
+    },
+    {
+      "name": "Files, folders, and cloud storage",
+      "keywords": ["files", "folders", "file management", "local storage", "cloud storage", "accessible records", "onedrive", "sharepoint", "google drive"],
+      "openStaxPages": [
+        {
+          "book": "Workplace Software and Skills",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/workplace-software-skills/pages/2-2-files-and-folders",
+          "licenseNote": "See page Citation/Attribution."
+        },
+        {
+          "book": "Workplace Software and Skills",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/workplace-software-skills/pages/1-3-the-internet-cloud-computing-and-the-internet-of-things",
+          "licenseNote": "See page Citation/Attribution."
+        },
+        {
+          "book": "Introduction to Computer Science",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/introduction-computer-science/pages/6-5-file-systems",
+          "licenseNote": "See page Citation/Attribution."
+        }
+      ]
+    },
+    {
+      "name": "Microsoft Word document creation",
+      "keywords": ["microsoft word", "professional documents", "formatting", "document structure", "document layout", "headings", "page layout"],
+      "openStaxPages": [
+        {
+          "book": "Workplace Software and Skills",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/workplace-software-skills/pages/3-1-navigating-microsoft-word",
+          "licenseNote": "See page Citation/Attribution."
+        },
+        {
+          "book": "Workplace Software and Skills",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/workplace-software-skills/pages/3-2-formatting-document-layout-in-microsoft-word",
+          "licenseNote": "See page Citation/Attribution."
+        },
+        {
+          "book": "Workplace Software and Skills",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/workplace-software-skills/pages/3-3-formatting-document-content-in-microsoft-word",
+          "licenseNote": "See page Citation/Attribution."
+        },
+        {
+          "book": "Workplace Software and Skills",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/workplace-software-skills/pages/4-3-managing-long-documents-in-microsoft-word",
+          "licenseNote": "See page Citation/Attribution."
+        }
+      ]
+    },
+    {
+      "name": "Academic sources and APA citation",
+      "keywords": ["credible sources", "source evaluation", "apa", "citation", "cite", "academic writing", "research"],
+      "openStaxPages": [
+        {
+          "book": "College Success",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/college-success/pages/7-7-information-literacy",
+          "licenseNote": "See page Citation/Attribution."
+        },
+        {
+          "book": "College Success",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/college-success/pages/a-conducting-and-presenting-research",
+          "licenseNote": "See page Citation/Attribution."
+        },
+        {
+          "book": "Writing Guide with Handbook",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/writing-guide/pages/10-3-glance-at-genre-thesis-reasoning-and-evidence",
+          "licenseNote": "See page Citation/Attribution."
+        }
+      ]
+    },
+    {
+      "name": "Cybersecurity and responsible digital behavior",
+      "keywords": ["cybersecurity", "security", "privacy", "responsible digital", "personal information", "organizational information", "phishing", "password", "keyboarding"],
+      "openStaxPages": [
+        {
+          "book": "Workplace Software and Skills",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/workplace-software-skills/pages/1-4-safety-security-privacy-and-the-ethical-use-of-technology",
+          "licenseNote": "See page Citation/Attribution."
+        },
+        {
+          "book": "Introduction to Computer Science",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/introduction-computer-science/pages/14-2-cybersecurity-deep-dive",
+          "licenseNote": "See page Citation/Attribution."
+        },
+        {
+          "book": "Foundations of Information Systems",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/foundations-information-systems/pages/5-2-security-technologies-and-solutions",
+          "licenseNote": "See page Citation/Attribution."
+        }
+      ]
+    },
+    {
+      "name": "Business basics and business environment",
+      "keywords": ["business basics", "business interactions", "people", "technology", "procedures", "productivity", "risk", "business environment"],
+      "openStaxPages": [
+        {
+          "book": "Introduction to Business 2e",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/introduction-business-2e/pages/1-introduction",
+          "licenseNote": "See page Citation/Attribution."
+        },
+        {
+          "book": "Introduction to Business 2e",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/introduction-business-2e/pages/1-1-the-nature-of-business",
+          "licenseNote": "See page Citation/Attribution."
+        },
+        {
+          "book": "Introduction to Business 2e",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/introduction-business-2e/pages/1-2-understanding-the-business-environment",
+          "licenseNote": "See page Citation/Attribution."
+        }
+      ]
+    },
+    {
+      "name": "Organizational structures and strategic goals",
+      "keywords": ["organizational structures", "strategic goals", "office operations", "organizational design"],
+      "openStaxPages": [
+        {
+          "book": "Introduction to Business 2e",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/introduction-business-2e/pages/7-introduction",
+          "licenseNote": "See page Citation/Attribution."
+        },
+        {
+          "book": "Introduction to Business 2e",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/introduction-business-2e/pages/7-1-building-organizational-structures",
+          "licenseNote": "See page Citation/Attribution."
+        },
+        {
+          "book": "Principles of Management",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/principles-management/pages/4-3-organizational-designs-and-structures",
+          "licenseNote": "See page Citation/Attribution."
+        }
+      ]
+    },
+    {
+      "name": "Core business functions and interdependencies",
+      "keywords": ["core business functions", "finance", "human relations", "human resources", "marketing", "operations", "interdependencies", "workflow"],
+      "openStaxPages": [
+        {
+          "book": "Introduction to Business 2e",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/introduction-business-2e/pages/8-introduction",
+          "licenseNote": "See page Citation/Attribution."
+        },
+        {
+          "book": "Introduction to Business 2e",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/introduction-business-2e/pages/10-introduction",
+          "licenseNote": "See page Citation/Attribution."
+        },
+        {
+          "book": "Introduction to Business 2e",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/introduction-business-2e/pages/11-introduction",
+          "licenseNote": "See page Citation/Attribution."
+        },
+        {
+          "book": "Introduction to Business 2e",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/introduction-business-2e/pages/16-introduction",
+          "licenseNote": "See page Citation/Attribution."
+        }
+      ]
+    },
+    {
+      "name": "Office processes and workflow coordination",
+      "keywords": ["office processes", "process flow", "inputs", "outputs", "roles", "handoffs", "workflow coordination", "timeliness", "service quality"],
+      "openStaxPages": [
+        {
+          "book": "Introduction to Business 2e",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/introduction-business-2e/pages/10-1-production-and-operations-management-an-overview",
+          "licenseNote": "See page Citation/Attribution."
+        },
+        {
+          "book": "Introduction to Business 2e",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/introduction-business-2e/pages/10-4-pulling-it-together-resource-planning",
+          "licenseNote": "See page Citation/Attribution."
+        },
+        {
+          "book": "Introduction to Business 2e",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/introduction-business-2e/pages/10-5-production-and-operations-control",
+          "licenseNote": "See page Citation/Attribution."
+        }
+      ]
+    },
+    {
+      "name": "Customer-facing office processes",
+      "keywords": ["customer service", "customer-facing", "efficiency", "responsiveness", "professionalism", "customer satisfaction"],
+      "openStaxPages": [
+        {
+          "book": "Introduction to Business 2e",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/introduction-business-2e/pages/11-1-the-marketing-concept",
+          "licenseNote": "See page Citation/Attribution."
+        },
+        {
+          "book": "Introduction to Business 2e",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/introduction-business-2e/pages/11-2-creating-a-marketing-strategy",
+          "licenseNote": "See page Citation/Attribution."
+        },
+        {
+          "book": "Introduction to Business 2e",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/introduction-business-2e/pages/12-1-the-nature-and-functions-of-distribution-place",
+          "licenseNote": "See page Citation/Attribution."
+        }
+      ]
+    },
+    {
+      "name": "Operational improvement and case analysis",
+      "keywords": ["operational improvements", "operational strategy", "case study", "workplace scenario", "continuous improvement", "operations improvement"],
+      "openStaxPages": [
+        {
+          "book": "Introduction to Business 2e",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/introduction-business-2e/pages/10-6-looking-for-a-better-way-improving-production-and-operations",
+          "licenseNote": "See page Citation/Attribution."
+        },
+        {
+          "book": "Introduction to Business 2e",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/introduction-business-2e/pages/10-7-transforming-the-factory-floor-with-technology",
+          "licenseNote": "See page Citation/Attribution."
+        },
+        {
+          "book": "Introduction to Business 2e",
+          "publisher": "OpenStax",
+          "url": "https://openstax.org/books/introduction-business-2e/pages/13-1-transforming-businesses-through-information",
+          "licenseNote": "See page Citation/Attribution."
+        }
+      ]
+    }
+  ]
+}
