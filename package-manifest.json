@@ -41,7 +41,7 @@
     },
     {
         "path":  "ID Quick Start.txt",
-        "sha256":  "08B440FD47DE10A9ECDA287F79BD6F49AE57D805E2137BD6CDB6018B10A4623E"
+        "sha256":  "D21BC8BDE9FCE01C6123F37293F85A1839142AE8EF54EDFB7F80A77D32066047"
     },
     {
         "path":  "Publish-SmeReviewPackage.ps1",
@@ -85,7 +85,7 @@
     },
     {
         "path":  "VERSION.txt",
-        "sha256":  "38ED44E4B5E8DD093E241B43F77B422FAD770E79E430CB6D35B2118C9663C2E1"
+        "sha256":  "1358CBDB977639018BC2D09F3FC4DDC249E5B209C4848D193ABCEAC5FD7DB23E"
     },
     {
         "path":  "book-studio/app.js",
@@ -101,7 +101,7 @@
     },
     {
         "path":  "book-studio/version.json",
-        "sha256":  "2C41CA970EE8878FAD54AB42BEB6C53462A0EBFD098CC93862697100521076A1"
+        "sha256":  "F14924AF4AA1E3147E35F0C5DBECE33891413F2DCB26F66A9F1AA70D10DA1A83"
     },
     {
         "path":  "cloudflare/ebook-generator-worker.js",
@@ -181,7 +181,7 @@
     },
     {
         "path":  "lib/EbookGenerator.psm1",
-        "sha256":  "A1F2B54F6F76BBC226D45270D4C48D3E718938F6869EAAF50048697E78A06A6E"
+        "sha256":  "723705DE364C426F51FD05A557FEA9401AE7FA774B405CDAECE1931817F9C46A"
     },
     {
         "path":  "lib/EbookImages.ps1",
@@ -237,7 +237,7 @@
     },
     {
         "path":  "tests/course-blueprint-regressions.ps1",
-        "sha256":  "7CA97B44CAFFF742B73BFC71A0B9CE8C98A7A32D7FF7431BB7C4AEE869C02D41"
+        "sha256":  "4D6C0B413977E541B14406F6959945122F43E5D17CBBCC0C8678D042030489DB"
     },
     {
         "path":  "tests/delivery-evidence-regressions.ps1",

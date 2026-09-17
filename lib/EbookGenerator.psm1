@@ -133,30 +133,140 @@ function ConvertTo-DisplayTitle {
 
     return $title
 }
-function Get-DocxText {
-    [CmdletBinding()]
+function Open-DocxArchive {
+    # Open for reading while allowing other writers: a designer often still has
+    # the spec sheet open in Word, and ZipFile::OpenRead would refuse it.
     param([Parameter(Mandatory)][string]$Path)
 
     Add-Type -AssemblyName System.IO.Compression -ErrorAction SilentlyContinue
     Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+    $resolvedPath = (Resolve-Path $Path).ProviderPath
+    $stream = [System.IO.File]::Open($resolvedPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, ([System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete))
+    try { return New-Object System.IO.Compression.ZipArchive($stream, [System.IO.Compression.ZipArchiveMode]::Read, $false) }
+    catch { $stream.Dispose(); throw }
+}
+
+function Read-DocxZipEntryText {
+    param([Parameter(Mandatory)][object]$Zip, [Parameter(Mandatory)][string]$EntryName)
+
+    $entry = $Zip.GetEntry($EntryName)
+    if ($null -eq $entry) { return $null }
+    $stream = $entry.Open()
+    $reader = New-Object System.IO.StreamReader($stream)
+    try { return $reader.ReadToEnd() }
+    finally { $reader.Dispose(); $stream.Dispose() }
+}
+
+function Get-DocxNumberingDefinitions {
+    # Word's automatic list numbers ("1." from a numbered list) are not text;
+    # they are computed from word/numbering.xml. Map each numId to its levels.
+    param([Parameter(Mandatory)][object]$Zip)
+
+    $definitions = @{}
+    $xml = Read-DocxZipEntryText -Zip $Zip -EntryName "word/numbering.xml"
+    if ([string]::IsNullOrWhiteSpace($xml)) { return $definitions }
+
+    $abstracts = @{}
+    foreach ($abstract in [regex]::Matches($xml, '(?s)<w:abstractNum\s+[^>]*w:abstractNumId="(\d+)"[^>]*>(.*?)</w:abstractNum>')) {
+        $levels = @{}
+        foreach ($level in [regex]::Matches($abstract.Groups[2].Value, '(?s)<w:lvl\s+[^>]*w:ilvl="(\d+)"[^>]*>(.*?)</w:lvl>')) {
+            $body = $level.Groups[2].Value
+            $index = [int]$level.Groups[1].Value
+            $levels[$index] = @{
+                format = $(if ($body -match '<w:numFmt\s+w:val="([^"]+)"') { $Matches[1] } else { "decimal" })
+                start = $(if ($body -match '<w:start\s+w:val="(\d+)"') { [int]$Matches[1] } else { 1 })
+                text = $(if ($body -match '<w:lvlText\s+w:val="([^"]*)"') { [System.Net.WebUtility]::HtmlDecode($Matches[1]) } else { "%$($index + 1)." })
+            }
+        }
+        $abstracts[$abstract.Groups[1].Value] = $levels
+    }
+    foreach ($num in [regex]::Matches($xml, '(?s)<w:num\s+[^>]*w:numId="(\d+)"[^>]*>(.*?)</w:num>')) {
+        if ($num.Groups[2].Value -notmatch '<w:abstractNumId\s+w:val="(\d+)"') { continue }
+        $base = $abstracts[$Matches[1]]
+        if (-not $base) { continue }
+        $levels = @{}
+        foreach ($key in $base.Keys) { $levels[$key] = @{ format = $base[$key].format; start = $base[$key].start; text = $base[$key].text } }
+        foreach ($override in [regex]::Matches($num.Groups[2].Value, '(?s)<w:lvlOverride\s+[^>]*w:ilvl="(\d+)"[^>]*>(.*?)</w:lvlOverride>')) {
+            $index = [int]$override.Groups[1].Value
+            if ($levels.ContainsKey($index) -and $override.Groups[2].Value -match '<w:startOverride\s+w:val="(\d+)"') { $levels[$index].start = [int]$Matches[1] }
+        }
+        $definitions[$num.Groups[1].Value] = $levels
+    }
+    return $definitions
+}
+
+function ConvertTo-DocxListNumberText {
+    param([int]$Value, [string]$Format)
+
+    switch ($Format) {
+        "lowerLetter" { return [string][char](96 + (($Value - 1) % 26) + 1) }
+        "upperLetter" { return [string][char](64 + (($Value - 1) % 26) + 1) }
+        "lowerRoman" { return (ConvertTo-DocxListNumberText -Value $Value -Format "upperRoman").ToLowerInvariant() }
+        "upperRoman" {
+            $roman = ""; $remaining = $Value
+            foreach ($pair in @(@(1000, "M"), @(900, "CM"), @(500, "D"), @(400, "CD"), @(100, "C"), @(90, "XC"), @(50, "L"), @(40, "XL"), @(10, "X"), @(9, "IX"), @(5, "V"), @(4, "IV"), @(1, "I"))) {
+                while ($remaining -ge $pair[0]) { $roman += $pair[1]; $remaining -= $pair[0] }
+            }
+            return $roman
+        }
+        default { return [string]$Value }
+    }
+}
+
+function Add-DocxListNumbers {
+    # Insert each auto-numbered paragraph's rendered number ("1. ", "7.1 ") as
+    # text, so a spec sheet reads the same way it looks in Word. Bulleted
+    # lists get no prefix. Counters run in document order, per list.
+    param([Parameter(Mandatory)][string]$DocumentXml, [Parameter(Mandatory)][hashtable]$Numbering)
+
+    if ($Numbering.Count -eq 0) { return $DocumentXml }
+    $counters = @{}
+    $evaluator = [System.Text.RegularExpressions.MatchEvaluator]{
+        param($match)
+        $paragraph = $match.Value
+        if ($paragraph -notmatch '(?s)<w:pPr>.*?<w:numPr>(.*?)</w:numPr>') { return $paragraph }
+        $numPr = $Matches[1]
+        if ($numPr -notmatch '<w:numId\s+w:val="(\d+)"') { return $paragraph }
+        $numId = $Matches[1]
+        $level = if ($numPr -match '<w:ilvl\s+w:val="(\d+)"') { [int]$Matches[1] } else { 0 }
+        if ($numId -eq "0" -or -not $Numbering.ContainsKey($numId)) { return $paragraph }
+        $levels = $Numbering[$numId]
+        if (-not $levels.ContainsKey($level)) { return $paragraph }
+        if ($paragraph -notmatch '<w:t[ >]') { return $paragraph }
+
+        if (-not $counters.ContainsKey($numId)) { $counters[$numId] = @{} }
+        $state = $counters[$numId]
+        if ($state.ContainsKey($level)) { $state[$level] = [int]$state[$level] + 1 } else { $state[$level] = [int]$levels[$level].start }
+        foreach ($deeper in @($state.Keys | Where-Object { [int]$_ -gt $level })) { [void]$state.Remove($deeper) }
+        if ($levels[$level].format -in @("bullet", "none")) { return $paragraph }
+
+        $label = [string]$levels[$level].text
+        for ($k = 1; $k -le $level + 1; $k++) {
+            $value = if ($state.ContainsKey($k - 1)) { [int]$state[$k - 1] } elseif ($levels.ContainsKey($k - 1)) { [int]$levels[$k - 1].start } else { 1 }
+            $format = if ($levels.ContainsKey($k - 1)) { [string]$levels[$k - 1].format } else { "decimal" }
+            $label = $label.Replace("%$k", (ConvertTo-DocxListNumberText -Value $value -Format $format))
+        }
+        if ([string]::IsNullOrWhiteSpace($label)) { return $paragraph }
+        $run = '<w:r><w:t xml:space="preserve">' + [System.Security.SecurityElement]::Escape($label) + ' </w:t></w:r>'
+        if ($paragraph -match '(?s)^(<w:p[ >].*?</w:pPr>)') { return $Matches[1] + $run + $paragraph.Substring($Matches[1].Length) }
+        if ($paragraph -match '^(<w:p[^>]*>)') { return $Matches[1] + $run + $paragraph.Substring($Matches[1].Length) }
+        return $paragraph
+    }
+    return [regex]::Replace($DocumentXml, '(?s)<w:p[ >].*?</w:p>', $evaluator)
+}
+
+function Get-DocxText {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Path)
 
     $resolvedPath = (Resolve-Path $Path).ProviderPath
-    $zip = [System.IO.Compression.ZipFile]::OpenRead($resolvedPath)
+    $zip = Open-DocxArchive -Path $resolvedPath
     try {
-        $entry = $zip.GetEntry("word/document.xml")
-        if ($null -eq $entry) {
+        $xml = Read-DocxZipEntryText -Zip $zip -EntryName "word/document.xml"
+        if ($null -eq $xml) {
             throw "Could not find word/document.xml inside $resolvedPath"
         }
-
-        $stream = $entry.Open()
-        $reader = New-Object System.IO.StreamReader($stream)
-        try {
-            $xml = $reader.ReadToEnd()
-        }
-        finally {
-            $reader.Dispose()
-            $stream.Dispose()
-        }
+        $xml = Add-DocxListNumbers -DocumentXml $xml -Numbering (Get-DocxNumberingDefinitions -Zip $zip)
 
         $text = $xml -replace "<w:tab[^>]*/>", "`t"
         $text = $text -replace "<w:br[^>]*/>", "`n"
@@ -167,7 +277,7 @@ function Get-DocxText {
         return $text.Trim()
     }
     finally {
-        $zip.Dispose()
+        if ($zip) { $zip.Dispose() }
     }
 }
 
@@ -1435,6 +1545,13 @@ function ConvertFrom-ObjectiveListText {
 function Get-ModulesFromWeekBlock {
     param([string[]]$Block)
 
+    $skipLabels = @(
+        "Course Objective", "Modules", "Sub objectives", "Activities",
+        "LEARN", "PRACTICE", "DO", "Key Points", "Self-Assessment",
+        "Discussion", "Assignment", "Clinical Labs"
+    )
+    $weekLabel = if ($Block.Count -gt 0 -and $Block[0] -match '^Week\s+\d+') { ConvertTo-CleanText $Block[0] } else { "this week" }
+
     # In a two-column DOCX table, all course objectives can precede all
     # lesson objectives. Route numbered lessons by parent ID, not proximity.
     if (@($Block | Where-Object { $_ -match '^\d+\.\d+\s+' }).Count -gt 0) {
@@ -1449,23 +1566,55 @@ function Get-ModulesFromWeekBlock {
                 })
             }
         }
+
+        # Authors sometimes leave the number off a course objective while its
+        # lessons keep theirs ("Explain the stages..." above "1.1 Identify...").
+        # Pair each missing parent, in order of first lesson reference, with
+        # the unnumbered objective lines of the week, in document order.
+        $missingParents = New-Object System.Collections.ArrayList
+        foreach ($line in $Block) {
+            if ($line -match '^(\d+)\.\d+\s+' -and $missingParents -notcontains $Matches[1] -and @($numberedModules | Where-Object { $_.objectiveId -eq $Matches[1] }).Count -eq 0) {
+                [void]$missingParents.Add($Matches[1])
+            }
+        }
+        if ($missingParents.Count -gt 0) {
+            $unnumbered = @(
+                $Block |
+                    Where-Object {
+                        $_ -notmatch '^\d+(\.\d+)?[.)]?\s' -and
+                        $_ -notmatch '^Week\s+\d+' -and
+                        $_ -notmatch '^(Course|Lesson|Sub|Weekly)\s+objectives?\s*:?$' -and
+                        $skipLabels -notcontains $_ -and
+                        $_ -notmatch '^(Chapter|Chapters)\b' -and
+                        $_.Length -ge 12 -and
+                        -not (Test-EbookAssessmentOrLmsText -Text $_)
+                    }
+            )
+            for ($k = 0; $k -lt $missingParents.Count; $k++) {
+                $parentId = $missingParents[$k]
+                if ($k -ge $unnumbered.Count) {
+                    throw "In $weekLabel, lesson objectives $parentId.x refer to course objective $parentId, but no line starts with '$parentId.' and no unnumbered course objective is left to match it. Number that course objective in the spec sheet (for example '$parentId. Explain ...') and upload it again."
+                }
+                [void]$numberedModules.Add([pscustomobject]@{
+                    objectiveId = $parentId
+                    title = (ConvertTo-CleanText $unnumbered[$k])
+                    objective = (ConvertTo-CleanText $unnumbered[$k])
+                    subObjectives = @()
+                })
+            }
+        }
+
         foreach ($line in $Block) {
             if ($line -match '^(\d+)\.\d+\s+(.+)$') {
                 $parentId = $Matches[1]
                 $lesson = $Matches[2]
                 $parents = @($numberedModules | Where-Object { $_.objectiveId -eq $parentId })
-                if ($parents.Count -ne 1) { throw "Lesson objective has no unique course-objective parent: $line" }
+                if ($parents.Count -ne 1) { throw "In $weekLabel, lesson objective '$line' matches $($parents.Count) course objectives numbered '$parentId.'. Each course objective number must appear once in the week." }
                 $parents[0].subObjectives = @($parents[0].subObjectives) + @($lesson)
             }
         }
-        return @($numberedModules)
+        return @($numberedModules | Sort-Object { [int]$_.objectiveId })
     }
-
-    $skipLabels = @(
-        "Course Objective", "Modules", "Sub objectives", "Activities",
-        "LEARN", "PRACTICE", "DO", "Key Points", "Self-Assessment",
-        "Discussion", "Assignment", "Clinical Labs"
-    )
 
     $modules = New-Object System.Collections.ArrayList
     for ($i = 0; $i -lt $Block.Count; $i++) {
@@ -1552,17 +1701,14 @@ function Get-DocxTables {
     Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
 
     $resolvedPath = (Resolve-Path $Path).ProviderPath
-    $zip = [System.IO.Compression.ZipFile]::OpenRead($resolvedPath)
+    $zip = Open-DocxArchive -Path $resolvedPath
     try {
-        $entry = $zip.GetEntry("word/document.xml")
-        if ($null -eq $entry) { return @() }
-        $stream = $entry.Open()
-        $reader = New-Object System.IO.StreamReader($stream)
-        try { $xml = $reader.ReadToEnd() }
-        finally { $reader.Dispose(); $stream.Dispose() }
+        $xml = Read-DocxZipEntryText -Zip $zip -EntryName "word/document.xml"
+        if ($null -eq $xml) { return @() }
+        $xml = Add-DocxListNumbers -DocumentXml $xml -Numbering (Get-DocxNumberingDefinitions -Zip $zip)
     }
     finally {
-        $zip.Dispose()
+        if ($zip) { $zip.Dispose() }
     }
 
     $tables = New-Object System.Collections.ArrayList

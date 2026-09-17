@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.17.6 (2026-09-17)
+
+- Spec sheets that use Word automatic numbering for course objectives now parse; lessons are matched to their course objective even when its number is missing, and the error names the week to fix. Spec files still open in Word can be read.
+
 ## v2026.09.17.5 (2026-09-17)
 
 - Fix the update-progress endpoint pinning the server after a self-update restart.
