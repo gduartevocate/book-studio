@@ -300,8 +300,14 @@ function Get-BookStudioUpdateProgress {
     if (-not (Test-Path -LiteralPath $statusPath)) { return [pscustomobject]@{ status = 'None'; message = 'No update has been started on this computer.'; logTail = @() } }
     $record = Get-Content -LiteralPath $statusPath -Raw -Encoding UTF8 | ConvertFrom-Json
     $logPath = Join-Path $latest.FullName 'update.log'
-    $tail = if (Test-Path -LiteralPath $logPath) { @(Get-Content -LiteralPath $logPath -Encoding UTF8 -ErrorAction SilentlyContinue | Where-Object { $_.Trim() } | Select-Object -Last 20) } else { @() }
-    Add-OrSet-BookStudioNoteProperty -InputObject $record -Name 'logTail' -Value @($tail)
+    # Read with .NET, not Get-Content: Get-Content attaches provider properties
+    # (PSPath, PSDrive, ...) to each line, and ConvertTo-Json -Depth 20 then
+    # walks that object graph without end, pinning the server at full CPU.
+    $tail = @()
+    if (Test-Path -LiteralPath $logPath) {
+        try { $tail = @([System.IO.File]::ReadAllLines($logPath) | ForEach-Object { [string]$_ } | Where-Object { $_.Trim() } | Select-Object -Last 20) } catch { $tail = @() }
+    }
+    Add-OrSet-BookStudioNoteProperty -InputObject $record -Name 'logTail' -Value ([string[]]$tail)
     Add-OrSet-BookStudioNoteProperty -InputObject $record -Name 'installedVersion' -Value (Get-BookStudioInstalledVersion -ProjectRoot $ProjectRoot)
     return $record
 }

@@ -55,6 +55,12 @@ Check ($record.status -eq 'Completed' -and $record.fromVersion -eq '2026.01.01.1
 Check ((& $studio { param($r) Get-BookStudioInstalledVersion -ProjectRoot $r } $install) -eq '2026.01.02.1') 'The installed version.json is the new release.'
 $progress = & $studio { param($r) Get-BookStudioUpdateProgress -ProjectRoot $r } $install
 Check ($progress.status -eq 'Completed' -and $progress.installedVersion -eq '2026.01.02.1' -and @($progress.logTail).Count -gt 0) 'Progress reports completion with a log.'
+# The API serializes this record; it must never carry provider-attached strings
+# that send ConvertTo-Json into an endless object graph. Run it under a timeout.
+$serialize = Start-Job -ArgumentList (Join-Path $root 'lib/BookStudio.psm1'), $install { param($module, $r) Import-Module $module -Force -DisableNameChecking; $m = Get-Module BookStudio; $sw = [Diagnostics.Stopwatch]::StartNew(); $json = & $m { param($p) ConvertTo-BookStudioJson (Get-BookStudioUpdateProgress -ProjectRoot $p) } $r; [pscustomobject]@{ ms = $sw.ElapsedMilliseconds; length = $json.Length; ok = ($json -match '"logTail"') } }
+if (-not (Wait-Job $serialize -Timeout 60)) { Stop-Job $serialize; Remove-Job $serialize -Force; throw 'FAIL: Serializing the update progress record did not finish within 60 seconds.' }
+$serialized = Receive-Job $serialize; Remove-Job $serialize -Force
+Check ($serialized.ok -and $serialized.length -lt 20000) "Progress record serializes quickly and compactly ($($serialized.ms) ms, $($serialized.length) chars)."
 Check ((Get-Content -LiteralPath $database -Raw) -match 'Busy Book') 'Book data survives the update.'
 Reject { & $studio { param($r) Start-BookStudioUpdate -ProjectRoot $r -NoRestart -Wait } $install } 'already up to date' 'An up-to-date install refuses to update again.'
 

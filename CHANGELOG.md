@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.17.5 (2026-09-17)
+
+- Fix the update-progress endpoint pinning the server after a self-update restart.
+
 ## v2026.09.17.4 (2026-09-17)
 
 - Release publisher hardening: tolerate git warnings, first-publish detection, no duplicate changelog entries.
