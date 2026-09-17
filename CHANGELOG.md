@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.17.4 (2026-09-17)
+
+- Release publisher hardening: tolerate git warnings, first-publish detection, no duplicate changelog entries.
+
 ## v2026.09.17.3 (2026-09-17)
 
 - First release from the distribution repository; install with git clone and update from Settings > Updates.

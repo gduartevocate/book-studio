@@ -41,7 +41,7 @@
     },
     {
         "path":  "ID Quick Start.txt",
-        "sha256":  "034A34C8E5DAACF52D92F876A87E26ADD9488EB93AFAC6AAF9E170313261ADC0"
+        "sha256":  "65F220A6C7EC95F40C214E0787724FFFC3DCD35639965CDDFC6B02FF05B0681A"
     },
     {
         "path":  "Publish-SmeReviewPackage.ps1",
@@ -85,7 +85,7 @@
     },
     {
         "path":  "VERSION.txt",
-        "sha256":  "359E0B6211A4CF39F6FB8609BF9D5AD2B93130AE42AAC570F4377B06E5C63C75"
+        "sha256":  "1DD8FFCA30E6F4C56EEBF2DD1F3A58C3247B4ED25149B3D7855A764244929F4E"
     },
     {
         "path":  "book-studio/app.js",
@@ -101,7 +101,7 @@
     },
     {
         "path":  "book-studio/version.json",
-        "sha256":  "A9ABBCB07AF4FAD2D0F179602B81C768B98AB2950806E3007479F21507918586"
+        "sha256":  "8804E6AB7FD3817F23C24E40721D8216AC294BBFEFDB6260B62AFDC3B424D7DC"
     },
     {
         "path":  "cloudflare/ebook-generator-worker.js",
