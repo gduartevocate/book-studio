@@ -117,7 +117,7 @@ Check ((@($refReport.readings | Where-Object status -eq 'Reference only').Count 
 
 # A site the designer cannot control (403, JavaScript-only, timeout) is skipped
 # and reported instead of stopping the book.
-$blockedPlan = [pscustomobject]@{chapters=@([pscustomobject]@{number=1}); requiredReadings=@(
+$blockedPlan = [pscustomobject]@{sourceMode='Assigned'; chapters=@([pscustomobject]@{number=1;title='Systems';focus='systems';learningTargets=@('Describe the system.')}); requiredReadings=@(
     $refPlan.requiredReadings[0],
     [pscustomobject]@{id=(ReadingId 'https://example.gov/blocked');url='https://example.gov/blocked';title='Agency page';chapters=@(1);origin='Designer';referenceOnly=$false})}
 $blockedFolder = Join-Path $fixture 'blocked-source'
@@ -127,6 +127,12 @@ Check ($blockedReport.status -eq 'PASS') "An unreachable source still blocked ge
 Check ($blockedReport.skippedCount -eq 1 -and ($blockedReport.skipped -join ' ') -match '403') 'The skipped source was not reported with its reason.'
 Check ((@($blockedReport.readings | Where-Object status -eq 'Not retrieved').Count -eq 1)) 'An unreachable source was not recorded as Not retrieved.'
 Check ((Get-Content -LiteralPath (Join-Path $blockedFolder 'required-source-report.md') -Raw) -match 'could not be read') 'The report does not list skipped readings for the designer.'
+# The writer's brief must omit a skipped reading. It has no text file, so
+# including it threw "Could not find file ... source-readings\...txt".
+$blockedBrief = @(New-EbookRequiredSourceBrief -Plan $blockedPlan -OutputFolder $blockedFolder -SourceContext ([pscustomobject]@{chunks=@();files=@()}))
+Check ($blockedBrief.Count -eq 1 -and @($blockedBrief[0].assignedSources).Count -eq 1) "The brief did not drop the skipped reading (got $(@($blockedBrief[0].assignedSources).Count) source(s))."
+Check ($blockedBrief[0].assignedSources[0].url -eq 'https://example.org/read') 'The brief kept a reading whose text was never retrieved.'
+Check (@($blockedBrief[0].researchCandidates | Where-Object { $_.url -match 'blocked' }).Count -eq 0) 'A skipped reading was offered to the writer as evidence.'
 
 # A wrong list is still the designer's to fix.
 $badPlan = [pscustomobject]@{chapters=@([pscustomobject]@{number=1}); requiredReadings=@(

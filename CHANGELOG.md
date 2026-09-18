@@ -1,5 +1,10 @@
 # Book Studio ID Changelog
 
+## v2026.09.18.12 (2026-09-18)
+
+- Fixes generation failing with "Could not find file ... source-readings" right after a reading was skipped.
+- The writer's source brief is now built only from readings whose text was retrieved, and Codex is told never to quote or attribute a claim to a reading that could not be read.
+
 ## v2026.09.18.11 (2026-09-18)
 
 - Required readings that cannot be retrieved no longer stop generation; they are skipped, listed with the reason in the source report and the Sources panel, and never used as teaching evidence.

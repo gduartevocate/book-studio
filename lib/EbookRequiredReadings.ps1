@@ -307,8 +307,13 @@ function New-EbookRequiredSourceBrief {
     param([object]$Plan, [string]$OutputFolder, [object]$SourceContext)
     $review=Get-EbookRequiredSourceReview -Plan $Plan -OutputFolder $OutputFolder -Markdown '' -EvidenceOnly
     if ($review.status -ne 'PASS') { throw "Required source retrieval failed. $($review.detail)" }
+    # Only readings whose text was retrieved can be taught from. Skipped ones
+    # stay in the reading list and the report, never in the writer's brief.
+    $report=$null
+    try { $report=Get-Content -LiteralPath (Join-Path $OutputFolder 'required-source-report.json') -Raw -Encoding UTF8 | ConvertFrom-Json } catch { $report=$null }
+    $readIds=@($report.readings | Where-Object { $_.status -eq 'Read' } | ForEach-Object { [string]$_.id })
     foreach ($chapter in $Plan.chapters) {
-        $assigned=@($Plan.requiredReadings | Where-Object { 0 -in $_.chapters -or $chapter.number -in $_.chapters })
+        $assigned=@($Plan.requiredReadings | Where-Object { ([string]$_.id) -in $readIds -and (0 -in $_.chapters -or $chapter.number -in $_.chapters) -and (Test-Path -LiteralPath (Join-Path $OutputFolder "source-readings/$($_.id).txt")) })
         $records=@(foreach ($reading in $assigned) {
             # Strip Get-Content's provider metadata before serializing the brief
             # (Windows PowerShell otherwise traverses the filesystem provider).
