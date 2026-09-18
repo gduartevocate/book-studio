@@ -33,7 +33,7 @@
     },
     {
         "path":  "book-studio/version.json",
-        "sha256":  "662A2B43F8610ABCEA9378E2BBFF53462F1DC38B97FB77CFAF8E177E3C695543"
+        "sha256":  "B989D63A3E535FE02F1F0E1B4B514759AFA42FA45038222D13ED130D4333B9F3"
     },
     {
         "path":  "book-studio-runner.ps1",
@@ -45,7 +45,7 @@
     },
     {
         "path":  "CHANGELOG.md",
-        "sha256":  "7A236B07D56F5E9F51BC2122708EBBBF7B8A938BC43E92288D854130078560A9"
+        "sha256":  "EC5FE2D1E44067E7F6D1F3DF76C49902400AA8848B6951E9B6D397693130D543"
     },
     {
         "path":  "Cloudflare Setup Notes.txt",
@@ -121,7 +121,7 @@
     },
     {
         "path":  "lib/BookStudio.psm1",
-        "sha256":  "43AEF5628595083C1C177B604F0DF3FE8AC1C830A24BF6B9E477282C2A6B2713"
+        "sha256":  "4A30188705B0886AB76EA8BC8B624EB1103A83311F8562A68D29F3D4599A5572"
     },
     {
         "path":  "lib/BookStudioChat.ps1",
@@ -152,8 +152,12 @@
         "sha256":  "EE453A963679C0D214EF0621389228E06BC391236E6E5BCDBD92EA61E106B539"
     },
     {
+        "path":  "lib/BookStudioRequestRecovery.ps1",
+        "sha256":  "24908DFFDA52BA986E3D031A56936F91B54B3E63998164265C368A15B78F5020"
+    },
+    {
         "path":  "lib/BookStudioUpdates.ps1",
-        "sha256":  "8BF8E9B617457779DF396D393E7F564340406FE029B9A717DA8FF8544AACD164"
+        "sha256":  "66E04B185DA7689A6342F634B01E91335ECF7AEB3C3B16455E9F72F721DE1529"
     },
     {
         "path":  "lib/EbookAssignedSources.ps1",
@@ -224,6 +228,14 @@
         "sha256":  "5DA7C9AD605CFA906675B9607E7DB28C94B701D65FF73E5E9838055DB07C2C2D"
     },
     {
+        "path":  "Repair Book Studio Update.cmd",
+        "sha256":  "0A2D43E544C8B23AB54BE952019A1A11542F89700E04A00E22B7E6EBDEC15E92"
+    },
+    {
+        "path":  "Repair-BookStudioUpdate.ps1",
+        "sha256":  "4AA56EA42D3EB3110ABE15C514DF4B89CF44F1A791CA09C1169FF53F0C21D6E3"
+    },
+    {
         "path":  "review-assigned-book.ps1",
         "sha256":  "F37D973DC784BAB5DA7B22812337323F0804E15AD2EFDE69BFAB961128899DED"
     },
@@ -241,7 +253,7 @@
     },
     {
         "path":  "Stop-BookStudioCompanion.ps1",
-        "sha256":  "F0694F9A8EEDD2FF88F76676AFC79E7642E4443972FF827E9E5D7FDDA2CC3CF1"
+        "sha256":  "4BA80A76867756747E30B9D8A363654BC44412A92943EE37F27966C1214FA16D"
     },
     {
         "path":  "tests/book-studio-api-regressions.ps1",
@@ -280,8 +292,12 @@
         "sha256":  "11FA0864F5B9C9BE361B5F359B812669D5AECFC949EEDDCD78892E7A38169BD9"
     },
     {
+        "path":  "tests/book-studio-stale-requests-regressions.ps1",
+        "sha256":  "337EBC85AD8FCDA470836FDB8796FE57BB85F14A4A2E462C9202CAD7804D8C7F"
+    },
+    {
         "path":  "tests/book-studio-update-regressions.ps1",
-        "sha256":  "59BD63C24D9090D903AFF427115318AF537245B3208A60C14D4EC87E01B36AC2"
+        "sha256":  "8978DD6788D557B1DCF8140FCBBEA3C416196462A26DCD76C7832D985DC1F6D3"
     },
     {
         "path":  "tests/book-studio-workflow-regressions.ps1",
@@ -349,6 +365,6 @@
     },
     {
         "path":  "VERSION.txt",
-        "sha256":  "24713473B02D5238A7EA88F6319309AC7B4AE7B593EF5AFA7660C9953086453A"
+        "sha256":  "515BB158E982232ECA6FF551DACDCA1B24C48EA7909DD2C1CF5E29EBFD557C1D"
     }
 ]

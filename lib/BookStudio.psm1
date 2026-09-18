@@ -3,6 +3,7 @@
 . (Join-Path $PSScriptRoot 'BookStudioIntake.ps1')
 . (Join-Path $PSScriptRoot 'BookStudioFormat.ps1')
 . (Join-Path $PSScriptRoot 'BookStudioChat.ps1')
+. (Join-Path $PSScriptRoot 'BookStudioRequestRecovery.ps1')
 . (Join-Path $PSScriptRoot 'BookStudioUpdates.ps1')
 . (Join-Path $PSScriptRoot 'BookStudioProduction.ps1')
 . (Join-Path $PSScriptRoot 'BookStudioQa.ps1')
@@ -3581,24 +3582,11 @@ function Get-BookStudioAiRequests {
             $changed = $true
         }
         if ($request.status -eq "Running") {
-            $exitCode = $null
-            $hasExitCode = $false
-            if ($request.PSObject.Properties.Name -contains "exitCodePath" -and $request.exitCodePath -and (Test-Path -LiteralPath $request.exitCodePath)) {
-                [string]$exitText = Get-Content -LiteralPath $request.exitCodePath -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
-                $exitText = if ([string]::IsNullOrWhiteSpace($exitText)) { '' } else { $exitText.Trim() }
-                if ($exitText -match "^-?\d+$") {
-                    $exitCode = [int]$exitText
-                    $hasExitCode = $true
-                }
-            }
-
+            $runState = Get-BookStudioAiRequestRunState $request
+            $exitCode = $runState.exitCode
+            $hasExitCode = $runState.hasExitCode
             $responseExists = -not [string]::IsNullOrWhiteSpace($responsePreview)
-            $process = $null
-            if ($request.processId -and -not $hasExitCode) {
-                $process = Get-Process -Id ([int]$request.processId) -ErrorAction SilentlyContinue
-            }
-
-            if ($hasExitCode -or -not $request.processId -or -not $process) {
+            if (-not $runState.running) {
                 $request.status = if ($hasExitCode -and $exitCode -ne 0) {
                     "Failed"
                 }
@@ -4270,6 +4258,7 @@ $chapterContext
         includeHistory = [bool]$IncludeHistory
         instruction = [string]$Instruction
         processId = $process.Id
+        processStartedAt = $(try { $process.StartTime.ToUniversalTime().ToString('o') } catch { '' })
         relativeFolder = $requestRelativeFolder
         promptPath = $promptPath
         responsePath = $responsePath
@@ -4820,6 +4809,7 @@ function Start-BookStudioServer {
     $listener.Prefixes.Add($prefix)
     $listener.Start()
 
+    Repair-BookStudioStaleAiRequests -DatabasePath $DatabasePath | Out-Null
     Write-Host "Book Studio is running at $prefix"
     Write-Host "Database: $DatabasePath"
     Write-Host "Press Ctrl+C to stop."

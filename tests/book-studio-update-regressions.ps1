@@ -46,7 +46,8 @@ $database = Join-Path $install '.bookstudio/book-studio-db.json'
 New-Item -ItemType Directory -Path (Split-Path $database -Parent) -Force | Out-Null
 '{"schemaVersion":1,"createdAt":"2026-01-01T00:00:00","updatedAt":"2026-01-01T00:00:00","jobs":[{"id":"busy","title":"Busy Book","status":"Running","aiRequests":[]}]}' | Set-Content -LiteralPath $database -Encoding UTF8
 Reject { & $studio { param($r, $d) Start-BookStudioUpdate -ProjectRoot $r -DatabasePath $d -NoRestart -Wait } $install $database } 'still generating' 'A running job blocks the update.'
-'{"schemaVersion":1,"createdAt":"2026-01-01T00:00:00","updatedAt":"2026-01-01T00:00:00","jobs":[{"id":"busy","title":"Busy Book","status":"Completed","aiRequests":[{"id":"r1","status":"Running"}]}]}' | Set-Content -LiteralPath $database -Encoding UTF8
+$liveDb = [pscustomobject]@{schemaVersion=1;jobs=@([pscustomobject]@{id='busy';title='Busy Book';status='Completed';aiRequests=@([pscustomobject]@{id='r1';status='Running';processId=$PID;processStartedAt=(Get-Process -Id $PID).StartTime.ToUniversalTime().ToString('o')})})}
+$liveDb | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $database -Encoding UTF8
 Reject { & $studio { param($r, $d) Start-BookStudioUpdate -ProjectRoot $r -DatabasePath $d -NoRestart -Wait } $install $database } 'Codex request' 'A running Codex request blocks the update.'
 '{"schemaVersion":1,"createdAt":"2026-01-01T00:00:00","updatedAt":"2026-01-01T00:00:00","jobs":[{"id":"busy","title":"Busy Book","status":"Completed","aiRequests":[{"id":"r1","status":"Completed"}]}]}' | Set-Content -LiteralPath $database -Encoding UTF8
 
@@ -76,5 +77,8 @@ foreach ($id in @('updateBadge', 'checkUpdates', 'applyUpdate', 'updatesStatus',
 $launcher = Get-Content -LiteralPath (Join-Path $root 'Start-BookStudioCompanion.ps1') -Raw -Encoding UTF8
 Check ($launcher -match 'Get-BookStudioUpdateStatus') 'The launcher announces available updates.'
 
-Remove-Item -LiteralPath $fixture -Recurse -Force -ErrorAction SilentlyContinue
+$fixtureResolved = [IO.Path]::GetFullPath($fixture)
+$testRoot = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'BookStudioTests')) + [IO.Path]::DirectorySeparatorChar
+if (-not $fixtureResolved.StartsWith($testRoot, [StringComparison]::OrdinalIgnoreCase)) { throw 'Unexpected test cleanup path.' }
+Remove-Item -LiteralPath $fixtureResolved -Recurse -Force -ErrorAction SilentlyContinue
 Write-Output "PASS: $checks update assertions (detection, blocking, fast-forward apply, progress, data preservation, ZIP installs)."

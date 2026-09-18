@@ -19,8 +19,8 @@ $serverProcesses = @(
 if ($serverProcesses.Count -eq 0 -and (Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue)) {
     $connections = @(Get-NetTCPConnection -LocalPort $Port -ErrorAction SilentlyContinue)
     $pids = @($connections | Select-Object -ExpandProperty OwningProcess -Unique)
-    foreach ($pid in $pids) {
-        $process = Get-CimInstance Win32_Process -Filter "ProcessId = $pid" -ErrorAction SilentlyContinue
+    foreach ($serverOwnerId in $pids) {
+        $process = Get-CimInstance Win32_Process -Filter "ProcessId = $serverOwnerId" -ErrorAction SilentlyContinue
         if ($process -and $process.CommandLine -match "book-studio\.ps1") {
             $serverProcesses += $process
         }
@@ -37,4 +37,4 @@ foreach ($process in $serverProcesses | Sort-Object ProcessId -Unique) {
     Stop-Process -Id $process.ProcessId -Force
 }
 
-Write-Host "Book Studio server stopped."
+Write-Host "Book Studio web server stopped. Separately running generation and Codex requests may continue."

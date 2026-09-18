@@ -171,12 +171,14 @@ function Get-BookStudioUpdateBlocker {
     # An update restarts the server; never do that under a running job or Codex request.
     param([Parameter(Mandatory)][string]$DatabasePath)
 
+    Repair-BookStudioStaleAiRequests -DatabasePath $DatabasePath | Out-Null
+    Repair-BookStudioStaleRunnerJobs -DatabasePath $DatabasePath | Out-Null
     $db = Read-BookStudioDatabase -DatabasePath $DatabasePath
     foreach ($job in @($db.jobs)) {
         $label = if ($job.title) { [string]$job.title } else { [string]$job.id }
         if ($job.status -in @('Queued', 'Running')) { return "'$label' is still generating. Wait for it to finish before updating." }
         foreach ($request in @($job.aiRequests)) {
-            if ($request.status -eq 'Running') { return "A Codex request is still running for '$label'. Wait for it to finish before updating." }
+            if ($request.status -in @('Running','Queued')) { return "A Codex request is still running for '$label' (process $($request.processId)). Stopping the web server does not stop Codex. Wait for this request to finish before updating." }
         }
     }
     return ''

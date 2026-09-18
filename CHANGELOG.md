@@ -1,5 +1,12 @@
 # Book Studio ID Changelog
 
+## v2026.09.18.8 (2026-09-18)
+
+- Recover stale Codex request statuses across all books and archived conversations at startup and before updating. Use recorded exit codes and process identity to distinguish finished/interrupted requests from live work, including recycled Windows process IDs.
+- Keep active Codex work protected and explain that stopping the web server does not stop its independent runner. Recovery preserves responses and partial edits; it does not call Codex or automatically rebuild content.
+- Include a standalone Repair Book Studio Update helper for older installations trapped behind the stale-status update check. It backs up the book database and leaves installed application files unchanged so normal updates remain available.
+- Fix the stop-server fallback assigning to PowerShell's read-only PID variable.
+
 ## v2026.09.18.7 (2026-09-18)
 
 - Separate outline readiness, required-source readiness, and manuscript QA. Planning-only packages no longer receive missing-manuscript citation/image findings or inherit stale book QA failures.
