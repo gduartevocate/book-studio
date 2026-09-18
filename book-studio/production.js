@@ -1,0 +1,80 @@
+// Lazy-loaded so normal job polling does not overwrite unsaved form edits.
+function appendProductionPreferences(container, job) {
+  const panel = makeElement("details", "advanced-options");
+  panel.append(makeElement("summary", "", "Sources and image setting"));
+  const content = makeElement("div", "");
+  panel.append(content);
+  let loaded = false;
+  panel.addEventListener("toggle", async () => {
+    if (!panel.open || loaded) return;
+    loaded = true;
+    content.textContent = "Loading production settings…";
+    try {
+      const saved = await api(`/api/jobs/${job.id}/production-settings`);
+      content.textContent = "";
+      const addField = (caption, field) => {
+        const label = makeElement("label", "");
+        label.append(makeElement("span", "", caption), field);
+        content.append(label);
+        return field;
+      };
+      const mode = addField("Sources to use", document.createElement("select"));
+      for (const [value, label] of [["Assigned", "Required readings below"], ["UploadedOnly", "Uploaded teaching documents only"], ["Discovery", "Discover additional sources"]]) mode.append(new Option(label, value));
+      mode.value = saved.sourceMode || "UploadedOnly";
+      const readings = addField("Required reading list (review links extracted from the blueprint)", document.createElement("textarea"));
+      readings.rows = 10; readings.maxLength = 40000; readings.value = saved.requiredSources || "";
+      readings.placeholder = "Week 1:\n[Title](https://example.org/article)\nAll chapters:\nhttps://example.org/shared-reading";
+      const context = addField("Image setting", document.createElement("select"));
+      for (const [value, label] of [["Generic", "Generic / everyday (nonclinical)"], ["Healthcare", "Healthcare"], ["Business", "Business (nonclinical)"], ["Custom", "Custom"]]) context.append(new Option(label, value));
+      context.value = saved.imageSettings?.context || "Generic";
+      const instructions = addField("Image instructions", document.createElement("textarea"));
+      instructions.maxLength = 4000; instructions.value = saved.imageSettings?.instructions || "";
+      content.append(makeElement("p", "hint", "Save → Check required sources → Fix QA with Codex to revise existing teaching and citations. Rebuild only refreshes exports. The blueprint is not a scholarly source. Use accessible article/chapter URLs; PDF extraction requires Poppler pdftotext. Saving an image setting does not replace existing images or spend AI usage."));
+      const actions = makeElement("div", "actions");
+      const status = makeElement("p", "hint"); status.setAttribute("role", "status");
+      const report = makeElement("div", "");
+      let dirty = false;
+      const buttons = [];
+      const renderReport = (preferences) => {
+        report.textContent = "";
+        const list = makeElement("ul", "");
+        for (const reading of preferences.readings || []) {
+          const evidence = preferences.sourceReport?.readings?.find((item) => item.id === reading.id && item.url === reading.url);
+          const assignment = reading.chapters.includes(0) ? "All chapters" : `Chapter ${reading.chapters.join(", ")}`;
+          list.append(makeElement("li", "", `${assignment} — ${reading.title}: ${evidence?.status || "Not checked"}${evidence?.detail ? ` — ${evidence.detail}` : ""}`));
+        }
+        report.append(makeElement("p", "hint", "Read = source text retrieved, not claim accuracy or permissions approved. Check report details for blocked links."), list);
+      };
+      const addAction = (label, action) => {
+        const button = makeElement("button", "secondary", label); button.type = "button"; buttons.push(button);
+        button.addEventListener("click", async () => {
+          buttons.forEach((item) => { item.disabled = true; });
+          try { await action(); } catch (error) { status.textContent = error.message; }
+          finally { buttons.forEach((item) => { item.disabled = false; }); }
+        });
+        actions.append(button);
+      };
+      for (const field of [mode, readings, context, instructions]) field.addEventListener("input", () => { dirty = true; status.textContent = "Unsaved settings. Save before checking sources or generating images."; });
+      addAction("Save settings", async () => {
+        const updated = await api(`/api/jobs/${job.id}/production-settings`, { method: "POST", body: JSON.stringify({ sourceMode: mode.value, requiredSources: readings.value, imageContext: context.value, imageInstructions: instructions.value }) });
+        dirty = false; renderReport(updated); status.textContent = "Saved. Existing manuscript and images are unchanged. Check sources before requesting a revision.";
+      });
+      addAction("Check required sources", async () => {
+        if (dirty) throw new Error("Save your settings first.");
+        if (mode.value !== "Assigned") throw new Error("Select Required readings and save first.");
+        const result = await api(`/api/jobs/${job.id}/check-sources`, { method: "POST", body: "{}" });
+        status.textContent = result.message;
+        await loadJobs();
+      });
+      addAction("Refresh source results", async () => { renderReport(await api(`/api/jobs/${job.id}/production-settings`)); status.textContent = "Source results refreshed."; });
+      if (job.artifacts?.some((item) => item.fileName?.endsWith(" - E-Book.md"))) addAction("Generate images for saved setting", async () => {
+        if (dirty) throw new Error("Save your settings first.");
+        if (!window.confirm("Generate missing or changed chapter images using Codex? This uses AI usage. Existing images are backed up; the chapter text is preserved.")) return;
+        await api(`/api/jobs/${job.id}/generate-images`, { method: "POST", body: "{}" });
+        await loadJobs();
+      });
+      content.append(actions, status, report); renderReport(saved);
+    } catch (error) { loaded = false; content.textContent = error.message; }
+  });
+  container.append(panel);
+}

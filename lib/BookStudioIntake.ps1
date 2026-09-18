@@ -5,7 +5,10 @@ function Test-BookStudioUploadRequest {
     $primary=0
     if($files.Count -gt 1 -and $null -eq $Request.primaryFileIndex){throw 'Select the authoritative course blueprint before uploading multiple files.'}
     if($null -ne $Request.primaryFileIndex -and (-not [int]::TryParse([string]$Request.primaryFileIndex,[ref]$primary) -or $primary -lt 0 -or $primary -ge $files.Count)){throw 'The selected course blueprint is not in this upload.'}
-    if($Request.sourceMode -and $Request.sourceMode -notin @('UploadedOnly','Discovery')){throw 'Unknown source mode.'}
+    if($Request.sourceMode -and $Request.sourceMode -notin @('UploadedOnly','Discovery','Assigned')){throw 'Unknown source mode.'}
+    if($Request.imageContext -and $Request.imageContext -notin @('Generic','Healthcare','Business','Custom')){throw 'Unknown image setting.'}
+    if(([string]$Request.requiredSources).Length -gt 40000 -or ([string]$Request.imageInstructions).Length -gt 4000){throw 'Required sources or image instructions exceed the input limit.'}
+    if($Request.imageContext -eq 'Custom' -and [string]::IsNullOrWhiteSpace([string]$Request.imageInstructions)){throw 'Describe the custom image setting.'}
     $total=0L;$decoded=New-Object Collections.ArrayList
     foreach($file in $files){
         $extension=[IO.Path]::GetExtension([string]$file.name).ToLowerInvariant()

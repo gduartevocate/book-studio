@@ -477,6 +477,10 @@ Add-AuditCheck -Checks $checks -Category "Artifact Hygiene" -Name "local_file_li
 Import-Module (Join-Path $PSScriptRoot 'lib/EbookGenerator.psm1') -Force
 $editorialModule = Get-Module EbookGenerator
 $sourcePlan=Read-JsonFile -Path (Join-Path $resolvedOutputFolder 'ebook-plan.json')
+if($sourcePlan.sourceMode -eq 'Assigned'){
+    $requiredReview=Get-EbookRequiredSourceReview -Plan $sourcePlan -OutputFolder $resolvedOutputFolder -Markdown $ebookMarkdown
+    Add-AuditCheck -Checks $checks -Category 'Sources' -Name 'required_reading_coverage' -Status $requiredReview.status -Detail $requiredReview.detail
+}
 if($sourcePlan.sourceMode -eq 'UploadedOnly'){
     $brief=Read-JsonFile -Path (Join-Path $resolvedOutputFolder 'source-brief.json')
     $uploadedReview=& $editorialModule {param($p,$s,$ctx,$md) Get-EbookUploadedSourceReview -Plan $p -Sources $s -SourceContext $ctx -Markdown $md} $sourcePlan $brief $sourceContext $ebookMarkdown

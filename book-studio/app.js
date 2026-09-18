@@ -621,7 +621,7 @@ function renderFormatReviewPanel(job, panel) {
   panel.append(guidance);
 
   if (job.intake) {
-    panel.append(makeElement("p", "panel-intro", `Source intake: ${job.intake.readFiles}/${job.intake.uploadedFiles} files read without truncation. Blueprint: ${job.intake.primarySource}. ${job.options?.sourceMode === "UploadedOnly" ? "Uploaded documents only; no additional reading search." : "External source discovery enabled."} Academic coverage still requires review.`));
+    panel.append(makeElement("p", "panel-intro", `Source intake: ${job.intake.readFiles}/${job.intake.uploadedFiles} files read without truncation. Blueprint: ${job.intake.primarySource}. ${job.options?.sourceMode === "UploadedOnly" ? "Uploaded documents only; no additional reading search." : job.options?.sourceMode === "Assigned" ? "Required reading URLs only; review their chapter assignments and retrieval results under Sources and image setting." : "External source discovery enabled."} Academic coverage still requires review.`));
   }
 
   const outlineEditor = makeElement("section", "outline-editor-panel");
@@ -892,6 +892,14 @@ function renderJobQaSummary(container, job) {
   if (qa.summary && status !== "PASS") {
     banner.append(makeElement("span", "", qa.summary));
   }
+  if (qa.findings?.length) {
+    const details = makeElement("details", "");
+    details.append(makeElement("summary", "", `${qa.findings.length} remaining QA findings (repair completion is not QA approval)`));
+    const list = makeElement("ul", "");
+    for (const finding of qa.findings) list.append(makeElement("li", "", `${finding.category}${finding.chapter ? ` / Chapter ${finding.chapter}` : ""}: ${finding.name} — ${finding.detail}`));
+    details.append(list);
+    banner.append(details);
+  }
   container.append(banner);
 }
 
@@ -912,6 +920,7 @@ Required work:
 - Preserve relevant verified images and visuals. Remove local interactive-study links and promises of interactive activities from the learner-facing book.
 - Remove learner-facing production residue, source-management notes, LMS language, and unclear numbered-note references.
 - Keep claims grounded in available sources. Do not invent URLs, DOI values, or unsupported facts.
+- If ebook-plan.json uses Assigned source mode, read every assigned source-readings text file. Ground the teaching in those readings, cite each assigned URL in its chapter's numbered Scholarly Sources, and link the relevant body claims to those notes. Never cite the blueprint, objectives, or production notes as scholarly evidence. Do not claim that listing a URL proves a claim is supported.
 
 After editing, summarize exactly which files changed and which QA issues you addressed.`;
 }
@@ -2418,6 +2427,7 @@ function renderJobs(jobs, options = {}) {
     appendJobLogLinks(log, job);
     renderJobQaSummary(log, job);
     renderWorkflowPanel(workflowPanel, job);
+    if (!isJobProcessing(job) && job.outputFolder) appendProductionPreferences(workflowPanel, job);
 
     if (isJobProcessing(job)) {
       const busy = document.createElement("span");
@@ -2432,6 +2442,12 @@ function renderJobs(jobs, options = {}) {
       retry.addEventListener("click", () => runJob(job.id, getWorkflowRunMode(job)));
       actions.append(retry);
       appendPackageRebuildAction(actions, job);
+      if (job.artifacts?.some((artifact) => artifact.fileName?.endsWith(" - E-Book.md"))) {
+        const fixQa = makeElement("button", "danger qa-repair-button", "Fix QA with Codex");
+        fixQa.type = "button";
+        fixQa.addEventListener("click", () => startQaRepair(job));
+        actions.append(fixQa);
+      }
     } else if (getWorkflowStage(job) === "format-review") {
       const recreate = document.createElement("button");
       recreate.type = "button";
@@ -3242,7 +3258,10 @@ form.addEventListener("submit", async (event) => {
       title: formData.get("title"),
       specialInstructions: formData.get("specialInstructions"),
       primaryFileIndex: Number(formData.get("primaryFileIndex")),
-      sourceMode: formData.get("sourceMode") || "UploadedOnly",
+      sourceMode: formData.get("sourceMode") || "Assigned",
+      requiredSources: formData.get("requiredSources") || "",
+      imageContext: formData.get("imageContext") || "Generic",
+      imageInstructions: formData.get("imageInstructions") || "",
       maxResearchPerChapter: Number(formData.get("maxResearchPerChapter") || 3),
       skipResearch: formData.get("skipResearch") === "on",
       skipOpenStaxFetch: formData.get("skipOpenStaxFetch") === "on",
@@ -3279,7 +3298,7 @@ function refreshSourceChoices() {
     if (files.length !== 1) select.append(new Option(files.length ? "Select the authoritative blueprint" : "Choose files first", ""));
     files.forEach((file, index) => select.append(new Option(`${index + 1}. ${file.name}`, String(index))));
   }
-  const uploadedOnly = form.elements.sourceMode.value === "UploadedOnly";
+  const uploadedOnly = form.elements.sourceMode.value !== "Discovery";
   for (const name of ["skipResearch", "skipOpenStaxFetch", "maxResearchPerChapter"]) {
     form.elements[name].disabled = uploadedOnly;
     if (uploadedOnly && form.elements[name].type === "checkbox") form.elements[name].checked = true;
@@ -3287,7 +3306,7 @@ function refreshSourceChoices() {
 }
 form.elements.files.addEventListener("change", refreshSourceChoices);
 form.elements.sourceMode.addEventListener("change", () => {
-  const uploadedOnly = form.elements.sourceMode.value === "UploadedOnly";
+  const uploadedOnly = form.elements.sourceMode.value !== "Discovery";
   for (const name of ["skipResearch", "skipOpenStaxFetch", "maxResearchPerChapter"]) {
     form.elements[name].disabled = uploadedOnly;
     if (form.elements[name].type === "checkbox") form.elements[name].checked = uploadedOnly;

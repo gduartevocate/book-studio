@@ -63,6 +63,8 @@ $sources=& $ebook {
 } $plan $context
 Check (@($sources).Count -eq 1 -and @($sources[0].openStax).Count -eq 0 -and @($sources[0].researchCandidates).Count -eq 0) 'Uploaded-only source resolution used external sources.'
 Check (@($sources[0].sourceContext | Where-Object {$_.sourceFile -match 'book-studio-brief'}).Count -eq 0) 'Production notes were treated as academic citation evidence.'
+Check (@($sources[0].sourceContext | Where-Object sourceFile -eq $job.specPath).Count -eq 0) 'Blueprint was treated as academic evidence.'
+Reject { & $ebook { param($p,$ctx) $ctx.files=@($ctx.files | Where-Object isCourseSpec); $ctx.chunks=@($ctx.chunks | Where-Object sourceFile -eq $ctx.files[0].path); Resolve-EbookSources -Plan $p -SourceContext $ctx -SourceMapPath 'absent.json' -SourceMode UploadedOnly } $plan ($context | ConvertTo-Json -Depth 15 | ConvertFrom-Json) } 'No uploaded teaching content'
 Check (& $ebook {param($p,$s,$c) Test-EbookUploadedSourceEvidence $p $s $c} $plan $sources[0] $context) 'Valid uploaded evidence failed.'
 Check ((& $ebook {param($chapter,$chapterSources) Get-SourceFitSignals -Chapter $chapter -ChapterSources $chapterSources} $chapter1 $sources[0]).status -eq 'WARNING') 'Uploaded-only source policy incorrectly blocked on external source-fit coverage.'
 $badSources=$sources[0] | ConvertTo-Json -Depth 20 | ConvertFrom-Json

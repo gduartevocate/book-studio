@@ -66,7 +66,12 @@ function Invoke-EbookCodexImagePass {
         if (-not (Test-Path -LiteralPath $resultsFile)) { continue }
         try {
             $prior = Get-Content -LiteralPath $resultsFile -Raw -Encoding UTF8 | ConvertFrom-Json
+            $directionsPath=Join-Path $run.FullName 'directions.json'
+            $priorDirections=if(Test-Path -LiteralPath $directionsPath){@(Get-Content -LiteralPath $directionsPath -Raw -Encoding UTF8 | ConvertFrom-Json)}else{@()}
             foreach ($entry in @($prior.images)) {
+                $planned=@($items | Where-Object chapterNumber -eq $entry.chapterNumber)[0]
+                $oldDirection=@($priorDirections | Where-Object chapterNumber -eq $entry.chapterNumber)[0]
+                if (-not $planned -or ($planned.imageDirectionHash -and $planned.imageDirectionHash -ne $oldDirection.imageDirectionHash)) { continue }
                 $current = Get-EbookImageProductionReview $outputFolder
                 if ($entry.chapterNumber -in @($current.chapters | Where-Object status -eq 'PASS' | ForEach-Object chapterNumber)) { continue }
                 $evidence = Find-EbookImageToolEvidence (Join-Path $run.FullName 'events.jsonl') $entry.sourcePath
@@ -84,6 +89,7 @@ function Invoke-EbookCodexImagePass {
     $runId = [guid]::NewGuid().ToString('N')
     $runFolder = Join-Path $outputFolder "image-runs/$runId"
     New-Item -ItemType Directory -Path $runFolder -Force | Out-Null
+    $pending | Select-Object chapterNumber,imageDirectionHash | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $runFolder 'directions.json') -Encoding UTF8
     $eventsPath = Join-Path $runFolder 'events.jsonl'
     $errorPath = Join-Path $runFolder 'error.log'
     $responsePath = Join-Path $runFolder 'response.md'
@@ -95,6 +101,7 @@ function Invoke-EbookCodexImagePass {
     $prompt = @"
 Use the installed `$imagegen skill and the built-in Codex image-generation tool to generate real chapter banner PNGs for $($Course.courseCode): $($Course.courseName).
 Read $([IO.Path]::GetFileName($Result.markdownPath)), ebook-plan.json and engagement-plan.json. Match each scene to that chapter's actual objectives and content, not a generic course guess.
+The pending chapter prompts below incorporate the saved image setting. Follow that scene setting even if older engagement-plan prompts or the course blueprint suggest another industry.
 Generate each pending asset separately; do not create a collage. Use professional photographic/editorial imagery, wide landscape, at least 1200x450. No readable text, logos, watermarks, diagrams, clip-art, or drawn substitutes.
 Pending chapters:
 $targets

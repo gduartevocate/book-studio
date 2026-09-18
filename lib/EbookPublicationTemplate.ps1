@@ -107,6 +107,15 @@ function Update-EbookManuscriptPreflight {
     $original = Get-Content -LiteralPath $MarkdownPath -Raw -Encoding UTF8
     $result = Test-EbookManuscriptPreflight -Markdown $original -ExpectedChapterNumbers $ExpectedChapterNumbers
     $folder = Split-Path -Parent $MarkdownPath
+    $planPath = Join-Path $folder 'ebook-plan.json'
+    if (Test-Path -LiteralPath $planPath) {
+        $savedPlan = Get-Content -LiteralPath $planPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($savedPlan.sourceMode -eq 'Assigned') {
+            $sourceReview = Get-EbookRequiredSourceReview -Plan $savedPlan -OutputFolder $folder -Markdown $result.markdown
+            $result.issues = @($result.issues) + @($sourceReview.issues)
+            if ($sourceReview.status -ne 'PASS') { $result.status = 'FAIL' }
+        }
+    }
     if ($result.markdown -cne ($original -replace '\r\n', "`n")) {
         $backupFolder = Join-Path $folder 'manuscript-backups'
         New-Item -ItemType Directory -Path $backupFolder -Force | Out-Null

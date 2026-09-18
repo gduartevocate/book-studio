@@ -5,7 +5,7 @@ $root=Split-Path $PSScriptRoot -Parent
 $fixture=Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) ('BookStudioTests/api-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $fixture -Force | Out-Null
 foreach($folder in @('lib','config','book-studio')){Copy-Item -LiteralPath (Join-Path $root $folder) -Destination (Join-Path $fixture $folder) -Recurse}
-foreach($file in @('book-studio.ps1','book-studio-runner.ps1','ebook-generator.ps1','audit-ebook-output.ps1')){Copy-Item -LiteralPath (Join-Path $root $file) -Destination (Join-Path $fixture $file)}
+foreach($file in @('book-studio.ps1','book-studio-runner.ps1','book-studio-source-runner.ps1','ebook-generator.ps1','audit-ebook-output.ps1')){Copy-Item -LiteralPath (Join-Path $root $file) -Destination (Join-Path $fixture $file)}
 $listener=[Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,0);$listener.Start();$port=$listener.LocalEndpoint.Port;$listener.Stop()
 $base="http://localhost:$port"
 $server=Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+(Join-Path $fixture 'book-studio.ps1')+'"'),'-Port',$port) -PassThru -WindowStyle Hidden -RedirectStandardOutput (Join-Path $fixture 'server.log') -RedirectStandardError (Join-Path $fixture 'server-error.log')
@@ -40,8 +40,11 @@ Week 2 Workflow Coordination
 2. Office workflow, task ownership, and handoffs
 '@
     $file=@{name='QA1000 Blueprint.txt';contentBase64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($spec))}
-    $job=Post '/api/jobs' @{title='Office Workflow Fixture';courseCode='QA1000';files=@($file);sourceMode='UploadedOnly';useCodexDrafting=$false;useCodexImages=$false}
-    Check ($job.intake.readFiles -eq 1 -and $job.options.sourceMode -eq 'UploadedOnly') 'API intake contract missing.'
+    $reading=@{name='Office reading.txt';contentBase64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('Office records use clear naming rules. Workflow coordination defines task ownership and handoffs.'))}
+    $job=Post '/api/jobs' @{title='Office Workflow Fixture';courseCode='QA1000';files=@($file,$reading);primaryFileIndex=0;sourceMode='UploadedOnly';useCodexDrafting=$false;useCodexImages=$false}
+    Check ($job.intake.readFiles -eq 2 -and $job.options.sourceMode -eq 'UploadedOnly') 'API intake contract missing.'
+    $productionScript=Invoke-WebRequest -UseBasicParsing -Uri "$base/production.js"
+    Check ($productionScript.Content -match 'appendProductionPreferences') 'Production preferences script is not served.'
     Reject {Post "/api/jobs/$($job.id)/run" @{mode='Full'}} 400
     $null=Post "/api/jobs/$($job.id)/run" @{mode='Blueprint'}
     $deadline=(Get-Date).AddSeconds(45)
@@ -55,6 +58,15 @@ Week 2 Workflow Coordination
     Check ($preview.Content -match 'Organize office records using clear naming rules' -and $preview.Content -notmatch 'Knowledge Check|Chapter Summary') 'Real preview lost blueprint objectives or included excluded sections.'
     $generatedPlan=Get-Content -LiteralPath (Join-Path $job.outputFolder 'ebook-plan.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     $plannedChapters=@($generatedPlan.chapters | Sort-Object number)
+    $settings=Invoke-RestMethod "$base/api/jobs/$($job.id)/production-settings"
+    Check ($settings.imageSettings.context -eq 'Generic') 'New image context default missing.'
+    $settings=Post "/api/jobs/$($job.id)/production-settings" @{sourceMode='UploadedOnly';requiredSources='';imageContext='Business';imageInstructions='Use office teams, no scrubs.'}
+    Check ($settings.imageSettings.context -eq 'Business') 'Saved image setting was lost.'
+    $savedPlan=Get-Content -LiteralPath (Join-Path $job.outputFolder 'ebook-plan.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    Check ($savedPlan.imageSettings.instructions -eq 'Use office teams, no scrubs.') 'Image direction did not reach the book plan.'
+    Reject {Post "/api/jobs/$($job.id)/production-settings" @{sourceMode='Assigned';requiredSources='';imageContext='Generic'}} 400
+    Reject {Post "/api/jobs/$($job.id)/check-sources" @{}} 400
+    Reject {Post "/api/jobs/$($job.id)/generate-images" @{}} 400
     $lastPlannedChapter=$plannedChapters[-1]
     Check ($plannedChapters.Count -gt 1 -and $preview.Content -match [regex]::Escape([string]$lastPlannedChapter.title) -and $preview.Content -match 'Complete Planned Book') 'Format preview did not include the complete planned book.'
     $outline=Invoke-RestMethod "$base/api/jobs/$($job.id)/outline"
@@ -100,6 +112,17 @@ Week 2 Workflow Coordination
     $word=Get-ChildItem -LiteralPath $job.outputFolder -Filter '* - E-Book.docx' | Select-Object -First 1
     Check ($null -ne $word) 'Full workflow did not export a Word document.'
     Check ((& (Get-Module EbookGenerator) {param($p) Get-EbookDocxArtifactIssues $p} $word.FullName).status -eq 'PASS') 'Full-workflow Word does not satisfy the selected layout/export contract.'
+    Check ($generatedPlan.imageSettings.context -eq 'Business') 'Saved image setting was dropped during full generation.'
+    $beforeBook=(Get-FileHash -LiteralPath $word.FullName).Hash
+    $null=Post "/api/jobs/$($job.id)/production-settings" @{sourceMode='Assigned';requiredSources="All chapters:`n[Blocked fixture](http://127.0.0.1/reading)";imageContext='Business';imageInstructions='Use office teams.'}
+    $start=Post "/api/jobs/$($job.id)/check-sources" @{}
+    Check ($start.status -eq 'Running') 'Source check did not start asynchronously.'
+    $deadline=(Get-Date).AddSeconds(20)
+    do { Start-Sleep -Milliseconds 300; $job=@((Invoke-RestMethod "$base/api/jobs").jobs | Where-Object id -eq $job.id)[0] } while($job.status -in @('Running','Queued') -and (Get-Date) -lt $deadline)
+    $settings=Invoke-RestMethod "$base/api/jobs/$($job.id)/production-settings"
+    Check ($job.status -notin @('Running','Queued') -and $settings.sourceReport.status -eq 'FAIL' -and $settings.sourceReport.readings[0].detail -match 'Local/private') "Source runner did not expose blocked retrieval: $($job.progress.detail)"
+    Check ((Get-FileHash -LiteralPath $word.FullName).Hash -eq $beforeBook) 'Checking sources modified the manuscript export.'
+    Check (@($job.qaSummary.findings | Where-Object category -eq 'Required sources').Count -gt 0) 'Source failures are missing from current QA.'
     [pscustomobject]@{status='PASS';assertions=$script:checks;fixture=$fixture;scope='Real HTTP intake, blueprint, approval, local full scaffold and Word export; no AI drafting. Fixture correctly remains uncleared for review.'} | ConvertTo-Json
 }finally{
     # Stop only the isolated server process created by this test.

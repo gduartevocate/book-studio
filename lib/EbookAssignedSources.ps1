@@ -96,7 +96,7 @@ function Test-EbookAssignedSources {
         $chapterMatches = @($chapters | Where-Object { [int]$_.Groups['n'].Value -eq $n })
         if ($chapterMatches.Count -ne 1) { [void]$issues.Add("Week ${n}: missing or duplicate manuscript chapter."); continue }
         $chapter = $chapterMatches[0].Value
-        $split = [regex]::Split($chapter, '(?m)^## Scholarly Sources\s*\r?\n', 2)
+        $split = [regex]::Split($chapter, '(?m)^#{2,3} Scholarly Sources\s*\r?\n', 2)
         $body = $split[0]
         $notes = if ($split.Count -eq 2) { $split[1] } else { '' }
         $noteMap = @{}
@@ -145,6 +145,7 @@ function Test-EbookAssignedSources {
 
 function Test-EbookAssignedSourcePackage {
     param([object]$Course, [object]$Plan, [string]$Markdown, [string]$OutputFolder)
+    if ($Plan.sourceMode -eq 'Assigned') { return Get-EbookRequiredSourceReview -Plan $Plan -OutputFolder $OutputFolder -Markdown $Markdown }
     if (-not $OutputFolder) {
         return [pscustomobject]@{status=$(if($Plan.assignedReadingListRequired){'FAIL'}else{'PASS'});detail='No package folder supplied for assigned-source verification.';applicable=[bool]$Plan.assignedReadingListRequired}
     }

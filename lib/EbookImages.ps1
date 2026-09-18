@@ -33,6 +33,21 @@ function Resolve-EbookImagePath {
     return Join-Path $OutputFolder $RelativePath
 }
 
+function Get-EbookImageDirection {
+    param([object]$Settings)
+    if (-not $Settings) { return [pscustomobject]@{instruction='';hash=''} }
+    $scene=switch ($Settings.context) {
+        'Healthcare' { 'Use a healthcare setting, with appropriate clinical or healthcare-administration context.' }
+        'Business' { 'Use a nonclinical business setting: offices, retail, customer service, or business teams. Avoid hospitals, scrubs, stethoscopes, patients, and clinical imagery.' }
+        'Custom' { 'Use the custom scene instructions below.' }
+        default { 'Use a neutral, everyday, nonclinical setting. Do not default to healthcare, hospitals, scrubs, stethoscopes, or patients.' }
+    }
+    $instruction="$scene Preserve the chapter learning concept; this setting controls the visual scene, not the course subject. Additional image instructions: $($Settings.instructions)"
+    $sha=[Security.Cryptography.SHA256]::Create()
+    try { $hash=[BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($instruction))).Replace('-','') } finally { $sha.Dispose() }
+    [pscustomobject]@{instruction=$instruction;hash=$hash}
+}
+
 function Get-EbookImagePlan {
     param([string]$OutputFolder)
     $plan = Get-Content -LiteralPath (Join-Path $OutputFolder 'engagement-plan.json') -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json
@@ -44,6 +59,14 @@ function Get-EbookImagePlan {
     if (Test-Path -LiteralPath $bookPlanPath) {
         $bookPlan = Get-Content -LiteralPath $bookPlanPath -Raw -Encoding UTF8 | ConvertFrom-Json
         if ((@($bookPlan.chapters.number | Sort-Object) -join ',') -ne (@($items.chapterNumber | Sort-Object) -join ',')) { throw 'Image plan does not cover every book chapter.' }
+        $direction=Get-EbookImageDirection $bookPlan.imageSettings
+        foreach ($item in $items) {
+            $item | Add-Member -NotePropertyName imageDirectionHash -NotePropertyValue $direction.hash -Force
+            if ($direction.instruction) {
+                $chapter=@($bookPlan.chapters | Where-Object number -eq $item.chapterNumber)[0]
+                $item | Add-Member -NotePropertyName openerImagePrompt -NotePropertyValue "Create a professional photographic/editorial chapter banner for '$($item.chapterTitle)'. Learning objectives: $($chapter.learningTargets -join '; '). $($direction.instruction) Wide landscape; no text, logos, watermarks, diagrams, or clip-art." -Force
+            }
+        }
     }
     return $items
 }
@@ -64,6 +87,7 @@ function Get-EbookImageProductionReview {
                 $records = @($manifest.images | Where-Object { $_.chapterNumber -eq $item.chapterNumber })
                 if (-not $manifest -or $manifest.schemaVersion -ne 1 -or $records.Count -ne 1) { throw 'No unique image-generation receipt. Existing drawings are unverified, not finished artwork.' }
                 $entry = $records[0]
+                if ($item.imageDirectionHash -and $entry.imageDirectionHash -ne $item.imageDirectionHash) { throw 'Saved image setting changed. Generate images for the saved setting; rebuilding alone does not change artwork.' }
                 if ($entry.status -ne 'Generated' -or $entry.provider -ne 'codex-imagegen' -or $entry.relativePath -cne $item.openerImageFile -or $entry.chapterTitle -cne $item.chapterTitle) { throw 'Image production is pending, failed, or assigned to another chapter.' }
                 if (-not [IO.File]::Exists((Get-EbookImageNativePath $path))) { throw 'Generated image file is missing.' }
                 if ($entry.sha256 -notmatch '^[a-fA-F0-9]{64}$' -or (Get-EbookImageHash $path) -ne $entry.sha256) { throw 'Image changed since its generation receipt; regenerate or review it again.' }
@@ -72,6 +96,7 @@ function Get-EbookImageProductionReview {
                 $receiptPath = Join-Path $OutputFolder $entry.receiptFile
                 if (-not (Test-Path -LiteralPath $receiptPath) -or (Get-FileHash -LiteralPath $receiptPath -Algorithm SHA256).Hash -ne $entry.receiptSha256) { throw 'Image-generation receipt is missing or changed.' }
                 $receipt = Get-Content -LiteralPath $receiptPath -Raw -Encoding UTF8 | ConvertFrom-Json
+                if ($item.imageDirectionHash -and $receipt.imageDirectionHash -ne $item.imageDirectionHash) { throw 'Image receipt belongs to a different scene setting.' }
                 if ($receipt.tool -ne 'imagegen' -or $receipt.sourcePath -cne $entry.sourcePath -or $receipt.sha256 -ne $entry.sha256 -or -not $receipt.evidence -or $receipt.evidenceKind -notin @('codex-tool-event','observed-builtin-tool-result')) { throw 'Invalid image-generation evidence.' }
                 Assert-EbookImageRaster $path
             } catch { $detail = $_.Exception.Message }
@@ -125,8 +150,9 @@ function Register-EbookGeneratedImage {
     [IO.File]::Copy((Get-EbookImageNativePath $source), (Get-EbookImageNativePath $target), $true)
     $receiptFile = "image-receipts/$ChapterNumber-$([guid]::NewGuid().ToString('N').Substring(0,8)).json"
     $receiptPath = Join-Path $OutputFolder $receiptFile
-    [pscustomobject]@{tool='imagegen';sourcePath=$source;sha256=$hash;prompt=$Prompt;evidence=$Evidence;evidenceKind=$EvidenceKind;recordedAt=(Get-Date).ToString('o')} | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath $receiptPath -Encoding UTF8
+    [pscustomobject]@{tool='imagegen';sourcePath=$source;sha256=$hash;prompt=$Prompt;imageDirectionHash=$item.imageDirectionHash;evidence=$Evidence;evidenceKind=$EvidenceKind;recordedAt=(Get-Date).ToString('o')} | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath $receiptPath -Encoding UTF8
     $record = [pscustomobject]@{chapterNumber=$ChapterNumber;chapterTitle=$item.chapterTitle;relativePath=$item.openerImageFile;status='Generated';provider='codex-imagegen';sha256=$hash;sourceSha256=$hash;sourcePath=$source;receiptFile=$receiptFile;receiptSha256=(Get-FileHash -LiteralPath $receiptPath -Algorithm SHA256).Hash;visualReview='Pending';generatedAt=(Get-Date).ToString('o')}
+    $record | Add-Member -NotePropertyName imageDirectionHash -NotePropertyValue $item.imageDirectionHash
     $manifest.images = @($manifest.images | Where-Object chapterNumber -ne $ChapterNumber) + @($record)
     $manifest | ConvertTo-Json -Depth 15 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
     $planPath = Join-Path $OutputFolder 'engagement-plan.json'

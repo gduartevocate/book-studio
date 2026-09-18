@@ -1,5 +1,14 @@
 # Book Studio ID Changelog
 
+## v2026.09.18.5 (2026-09-18)
+
+- Required-reading mode extracts weekly links from the blueprint, including embedded Word hyperlinks, and accepts additional designer-specified URLs. The blueprint is not a scholarly source. Uploaded-only mode now requires separate teaching evidence.
+- New and existing books have source-list and image-setting controls. Save settings explicitly; check required sources in a background task before asking Codex to revise existing teaching and citations. Per-reading reports show retrieved text or the reason a link was blocked.
+- Retrieve actual article/PDF text into hashed source snapshots before drafting. Reject private-network URLs, title-only assignments, unavailable content, and OpenStax landing pages that need chapter links. PDF retrieval requires Poppler pdftotext; missing dependencies are reported, not silently bypassed.
+- Required-source QA checks chapter assignments, retrieved-text hashes, exact bibliography URLs, and linked body citations. It rejects blueprint bibliography entries and unassigned sources. Human review still verifies claim accuracy and permissions.
+- Choose Generic, Healthcare, Business, or Custom image settings and additional instructions. Explicitly generate missing/changed images for the saved setting without redrafting chapters. Old images are backed up; old-setting receipts cannot count as newly generated artwork.
+- QA now shows remaining findings, corrects false failures for supported Scholarly Sources headings, and excludes bibliography prose from readability checks. Rebuild completion no longer leaves a stale Full generation failed workflow label; genuine failures remain visible.
+
 ## v2026.09.18.4 (2026-09-18)
 
 - Normalize equivalent section headings, Business Case labels, modeled-artifact/toolbox labels, and immediate synthesis wrappers without replacing manuscript prose. Back up the original before saving normalized text.

@@ -9,6 +9,7 @@
 . (Join-Path $PSScriptRoot 'EbookPublicationTemplate.ps1')
 . (Join-Path $PSScriptRoot 'EbookReadiness.ps1')
 . (Join-Path $PSScriptRoot 'EbookUploadedSources.ps1')
+. (Join-Path $PSScriptRoot 'EbookRequiredReadings.ps1')
 
 function ConvertTo-EbookProgressField {
     param([AllowNull()][string]$Value)
@@ -3072,16 +3073,24 @@ function Resolve-EbookSources {
         [int]$MaxResearchPerChapter = 3,
         [switch]$SkipResearch,
         [switch]$SkipOpenStaxFetch,
-        [ValidateSet('Discovery','UploadedOnly')][string]$SourceMode='Discovery'
+        [ValidateSet('Discovery','UploadedOnly','Assigned')][string]$SourceMode='Discovery',
+        [string]$SourceOutputFolder
     )
 
     Initialize-EbookGeneratorRuntime
+    if ($SourceMode -eq 'Assigned') {
+        if (-not $SourceOutputFolder) { throw 'A package folder is required to record assigned-source retrieval.' }
+        $report = Update-EbookRequiredSourceEvidence -Plan $Plan -OutputFolder $SourceOutputFolder
+        if ($report.status -ne 'PASS') { throw "Required source retrieval failed before drafting. $($report.issues -join ' ') See required-source-report.md. The blueprint will not be substituted." }
+        return @(New-EbookRequiredSourceBrief -Plan $Plan -OutputFolder $SourceOutputFolder -SourceContext $SourceContext)
+    }
     $sourceMap = if($SourceMode -eq 'Discovery'){Get-Content -LiteralPath $SourceMapPath -Raw | ConvertFrom-Json}else{$null}
     $chapterSources = New-Object System.Collections.ArrayList
 
     foreach ($chapter in $Plan.chapters) {
         if($SourceMode -eq 'UploadedOnly'){
-            $contextMatches=@(Find-SourceContextForChapter -Chapter $chapter -SourceContext $SourceContext -AllMatches)
+            $excluded=@($SourceContext.files | Where-Object { $_.isCourseSpec -or $_.name -match '^book-studio-(brief|format-review)\.' } | ForEach-Object path)
+            $contextMatches=@(Find-SourceContextForChapter -Chapter $chapter -SourceContext $SourceContext -AllMatches | Where-Object { $_.sourceFile -notin $excluded })
             if(-not $contextMatches.Count){throw "No uploaded teaching content maps to chapter $($chapter.number). Revise the blueprint/source documents before generation."}
             [void]$chapterSources.Add([pscustomobject]@{chapterNumber=$chapter.number;chapterTitle=$chapter.title;sourcePolicy=[pscustomobject]@{mode='UploadedOnly';summary='Use only the accepted uploaded documents. No external discovery or added source links. Human review must confirm coverage and attribution.'};sourceContext=$contextMatches;openStax=@();researchCandidates=@()})
             continue
@@ -4899,6 +4908,8 @@ function Get-DraftPlanFromBlueprint {
         generatedAt = $Plan.generatedAt
         planVersion = "$($Plan.planVersion)-approved-outline"
         sourceMode = $Plan.sourceMode
+        requiredReadings = @($Plan.requiredReadings)
+        imageSettings = $Plan.imageSettings
         courseCode = $Plan.courseCode
         narrativeSpine = $Plan.narrativeSpine
         chapters = @($draftChapters)
@@ -5223,7 +5234,7 @@ function Get-ChapterCitationModel {
     }
 
     $index = 1
-    foreach ($item in @($ChapterSources.researchCandidates | Where-Object { $_.title -and $_.title -ne "OpenAlex search failed" } | Select-Object -First 5)) {
+    foreach ($item in @($ChapterSources.researchCandidates | Where-Object { $_.title -and $_.title -ne "OpenAlex search failed" } | Select-Object -First $(if($ChapterSources.sourcePolicy.mode -eq 'Assigned'){60}else{5}))) {
         $title = ConvertTo-CleanText ($item.title -replace "<[^>]+>", "")
         $label = $title
         if ($item.year) { $label += " ($($item.year))" }
@@ -5242,7 +5253,7 @@ function Get-ChapterCitationModel {
             year = $item.year
             source = $item.source
             url = $item.url
-            excerpt = $item.note
+            excerpt = $(if($ChapterSources.sourcePolicy.mode -eq 'Assigned'){$item.preview}else{$item.note})
             sourceKey = $key
         })
         $index++
@@ -5317,7 +5328,7 @@ function New-SourceRegistry {
                     sourceName = $research.source
                     sourceFile = ""
                     chunkId = ""
-                    note = "Research source selected during discovery; verify fit during SME review."
+                    note = $(if($source.sourcePolicy.mode -eq 'Assigned'){'Designer-assigned reading; retrieved text is in source-readings. Verify claims and permissions during SME review.'}else{'Research source selected during discovery; verify fit during SME review.'})
                     sortOrder = 2000 + $researchIndex
                     chapters = New-Object System.Collections.ArrayList
                 }
@@ -8424,6 +8435,9 @@ function Get-SourceFitSignals {
         [object]$ChapterSources
     )
 
+    if ($ChapterSources.sourcePolicy.mode -eq 'Assigned') {
+        return [pscustomobject]@{status='PASS';fitCount=@($ChapterSources.assignedSources).Count;applicable=$false;detail='The explicit assigned-reading list governs this chapter; retrieval and citation coverage are checked separately. Academic fit needs human review.'}
+    }
     if ($ChapterSources -and $ChapterSources.sourcePolicy -and $ChapterSources.sourcePolicy.mode -eq 'UploadedOnly') {
         return [pscustomobject]@{
             status = "WARNING"
@@ -8646,7 +8660,7 @@ function Get-PlainTextForStyleGuideCheck {
     $filteredLines = New-Object System.Collections.ArrayList
     $inReferences = $false
     foreach ($line in ([string]$Markdown -split "`r?`n")) {
-        if ($line -match "^##\s+(References and Further Reading|Notes|Numbered Scholarly Notes|Scholarly Sources)") {
+        if ($line -match "^#{2,3}\s+(References and Further Reading|Notes|Numbered Scholarly Notes|Scholarly Sources)") {
             $inReferences = $true
             continue
         }
@@ -8680,7 +8694,7 @@ function Get-ProseIntegritySignals {
     $proseLines = New-Object System.Collections.ArrayList
     $inReferences = $false
     foreach ($line in ([string]$Markdown -split "`r?`n")) {
-        if ($line -match "^##\s+(References and Further Reading|Notes|Numbered Scholarly Notes|Scholarly Sources)") {
+        if ($line -match "^#{2,3}\s+(References and Further Reading|Notes|Numbered Scholarly Notes|Scholarly Sources)") {
             $inReferences = $true
             continue
         }
@@ -9190,7 +9204,7 @@ function New-EbookQualityReport {
         $hasFieldGuide = $chapterText -match "(?im)^#{2,4}\s+.*(Field Guide|Communication Toolbox|Professional Toolbox|Toolbox|Team Leadership Plan)\b"
         $hasSynthesis = $chapterText -match "(?im)^#{2,4}\s+(.+\s+)?(Synthesis|Chapter Summary)\b" -or $chapterText -match "(?im)^##\s+Section\s+\d+\.4\s+-\s+Integrating\b"
         $hasKeyTakeaways = $chapterText -match "(?im)^#{2,4}\s+Key Takeaways\b"
-        $hasNumberedNotes = $chapterText -match "(?im)^##\s+.*(Numbered Notes|Scholarly Sources|Notes)\b"
+        $hasNumberedNotes = $chapterText -match "(?im)^#{2,3}\s+.*(Numbered Notes|Scholarly Sources|Notes)\b"
         $hasQuickVisualCheck = $chapterText -match "(?im)^##\s+Quick Visual Check\b|^!\[[^\]]*quick visual check[^\]]*\]"
         # Visual plans use course-specific alt text, so the gate must not rely
         # on a short list of asset names. Once a chapter has an opener, a
@@ -9216,8 +9230,8 @@ function New-EbookQualityReport {
         })
         [void]$checks.Add([pscustomobject]@{
             name = "openstax_grounding"
-            status = if ($uploadedEvidence -or ($chapterSources -and @(@($chapterSources.openStax) + @($chapterSources.oer) | Where-Object { $_ -and $_.url }).Count -gt 0)) { "PASS" } else { "FAIL" }
-            detail = if ($uploadedEvidence) { 'Uploaded-only source contract verified; no external OER is required or added.' } else { "$(@($chapterSources.openStax | Where-Object { $_ -and $_.url }).Count) OpenStax page(s); $(@($chapterSources.oer | Where-Object { $_ -and $_.url }).Count) other OER page(s)" }
+            status = if ($uploadedEvidence -or ($chapterSources.sourcePolicy.mode -eq 'Assigned' -and @($chapterSources.assignedSources).Count) -or ($chapterSources -and @(@($chapterSources.openStax) + @($chapterSources.oer) | Where-Object { $_ -and $_.url }).Count -gt 0)) { "PASS" } else { "FAIL" }
+            detail = if ($uploadedEvidence) { 'Uploaded-only source contract verified; no external OER is required or added.' } elseif ($chapterSources.sourcePolicy.mode -eq 'Assigned') { 'Explicit assigned readings replace automatic OpenStax discovery. The required-source gate verifies retrieval and citations.' } else { "$(@($chapterSources.openStax | Where-Object { $_ -and $_.url }).Count) OpenStax page(s); $(@($chapterSources.oer | Where-Object { $_ -and $_.url }).Count) other OER page(s)" }
         })
         [void]$checks.Add([pscustomobject]@{
             name = "research_candidates"
@@ -12827,4 +12841,5 @@ function Export-EbookPackage {
 
 Export-ModuleMember -Function Import-CourseSpec, Import-SourceContext, Import-BrandProfile, New-EbookPlan, Merge-EbookReviewedOutline, Resolve-EbookSources, New-EbookBlueprintPackage, Export-EbookBlueprintPackage, New-EbookPackage, Export-EbookPackage, Repair-EbookPackageOutputs, Get-ProhibitedKnowledgeCheckSignals, Remove-ProhibitedKnowledgeCheckSections, Get-ProhibitedLearnerSectionSignals, Remove-ProhibitedLearnerSections, Test-EbookObjectiveTraceability, Test-EbookReleaseArtifacts, Test-EbookAssignedSources, Test-EbookAssignedSourcePackage, Get-EbookTemplateInstructions, Get-EbookPublicationTemplate, Test-EbookPublicationTemplate
 Export-ModuleMember -Function Test-EbookManuscriptPreflight, Update-EbookManuscriptPreflight
+Export-ModuleMember -Function Get-EbookBlueprintReadingText, ConvertFrom-EbookReadingList, ConvertTo-EbookReadingListText, Update-EbookRequiredSourceEvidence, Get-EbookRequiredSourceReview, New-EbookRequiredSourceBrief, ConvertTo-SafePathPart
 

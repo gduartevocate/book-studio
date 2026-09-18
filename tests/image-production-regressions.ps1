@@ -31,6 +31,19 @@ Check ($review.status -eq 'FAIL' -and $review.generatedCount -eq 1 -and $review.
 Reject { Add-EbookGeneratedOpeners $fixture (Join-Path $fixture 'QA - E-Book.md') } 'incomplete'
 $null=Register-EbookGeneratedImage $fixture 2 $second 'Synthetic fixture only' 'TEST TOOL RECEIPT test-2.png' -EvidenceKind observed-builtin-tool-result
 Check ((Get-EbookImageProductionReview $fixture).status -eq 'PASS') 'Complete, internally consistent test receipts did not pass.'
+$imagePlan=Get-Content -LiteralPath (Join-Path $fixture 'ebook-plan.json') -Raw | ConvertFrom-Json
+$imagePlan | Add-Member -NotePropertyName imageSettings -NotePropertyValue ([pscustomobject]@{context='Business';instructions='Use office teams.'})
+SaveJson $imagePlan 'ebook-plan.json'
+$directed=@(Get-EbookImagePlan $fixture)
+Check ($directed[0].openerImagePrompt -match 'nonclinical business' -and $directed[0].openerImagePrompt -match 'Use office teams' -and $directed[0].imageDirectionHash) 'Saved image scene did not override old prompts.'
+Check ((Get-EbookImageProductionReview $fixture).status -eq 'FAIL') 'Old images passed after scene settings changed.'
+foreach($n in 1..2){$null=Register-EbookGeneratedImage $fixture $n (Join-Path $fixture "generated_images/test-$n.png") 'Synthetic fixture only' "TEST TOOL RECEIPT test-$n.png" -EvidenceKind observed-builtin-tool-result}
+Check ((Get-EbookImageProductionReview $fixture).status -eq 'PASS') 'New scene receipts failed verification.'
+$oldDirection=$directed[0].imageDirectionHash
+$imagePlan.imageSettings.context='Healthcare';SaveJson $imagePlan 'ebook-plan.json'
+Check ((Get-EbookImageProductionReview $fixture).status -eq 'FAIL' -and (Get-EbookImagePlan $fixture)[0].imageDirectionHash -ne $oldDirection) 'Scene change reused a previous receipt/hash.'
+$imagePlan.imageSettings.context='Business';SaveJson $imagePlan 'ebook-plan.json'
+Check ((Get-EbookImageDirection ([pscustomobject]@{context='Generic';instructions=''})).instruction -match 'neutral, everyday, nonclinical') 'Generic images defaulted to clinical scenes.'
 Check ((Get-EbookImageExportReview $fixture).status -eq 'FAIL') 'Missing actual deliverables passed.'
 $manifestPath=Join-Path $fixture 'image-production.json'
 $manifest=Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json

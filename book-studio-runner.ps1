@@ -141,6 +141,7 @@ function Get-RunnerArtifactSpecs {
         @{ name = "Codex drafting prompt"; fileName = "codex-drafting-prompt.md" },
         @{ name = "Codex drafting response"; fileName = "codex-drafting-response.md" },
         @{ name = "Manuscript preflight"; fileName = "manuscript-preflight.md" },
+        @{ name = "Required source retrieval"; fileName = "required-source-report.md" },
         @{ name = "Targeted format repair"; fileName = "codex-format-repair-report.md" },
         @{ name = "Targeted format repair log"; fileName = "codex-format-repair-error.log" },
         @{ name = "Codex drafting log"; fileName = "codex-drafting-error.log" },
@@ -757,6 +758,11 @@ try {
     $useCodexImages = if ($job.options.PSObject.Properties.Name -contains "useCodexImages") { [bool]$job.options.useCodexImages } else { $true }
     $resumeImages = $false
     $resumeFolder = Get-LatestRunnerOutputFolder -OutputRoot $outputRoot
+    if ($RunMode -eq 'Full' -and $job.options.savedImageRetry) {
+        $resumeFolder=Get-Item -LiteralPath $job.outputFolder -ErrorAction Stop
+        [pscustomobject]@{status='Incomplete';failure='Generate images for the saved scene setting.'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $resumeFolder.FullName 'image-production-run.json') -Encoding UTF8
+        Update-BookStudioJob -DatabasePath $DatabasePath -JobId $JobId -Update { param($current) $current.options.savedImageRetry=$false }
+    }
     if ($RunMode -eq 'Full' -and $useCodexImages -and $resumeFolder -and (Test-Path -LiteralPath (Join-Path $resumeFolder.FullName 'image-production-run.json'))) {
         $imageRun = Get-Content -LiteralPath (Join-Path $resumeFolder.FullName 'image-production-run.json') -Raw -Encoding UTF8 | ConvertFrom-Json
         if ($imageRun.status -eq 'Incomplete') {
