@@ -272,6 +272,23 @@ function Invoke-EbookCodexDraftingPass {
     $reportPath = Join-Path $outputFolder "codex-drafting-report.md"
 
     $markdownFileName = [System.IO.Path]::GetFileName($markdownPath)
+    # Per-chapter writer guidance entered by the instructional designer in the
+    # outline editor. It is direction for the draft, never learner-facing text.
+    $guidanceSection = ""
+    $planPath = Join-Path $outputFolder "ebook-plan.json"
+    if (Test-Path -LiteralPath $planPath -PathType Leaf) {
+        try {
+            $plan = Get-Content -LiteralPath $planPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            $guidanceLines = @(
+                $plan.chapters | Sort-Object { [int]$_.number } | Where-Object { $_.PSObject.Properties['guidance'] -and -not [string]::IsNullOrWhiteSpace([string]$_.guidance) } |
+                    ForEach-Object { "- Chapter $($_.number) ($($_.title)): $(([string]$_.guidance) -replace '\s+', ' ')" }
+            )
+            if ($guidanceLines.Count -gt 0) {
+                $guidanceSection = "`n## Designer Guidance By Chapter`n`nThe instructional designer wrote this direction for each chapter. Follow it while keeping the objectives, sources, and format standard unchanged. Do not quote it in the book.`n`n" + ($guidanceLines -join "`n") + "`n"
+            }
+        }
+        catch { $guidanceSection = "" }
+    }
     $prompt = @"
 # Codex E-Book Drafting Pass
 
@@ -282,7 +299,7 @@ You are the AI authoring pass for Book Studio. The local generator has prepared 
 - Course code: $($Course.courseCode)
 - Course title: $($Course.courseName)
 - E-book Markdown to edit: $markdownFileName
-
+$guidanceSection
 ## Required Files To Inspect
 
 - `$markdownFileName`

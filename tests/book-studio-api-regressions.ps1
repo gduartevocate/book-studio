@@ -64,6 +64,9 @@ Week 2 Workflow Coordination
     $editedFocus="repeatable naming, filing, and retrieval of office records"
     $outline.chapters[0].title=$editedTitle
     $outline.chapters[0].focus=$editedFocus
+    $editedGuidance='Use a clinic front-desk example and keep the tone practical.'
+    $outline.chapters[0] | Add-Member -NotePropertyName guidance -NotePropertyValue $editedGuidance -Force
+    Check ($outline.editableFields -contains 'writer guidance' -and $outline.chapters[0].PSObject.Properties['guidance']) 'Outline editor API did not expose writer guidance.'
     $null=Post "/api/jobs/$($job.id)/outline" @{chapters=@($outline.chapters)}
     $job=@((Invoke-RestMethod "$base/api/jobs").jobs | Where-Object id -eq $job.id)[0]
     $updatedOutline=Invoke-RestMethod "$base/api/jobs/$($job.id)/outline"
@@ -71,6 +74,7 @@ Week 2 Workflow Coordination
     $updatedPlan=Get-Content -LiteralPath (Join-Path $job.outputFolder 'ebook-plan.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     Check ($beforeOutlineFingerprint -ne $job.formatState.fingerprint -and $updatedOutline.chapters[0].title -eq $editedTitle -and $updatedOutline.chapters[0].focus -eq $editedFocus -and $updatedPreview -match [regex]::Escape($editedTitle) -and $updatedPreview -match [regex]::Escape($editedFocus) -and $updatedPreview -match [regex]::Escape([string]$outline.chapters[0].objectives[0])) 'Saved outline edits did not regenerate the complete preview.'
     Check ((Get-Content -LiteralPath (Join-Path $job.sourceContextPath 'book-studio-reviewed-outline.json') -Raw -Encoding UTF8) -match [regex]::Escape($editedTitle) -and $updatedPlan.chapters[0].title -eq $editedTitle) 'Saved outline edits were not persisted for the full-generation runner.'
+    Check ($updatedOutline.chapters[0].guidance -eq $editedGuidance -and $updatedPlan.chapters[0].guidance -eq $editedGuidance) 'Writer guidance was not saved with the outline.'
     Check ($job.formatReview.status -eq 'Needs revision' -and [string]::IsNullOrWhiteSpace([string]$job.formatReview.fingerprint)) 'Outline editing did not clear the previous format approval.'
     $editedTitleForFullGeneration=$editedTitle
     $old=$job.formatState.fingerprint
@@ -90,6 +94,7 @@ Week 2 Workflow Coordination
     $generatedPlan=Get-Content -LiteralPath (Join-Path $job.outputFolder 'ebook-plan.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     Check ($generatedPlan.sourceMode -eq 'UploadedOnly' -and @($sourceBrief | Where-Object {$_.sourcePolicy.mode -ne 'UploadedOnly' -or @($_.openStax).Count -or @($_.researchCandidates).Count}).Count -eq 0) 'Source mode was lost in real full generation.'
     Check ($generatedPlan.chapters[0].title -eq $editedTitleForFullGeneration -and $generatedPlan.chapters[0].focus -eq $editedFocus) 'Full generation did not apply the saved instructional-designer outline.'
+    Check ($generatedPlan.chapters[0].guidance -eq $editedGuidance -and (Get-Content -LiteralPath (Join-Path $job.outputFolder 'ebook-outline.md') -Raw -Encoding UTF8) -match ('Designer guidance: ' + [regex]::Escape($editedGuidance))) 'Writer guidance did not reach the generated plan and outline.'
     Check (-not $job.qaSummary.draftReadyForReview) 'An unreviewed short-source scaffold was incorrectly marked ready.'
     Import-Module (Join-Path $fixture 'lib/EbookGenerator.psm1') -Force
     $word=Get-ChildItem -LiteralPath $job.outputFolder -Filter '* - E-Book.docx' | Select-Object -First 1

@@ -2825,6 +2825,9 @@ function Merge-EbookReviewedOutline {
         if (($objectives -join "`n") -ne ($baseObjectives -join "`n")) { throw "The reviewed outline changes the authoritative learning objectives for Chapter $([int]$base.number). Recreate the outline from the current course source." }
         $base.title = $title
         if (-not [string]::IsNullOrWhiteSpace([string]$edited.focus)) { $base.focus = ([string]$edited.focus).Trim() }
+        # Designer writer guidance rides along so the outline and drafting prompt carry it.
+        $editedGuidance = if ($edited.PSObject.Properties['guidance']) { ([string]$edited.guidance).Trim() } else { '' }
+        $base | Add-Member -NotePropertyName guidance -NotePropertyValue $editedGuidance -Force
         $base.learningTargets = @($objectives)
         # Keep objective IDs from the newly generated authoritative plan. Older
         # reviewed-outline files may contain blank IDs from the legacy parser.
@@ -4560,6 +4563,7 @@ function New-EbookBlueprint {
             proposedTitle = $proposedTitle
             sourceWeekTitle = $chapter.title
             focus = $chapter.focus
+            guidance = $(if ($chapter.PSObject.Properties['guidance']) { [string]$chapter.guidance } else { "" })
             keyConcepts = @($keyConcepts)
             learningTargets = @($chapter.learningTargets)
             sections = @($sections)
@@ -4680,6 +4684,10 @@ function ConvertTo-EbookOutlineMarkdown {
     foreach ($chapter in @($Blueprint.ebookOutline.chapters)) {
         [void]$lines.Add("$($chapter.roman). Chapter $($chapter.number): $($chapter.proposedTitle)")
         [void]$lines.Add("")
+        if ($chapter.PSObject.Properties['guidance'] -and -not [string]::IsNullOrWhiteSpace([string]$chapter.guidance)) {
+            [void]$lines.Add("Designer guidance: $(([string]$chapter.guidance) -replace '\s+', ' ')")
+            [void]$lines.Add("")
+        }
         [void]$lines.Add("Chapter $($chapter.number) Key Concepts")
         foreach ($concept in @($chapter.keyConcepts | Select-Object -First 10)) {
             [void]$lines.Add("- $concept")

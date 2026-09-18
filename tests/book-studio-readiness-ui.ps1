@@ -48,6 +48,13 @@ try {
   const approve = [...panel.querySelectorAll('button')].find(button => button.textContent.startsWith('Approve format'));
   approve.click(); // Must fail locally until the review checkbox is confirmed.
   if (!panel.textContent.includes('confirm the checkbox before approval')) throw new Error('Unchecked review was not blocked');
+  const parserSource = source.match(/function parseSuggestedOutlineChanges\(text\) \{[\s\S]*?\n\}(?=\r?\n)/);
+  if (!parserSource) throw new Error('Outline suggestion parser missing');
+  const parse = new Function(parserSource[0] + '; return parseSuggestedOutlineChanges;')();
+  const reply = 'Recommendations...\n\nSUGGESTED OUTLINE CHANGES\nChapter 2 title: Claims That Get Paid\nChapter 2 focus: clean claim submission and payer rules\n- Chapter 2 guidance: Use one clinic scenario throughout.\nContinue it into the toolbox.\nChapter 9 title: Ignored later\nEND SUGGESTED OUTLINE CHANGES\nThanks.';
+  const parsed = parse(reply);
+  if (parsed.length !== 4 || parsed[0].number !== 2 || parsed[0].field !== 'title' || parsed[1].value !== 'clean claim submission and payer rules' || parsed[2].value !== 'Use one clinic scenario throughout. Continue it into the toolbox.') throw new Error('Outline suggestion block was not parsed: ' + JSON.stringify(parsed));
+  if (parse('No block here').length !== 0) throw new Error('A reply without a block must yield no suggestions');
   const sourceChoice = source.match(/function refreshSourceChoices\(\) \{[\s\S]*?\n\}(?=\r?\nform\.elements\.files)/);
   if (!sourceChoice) throw new Error('Actual source-selection function missing');
   const primary = document.createElement('select'); primary.id='primarySourceSelect'; document.body.append(primary);

@@ -375,6 +375,48 @@ function getWorkflowRunMode(job) {
   return getWorkflowStage(job) === "format-review" ? "Blueprint" : "Full";
 }
 
+// Live outline editors by job, so a Codex suggestion can be loaded into the fields.
+const outlineEditors = new Map();
+
+function parseSuggestedOutlineChanges(text) {
+  // Codex ends a format-review reply with:
+  //   SUGGESTED OUTLINE CHANGES / Chapter N title|focus|guidance: ... / END SUGGESTED OUTLINE CHANGES
+  const match = /SUGGESTED OUTLINE CHANGES\s*\r?\n([\s\S]*?)(?:\r?\nEND SUGGESTED OUTLINE CHANGES|$)/i.exec(text || "");
+  if (!match) return [];
+  const changes = [];
+  let current = null;
+  for (const rawLine of match[1].split(/\r?\n/)) {
+    const line = rawLine.replace(/^[-*\s]+/, "").trim();
+    const field = /^Chapter\s+(\d+)\s+(title|focus|guidance)\s*:\s*(.*)$/i.exec(line);
+    if (field) {
+      current = { number: Number(field[1]), field: field[2].toLowerCase(), value: field[3].trim() };
+      changes.push(current);
+    } else if (current && line && current.field === "guidance") {
+      current.value = `${current.value} ${line}`.trim();
+    }
+  }
+  return changes.filter((change) => change.value);
+}
+
+function applySuggestedOutlineChanges(jobId, changes) {
+  const editor = outlineEditors.get(jobId);
+  if (!editor || !editor.container.isConnected) return "Open this book's format review to load suggestions into the outline editor.";
+  let applied = 0;
+  for (const change of changes) {
+    const field = editor.fields.find((entry) => entry.number === change.number);
+    if (!field) continue;
+    const input = change.field === "title" ? field.titleInput : change.field === "focus" ? field.focusInput : field.guidanceInput;
+    input.value = change.value;
+    input.classList.add("outline-suggested");
+    applied += 1;
+  }
+  editor.status.textContent = applied
+    ? `${applied} suggested change(s) loaded. Review them, then click Save outline & regenerate preview.`
+    : "The suggestions did not match this book's chapters.";
+  editor.container.scrollIntoView({ behavior: "smooth", block: "start" });
+  return "";
+}
+
 function renderOutlineEditor(container, job, outline) {
   container.textContent = "";
   const heading = makeElement("div", "outline-editor-heading");
@@ -415,6 +457,16 @@ function renderOutlineEditor(container, job, outline) {
     focusLabel.append(focusInput);
     card.append(focusLabel);
 
+    const guidanceLabel = document.createElement("label");
+    guidanceLabel.append(makeElement("span", "", "Guidance for the writer (optional)"));
+    const guidanceInput = document.createElement("textarea");
+    guidanceInput.rows = 3;
+    guidanceInput.maxLength = 2000;
+    guidanceInput.placeholder = "Emphasis, examples to use or avoid, tone, depth, terminology. Codex follows this while drafting; it is never printed in the book.";
+    guidanceInput.value = chapter.guidance || "";
+    guidanceLabel.append(guidanceInput);
+    card.append(guidanceLabel);
+
     const objectiveLabel = document.createElement("label");
     objectiveLabel.append(makeElement("span", "", "Source learning objectives (locked)"));
     const objectiveInput = document.createElement("textarea");
@@ -429,7 +481,7 @@ function renderOutlineEditor(container, job, outline) {
     objectiveInput.setAttribute("aria-describedby", objectiveHint.id);
     card.append(objectiveHint);
     form.append(card);
-    fields.push({ number: chapter.number, titleInput, focusInput, objectiveInput });
+    fields.push({ number: chapter.number, titleInput, focusInput, guidanceInput, objectiveInput });
   }
 
   const actions = makeElement("div", "outline-editor-actions");
@@ -440,6 +492,7 @@ function renderOutlineEditor(container, job, outline) {
   actions.append(save, status);
   form.append(actions);
   container.append(form);
+  outlineEditors.set(job.id, { fields, form, status, container });
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -447,6 +500,7 @@ function renderOutlineEditor(container, job, outline) {
       number: field.number,
       title: field.titleInput.value.trim(),
       focus: field.focusInput.value.trim(),
+      guidance: field.guidanceInput.value.trim(),
       objectives: field.objectiveInput.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean)
     }));
     if (chapters.some((chapter) => !chapter.title || !chapter.focus || !chapter.objectives.length)) {
@@ -1843,6 +1897,19 @@ function renderAiRequestList(container, requests, options = {}) {
       const response = makeElement("pre", "ai-response-text");
       response.textContent = request.responsePreview;
       codexBubble.append(response);
+      const suggestions = parseSuggestedOutlineChanges(request.responsePreview);
+      if (suggestions.length) {
+        const apply = makeElement("button", "secondary outline-apply-button", `Load ${suggestions.length} suggested outline change(s) into the editor`);
+        apply.type = "button";
+        const applyStatus = makeElement("span", "hint", "");
+        apply.addEventListener("click", () => {
+          const job = getSelectedBookChatJob();
+          applyStatus.textContent = job ? applySuggestedOutlineChanges(job.id, suggestions) : "Select the book first.";
+        });
+        const applyRow = makeElement("div", "outline-apply-row");
+        applyRow.append(apply, applyStatus);
+        codexBubble.append(applyRow);
+      }
     } else if (request.status === "Running") {
       codexBubble.append(renderAiProgressCard(request, elapsed));
     } else {

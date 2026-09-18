@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.18.2 (2026-09-18)
+
+- Outline editor gains Guidance for the writer per chapter, carried into the outline and Codex drafting. Review with Codex at format review knows the planned outline and can hand back suggested title, focus, and guidance changes that load into the editor with one click.
+
 ## v2026.09.18.1 (2026-09-18)
 
 - Book packages now stay under Windows' 260-character path limit (capped folder names, shorter request files) and Codex chats on long install paths no longer fail; Settings shows an Install location check with a warning for long or OneDrive paths.

@@ -2631,3 +2631,8 @@ button:disabled {
   .wizard-progress ol { grid-template-columns: 1fr; gap: 6px; }
   .wizard-progress li { border-top-width: 2px; }
 }
+
+/* Codex outline suggestions loaded into the outline editor */
+.outline-suggested { border-color: var(--warning) !important; background: #fff7e8; }
+.outline-apply-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px; }
+.outline-apply-row .hint { margin: 0; }

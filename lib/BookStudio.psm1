@@ -1143,13 +1143,14 @@ function Get-BookStudioOutline {
             number = [int]$_.number
             title = [string]$_.title
             focus = [string]$_.focus
+            guidance = $(if ($_.PSObject.Properties['guidance']) { [string]$_.guidance } else { '' })
             objectives = @(Get-BookStudioOutlineChapterObjectives -Chapter $_)
         }
     })
     return [pscustomobject]@{
         jobId = $JobId
         planVersion = [string]$plan.planVersion
-        editableFields = @('chapter title', 'chapter focus')
+        editableFields = @('chapter title', 'chapter focus', 'writer guidance')
         fixedFields = @('chapter order', 'chapter count', 'source assignments', 'source learning objectives')
         chapters = $chapters
     }
@@ -1196,6 +1197,11 @@ function Set-BookStudioOutline {
         }
         $existing.title = $title
         $existing.focus = $focus
+        # Writer guidance is the designer's own direction for this chapter. It
+        # travels with the plan into the outline and Codex's drafting prompt.
+        $guidance = if ($incoming.PSObject.Properties['guidance']) { ([string]$incoming.guidance).Trim() } else { '' }
+        if ($guidance.Length -gt 2000) { throw "Chapter $number guidance is limited to 2,000 characters." }
+        Add-OrSet-BookStudioNoteProperty -InputObject $existing -Name 'guidance' -Value $guidance
         [void]$updatedChapters.Add($existing)
     }
 
@@ -4077,6 +4083,42 @@ $chapterMarkdown
         "Do not edit files. Provide a clear response with recommended changes, replacement text, or a revision plan that the instructional designer can apply."
     }
 
+    # The planned outline is what the designer can shape before drafting:
+    # chapter titles, focus, and writer guidance. Objectives and the section
+    # standard are fixed. At format review, ask Codex to end with a block the
+    # app can load straight into the outline editor.
+    $outlineLines = New-Object System.Collections.ArrayList
+    $planPath = Join-Path $job.outputFolder 'ebook-plan.json'
+    if (Test-Path -LiteralPath $planPath -PathType Leaf) {
+        try {
+            $plan = Get-Content -LiteralPath $planPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            foreach ($planChapter in @($plan.chapters | Sort-Object { [int]$_.number })) {
+                $objectives = @(Get-BookStudioOutlineChapterObjectives -Chapter $planChapter)
+                $guidance = if ($planChapter.PSObject.Properties['guidance'] -and $planChapter.guidance) { [string]$planChapter.guidance } else { '(none yet)' }
+                [void]$outlineLines.Add("- Chapter $($planChapter.number): $($planChapter.title)")
+                [void]$outlineLines.Add("  - Focus: $($planChapter.focus)")
+                [void]$outlineLines.Add("  - Writer guidance: $guidance")
+                [void]$outlineLines.Add("  - Objectives (locked): $($objectives -join ' | ')")
+            }
+        }
+        catch { }
+    }
+    if ($outlineLines.Count -eq 0) { [void]$outlineLines.Add('- The planned outline is not available yet.') }
+    $atFormatReview = [string]$job.workflowStage -eq 'format-review'
+    if ($atFormatReview) {
+        $modeText += @"
+
+
+This book is at format review; no manuscript exists yet. The section structure inside each chapter (Introduction, Learning Objectives, four numbered sections, Business Case, Chapter Roadmap, Communication Toolbox, Field Guide, Key Takeaways, Vocabulary Review, Looking Ahead, Scholarly Sources) is the UMA publication standard and cannot change per book. The designer CAN change each chapter's title, focus, and writer guidance in the outline editor. Whenever you recommend outline changes, end your reply with a block in exactly this format so the app can load it into the editor (one line per field; include only the fields that should change):
+
+SUGGESTED OUTLINE CHANGES
+Chapter 1 title: ...
+Chapter 1 focus: ...
+Chapter 1 guidance: ...
+END SUGGESTED OUTLINE CHANGES
+"@
+    }
+
     $prompt = @"
 # Book Studio AI Request
 
@@ -4098,6 +4140,10 @@ $modeText
 - Chapter source folder: chapters/
 - Visual assets: images/ and visuals/
 - Reports may include quality-report.md, publishing-editor-report.md, agent-report.md, export-validation.md, and ebook-output-audit.md; check whether a file exists before reading it.
+
+## Planned Outline
+
+$($outlineLines -join "`r`n")
 
 ## Available Chapter Sources
 
