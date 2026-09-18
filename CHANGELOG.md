@@ -1,5 +1,10 @@
 # Book Studio ID Changelog
 
+## v2026.09.18.14 (2026-09-18)
+
+- A reading assigned to all chapters is now treated as a shared resource: available to every chapter and required in none, so a general reading list no longer demands every source be cited in every chapter.
+- A reading assigned to a specific week is still required in that chapter, and every chapter must still cite at least one assigned reading from its teaching.
+
 ## v2026.09.18.13 (2026-09-18)
 
 - Moving the Book Studio folder no longer strands its books: stored file locations are repointed at the new folder on startup, so previews, outlines and generation keep working after a move out of OneDrive.

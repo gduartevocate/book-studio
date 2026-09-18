@@ -92,6 +92,33 @@ Check ($metrics1.fleschKincaidGrade -eq $metrics2.fleschKincaidGrade) 'Level-thr
 # Get-EbookReadingId stays internal to the module; reach it the same way
 # the other module-scope checks in this file do.
 function ReadingId([string]$Value) { return & $module { param($v) Get-EbookReadingId $v } $Value }
+# A general reading list assigns every source to every chapter. Requiring each
+# one in each chapter made a book with 30+ shared readings impossible to pass.
+$sharedFolder = Join-Path $fixture 'shared-readings'
+New-Item -ItemType Directory -Path (Join-Path $sharedFolder 'source-readings') -Force | Out-Null
+$sharedUrls = @('https://example.org/alpha', 'https://example.org/beta', 'https://example.org/gamma')
+$sharedReadings = @($sharedUrls | ForEach-Object { [pscustomobject]@{ id = (& $module { param($v) Get-EbookReadingId $v } $_); url = $_; title = $_; chapters = @(0); origin = 'Designer' } })
+$pinned = [pscustomobject]@{ id = (& $module { param($v) Get-EbookReadingId $v } 'https://example.org/pinned'); url = 'https://example.org/pinned'; title = 'Pinned to chapter 2'; chapters = @(2); origin = 'Designer' }
+$sharedPlan = [pscustomobject]@{ sourceMode = 'Assigned'; chapters = @(1, 2 | ForEach-Object { [pscustomobject]@{ number = $_; title = "Chapter $_"; focus = 'focus'; learningTargets = @('Target.') } }); requiredReadings = @($sharedReadings + $pinned) }
+$sharedReport = [pscustomobject]@{ schemaVersion = 1; readings = @(@($sharedReadings + $pinned) | ForEach-Object { [pscustomobject]@{ id = $_.id; url = $_.url; title = $_.title; chapters = @($_.chapters); status = 'Read'; detail = ''; contentFile = "source-readings/$($_.id).txt"; contentSha256 = ''; resolvedUrl = $_.url } }) }
+foreach ($record in $sharedReport.readings) {
+    $path = Join-Path $sharedFolder $record.contentFile
+    Set-Content -LiteralPath $path -Value ('Synthetic teaching text. ' * 40) -Encoding UTF8 -NoNewline
+    $record.contentSha256 = (Get-FileHash -LiteralPath $path).Hash
+}
+$sharedReport | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $sharedFolder 'required-source-report.json') -Encoding UTF8
+# Chapter 1 cites one shared reading; chapter 2 cites its pinned reading.
+$sharedMarkdown = "# Chapter 1: Chapter 1`n`nTeaching that uses the source [1](#chapter-1-note-1).`n`n### Scholarly Sources`n`n1. [Alpha](https://example.org/alpha).`n`n# Chapter 2: Chapter 2`n`nTeaching that uses the source [1](#chapter-2-note-1).`n`n### Scholarly Sources`n`n1. [Pinned](https://example.org/pinned).`n"
+$sharedReview = Get-EbookRequiredSourceReview $sharedPlan $sharedFolder $sharedMarkdown
+Check ($sharedReview.status -eq 'PASS') "Shared readings were demanded in every chapter: $($sharedReview.issues -join ' ')"
+# A reading pinned to a chapter is still mandatory there.
+$missingPinned = $sharedMarkdown.Replace("1. [Pinned](https://example.org/pinned).", "1. [Alpha](https://example.org/alpha).")
+Check ((Get-EbookRequiredSourceReview $sharedPlan $sharedFolder $missingPinned).status -eq 'FAIL') 'A reading pinned to a chapter was not required there.'
+# A chapter that cites no assigned reading at all is still refused.
+$noCitation = "# Chapter 1: Chapter 1`n`nTeaching with no source.`n`n# Chapter 2: Chapter 2`n`nTeaching that uses the source [1](#chapter-2-note-1).`n`n### Scholarly Sources`n`n1. [Pinned](https://example.org/pinned).`n"
+$noCitationReview = Get-EbookRequiredSourceReview $sharedPlan $sharedFolder $noCitation
+Check ($noCitationReview.status -eq 'FAIL' -and ($noCitationReview.issues -join ' ') -match 'cite at least one assigned reading') 'A chapter citing nothing was allowed.'
+
 # A source that can never be machine-read (video, interactive tool, dataset,
 # sign-in page) is marked "(reference only)": cited, never taught from, and
 # never a chapter's only reading.

@@ -282,18 +282,33 @@ function Get-EbookRequiredSourceReview {
         # Only sources that were actually read must be cited in the teaching.
         # Skipped ones may still appear in the bibliography.
         $readIds=@($report.readings | Where-Object status -eq 'Read' | ForEach-Object { $_.id })
-        $assigned=@($readings | Where-Object { $_.id -in $readIds -and (0 -in $_.chapters -or $chapter.number -in $_.chapters) })
+        $available=@($readings | Where-Object { $_.id -in $readIds -and (0 -in $_.chapters -or $chapter.number -in $_.chapters) })
+        # A reading pinned to this chapter has to be taught here. One assigned
+        # to every chapter is a shared resource: available to each, required in
+        # none, or a general reading list would force dozens of citations into
+        # every chapter and no book could pass.
+        $chapterSpecific=@($available | Where-Object { 0 -notin $_.chapters })
         $citable=@($readings | Where-Object { $_.url -and (0 -in $_.chapters -or $chapter.number -in $_.chapters) })
-        if (-not $assigned.Count) { $issues.Add("Chapter $($chapter.number) has no reading that could be read.") }
+        if (-not $available.Count) { $issues.Add("Chapter $($chapter.number) has no reading that could be read.") }
         if ($EvidenceOnly) { continue }
         $chapterText=[regex]::Match($Markdown, '(?ms)^# Chapter '+$chapter.number+':.*?(?=^# Chapter |\z)').Value
         $parts=[regex]::Split($chapterText,'(?m)^#{2,3} Scholarly Sources[^\r\n]*\r?\n',2)
         $body=$parts[0]; $notes=if($parts.Count -eq 2){$parts[1]}else{''}
-        foreach ($reading in $assigned) {
+        foreach ($reading in $chapterSpecific) {
             $note=@([regex]::Matches($notes,'(?m)^(\d+)\.\s+([^\r\n]+)') | Where-Object { $_.Groups[2].Value.Contains("]($($reading.url))") })
             if (-not $reading.url -or $note.Count -ne 1) { $issues.Add("Chapter $($chapter.number): required reading needs one numbered source note: $($reading.title)."); continue }
             $number=$note[0].Groups[1].Value
             if (-not $body.Contains("[$number](#chapter-$($chapter.number)-note-$number)")) { $issues.Add("Chapter $($chapter.number): $($reading.title) is listed but not cited in the teaching.") }
+        }
+        if (-not $chapterSpecific.Count -and $available.Count) {
+            # Listing a shared reading is not using it: the chapter must cite
+            # at least one of them from its teaching.
+            $cited=@([regex]::Matches($notes,'(?m)^(\d+)\.\s+([^\r\n]+)') | Where-Object {
+                $noteNumber=$_.Groups[1].Value
+                $noteText=$_.Groups[2].Value
+                @($available | Where-Object { $_.url -and $noteText.Contains("]($($_.url))") }).Count -and $body.Contains("[$noteNumber](#chapter-$($chapter.number)-note-$noteNumber)")
+            })
+            if (-not $cited.Count) { $issues.Add("Chapter $($chapter.number): cite at least one assigned reading in the teaching with a numbered source note.") }
         }
         foreach ($link in [regex]::Matches($notes,'\]\((https?://[^\s]+?)\)')) { if ($link.Groups[1].Value -cnotin @($citable.url)) { $issues.Add("Chapter $($chapter.number): bibliography contains an unassigned URL: $($link.Groups[1].Value).") } }
         foreach ($note in [regex]::Matches($notes,'(?m)^\d+\.\s+([^\r\n]+)')) {
@@ -320,6 +335,6 @@ function New-EbookRequiredSourceBrief {
             $sourceText=[IO.File]::ReadAllText((Join-Path $OutputFolder "source-readings/$($reading.id).txt"),[Text.Encoding]::UTF8)
             [pscustomobject]@{title=$reading.title;url=$reading.url;source='Required reading';year='';authors=@();preview=$sourceText;contentFile="source-readings/$($reading.id).txt";id=$reading.id}
         })
-        [pscustomobject]@{chapterNumber=$chapter.number;chapterTitle=$chapter.title;sourcePolicy=[pscustomobject]@{mode='Assigned';lockedWeeklyAssignments=$true;summary='Teach from every assigned reading using its retrieved text. Cite the actual reading URL, never the course blueprint, objectives, or production notes. No unassigned sources.'};sourceContext=@(Find-SourceContextForChapter -Chapter $chapter -SourceContext $SourceContext -AllMatches);openStax=@();researchCandidates=$records;assignedSources=$records}
+        [pscustomobject]@{chapterNumber=$chapter.number;chapterTitle=$chapter.title;sourcePolicy=[pscustomobject]@{mode='Assigned';lockedWeeklyAssignments=$true;summary='Teach from the readings assigned to this chapter using their retrieved text, and cite at least one of them. Readings shared across all chapters are available here, not mandatory. Cite the actual reading URL, never the course blueprint, objectives, or production notes. No unassigned sources.'};sourceContext=@(Find-SourceContextForChapter -Chapter $chapter -SourceContext $SourceContext -AllMatches);openStax=@();researchCandidates=$records;assignedSources=$records}
     }
 }
