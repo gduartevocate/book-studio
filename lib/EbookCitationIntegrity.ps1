@@ -27,34 +27,35 @@ function ConvertTo-EbookCitationMarkdown {
             $inNotes = Test-EbookNotesHeading $title
             if ($inNotes) { $noteNumber = 0; $line = "$level Scholarly Sources" }
         }
-        # Codex sometimes places the legacy HTML target inline with a
-        # numbered source note. It is safe to normalize only the exact
-        # chapter/note target that belongs to that note; all other HTML
-        # citation markup remains rejected below.
-        if ($inNotes -and $chapter -gt 0 -and $line -match '^\s*(\d+)\.\s*<a\s+id\s*=\s*(["''])(chapter-(\d+)-note-(\d+))\2\s*>\s*</a>\s*(\S.*)$') {
-            $inlineNumber = [int]$Matches[1]
-            $inlineAnchor = $Matches[3]
-            $inlineChapter = [int]$Matches[4]
-            $inlineNote = [int]$Matches[5]
-            if ($inlineChapter -ne $chapter -or $inlineNote -ne $inlineNumber -or $inlineNumber -ne ($noteNumber + 1)) {
-                throw "Citation preflight: misplaced or mismatched inline legacy anchor '$inlineAnchor'."
-            }
-            $line = "$inlineNumber. $($Matches[6])"
+        # Decode ONLY an empty legacy target, never the source text or URL.
+        # A target is removable only when it belongs to the next numbered
+        # source in this chapter. Unknown markup still fails below.
+        $candidate = $line.TrimStart(); $inlineNumber = -1
+        if ($candidate -match '^(\d+)\.\s*(.*)$') { $inlineNumber = [int]$Matches[1]; $candidate = $Matches[2] }
+        $token = [regex]::Match($candidate, '^(?<anchor>(?:<|&(?:amp;){0,2}lt;)(?<tag>a|span)\b[^\r\n]*?(?:>|&(?:amp;){0,2}gt;)[ \t]*(?:<|&(?:amp;){0,2}lt;)/\k<tag>[ \t]*(?:>|&(?:amp;){0,2}gt;))(?<tail>.*)$', 'IgnoreCase')
+        $anchorMatch = $null
+        if ($token.Success) {
+            $decoded = $token.Groups['anchor'].Value
+            for ($decodePass = 0; $decodePass -lt 3; $decodePass++) { $decoded = [Net.WebUtility]::HtmlDecode($decoded) }
+            $anchorMatch = [regex]::Match($decoded, '^<(a|span)\s+(?:id|name)\s*=\s*(["''])(chapter[-_](\d+)[-_]note[-_](\d+))\2\s*>\s*</\1>$', 'IgnoreCase')
         }
-        if ($line -match '^\s*<span\s+id\s*=\s*(["''])(chapter-(\d+)-note-(\d+))\1\s*>\s*</span>\s*$') {
-            $anchor = $Matches[2]; $anchorChapter = [int]$Matches[3]; $anchorNote = [int]$Matches[4]
+        if ($anchorMatch -and $anchorMatch.Success) {
+            $anchor = $anchorMatch.Groups[3].Value; $anchorChapter = [int]$anchorMatch.Groups[4].Value; $anchorNote = [int]$anchorMatch.Groups[5].Value
+            $tail = $token.Groups['tail'].Value.TrimStart()
             $next = $i + 1
             while ($next -lt $lines.Count -and [string]::IsNullOrWhiteSpace($lines[$next])) { $next++ }
             if (-not $inNotes -or $chapter -le 0 -or $anchorChapter -ne $chapter -or
-                $anchorNote -ne ($noteNumber + 1) -or $next -ge $lines.Count -or
-                $lines[$next] -notmatch ('^\s*' + $anchorNote + '\.\s+\S')) {
-                throw "Citation preflight: misplaced or mismatched legacy anchor '$anchor'."
+                $anchorNote -ne ($noteNumber + 1) -or
+                ($inlineNumber -ge 0 -and ($inlineNumber -ne $anchorNote -or -not $tail)) -or
+                ($inlineNumber -lt 0 -and ($tail -or $next -ge $lines.Count -or $lines[$next] -notmatch ('^\s*' + $anchorNote + '\.\s+\S')))) {
+                throw "Citation preflight: misplaced or mismatched legacy anchor '$anchor' in Chapter $chapter at line $($i + 1)."
             }
             # The renderers create a native bookmark/list ID from this numbered note.
-            continue
+            if ($inlineNumber -lt 0) { continue }
+            $line = "$inlineNumber. $tail"
         }
         if (Test-EbookVisibleCitationMarkup $line) {
-            throw "Citation preflight: unsupported or escaped citation markup at line $($i + 1)."
+            throw "Citation preflight: unsupported citation markup in Chapter $chapter at line $($i + 1). Use plain numbered source notes and matching Markdown note links; preserve the source details."
         }
         if ($inNotes -and $chapter -gt 0 -and $line -match '^\s*(\d+)\.\s+(.+)$') {
             $number = [int]$Matches[1]; $body = $Matches[2]

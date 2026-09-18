@@ -8774,7 +8774,9 @@ function Get-IntroductionCompletenessSignals {
 
     $issues = New-Object System.Collections.ArrayList
     $chapterValue = [string]$ChapterText
-    $introMatch = [regex]::Match($chapterValue, "(?ims)^##\s+(?:INTRODUCTORY PARAGRAPH|Introduction)\s*\r?\n(?<body>.*?)(?=^##\s+|\z)")
+    # Support the publication template's subsection level as well as older
+    # drafts. Stop at the next heading so objectives cannot pad a thin intro.
+    $introMatch = [regex]::Match($chapterValue, "(?ims)^#{2,3}[ \t]+(?:INTRODUCTORY PARAGRAPH|Introduction)[ \t]*\r?\n(?<body>.*?)(?=^#{1,6}[ \t]+|\z)")
     $introBody = if ($introMatch.Success) { $introMatch.Groups['body'].Value } else { "" }
     $plainIntro = $introBody
     $plainIntro = $plainIntro -replace "!\[[^\]]*\]\([^)]+\)", " "
@@ -12421,8 +12423,8 @@ function Repair-EbookPackageOutputs {
     }
 
     $markdown = Get-Content -LiteralPath $ebookMarkdownFile.FullName -Raw -Encoding UTF8
-    $citationMarkdown = ConvertTo-EbookCitationMarkdown -Markdown (ConvertTo-EbookBusinessCaseLabel -Markdown $markdown)
-    $citationChanged = $citationMarkdown -cne $markdown
+    $citationMarkdown = ConvertTo-EbookCitationMarkdown -Markdown (ConvertTo-EbookPublicationMarkdown -Markdown (ConvertTo-EbookBusinessCaseLabel -Markdown $markdown))
+    $citationChanged = $citationMarkdown -cne ($markdown -replace '\r\n', "`n")
     $markdown = $citationMarkdown
     $knowledgeCheckRemoval = Remove-ProhibitedKnowledgeCheckSections -Markdown $markdown
     $markdown = [string]$knowledgeCheckRemoval.markdown
@@ -12431,7 +12433,20 @@ function Repair-EbookPackageOutputs {
     $knowledgeCheckChanged = $knowledgeCheckRemoval.removedCount -gt 0 -or $knowledgeCheckRemoval.replacedLabelCount -gt 0
     $learnerSectionChanged = $learnerSectionRemoval.removedCount -gt 0 -or $learnerSectionRemoval.replacedChapterSummaryCount -gt 0 -or $learnerSectionRemoval.replacedLabelCount -gt 0
     if ($citationChanged -or $knowledgeCheckChanged -or $learnerSectionChanged) {
-        Set-Content -LiteralPath $ebookMarkdownFile.FullName -Value $markdown -Encoding UTF8
+        $backupFolder = Join-Path $resolvedOutputFolder 'manuscript-backups'
+        New-Item -ItemType Directory -Path $backupFolder -Force | Out-Null
+        Copy-Item -LiteralPath $ebookMarkdownFile.FullName -Destination (Join-Path $backupFolder ('before-rebuild-' + [guid]::NewGuid().ToString('N') + '.md'))
+        Set-Content -LiteralPath $ebookMarkdownFile.FullName -Value $markdown -Encoding UTF8 -NoNewline
+    }
+    $preflightPlanPath = Join-Path $resolvedOutputFolder 'ebook-plan.json'
+    $expectedChapters = @()
+    if (Test-Path -LiteralPath $preflightPlanPath -PathType Leaf) {
+        $preflightPlan = Get-Content -LiteralPath $preflightPlanPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $expectedChapters = @($preflightPlan.chapters | ForEach-Object { [int]$_.number })
+    }
+    $preflight = Update-EbookManuscriptPreflight -MarkdownPath $ebookMarkdownFile.FullName -ExpectedChapterNumbers $expectedChapters
+    if ($preflight.status -ne 'PASS') {
+        throw "Release artifact gate failed during repair. Manuscript preflight: $($preflight.issues -join ' ') See manuscript-preflight.md. Existing exports were not replaced."
     }
     # Re-read the persisted manuscript so the quality-report hash matches the
     # exact bytes/text that the audit will inspect after Set-Content writes its
@@ -12811,4 +12826,5 @@ function Export-EbookPackage {
 }
 
 Export-ModuleMember -Function Import-CourseSpec, Import-SourceContext, Import-BrandProfile, New-EbookPlan, Merge-EbookReviewedOutline, Resolve-EbookSources, New-EbookBlueprintPackage, Export-EbookBlueprintPackage, New-EbookPackage, Export-EbookPackage, Repair-EbookPackageOutputs, Get-ProhibitedKnowledgeCheckSignals, Remove-ProhibitedKnowledgeCheckSections, Get-ProhibitedLearnerSectionSignals, Remove-ProhibitedLearnerSections, Test-EbookObjectiveTraceability, Test-EbookReleaseArtifacts, Test-EbookAssignedSources, Test-EbookAssignedSourcePackage, Get-EbookTemplateInstructions, Get-EbookPublicationTemplate, Test-EbookPublicationTemplate
+Export-ModuleMember -Function Test-EbookManuscriptPreflight, Update-EbookManuscriptPreflight
 

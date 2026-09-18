@@ -2327,6 +2327,24 @@ function findRenderedJobNode(jobId) {
   return Array.from(jobsList.children).find((child) => child.dataset?.jobId === jobId) || null;
 }
 
+function appendPackageRebuildAction(actions, job) {
+  const hasManuscript = (job.artifacts || []).some(artifact => artifact.name === "Markdown ebook");
+  if (!job.outputFolder || isJobProcessing(job)
+      || !["Failed", "Completed"].includes(job.status)
+      || (job.status === "Failed" && !hasManuscript)) return;
+  const rebuild = makeElement("button", "secondary", "Rebuild Package");
+  rebuild.type = "button";
+  rebuild.title = "Rebuild Word and HTML from the saved manuscript. Does not rerun AI drafting or generate images.";
+  const error = makeElement("span", "hint");
+  error.setAttribute("role", "status");
+  rebuild.addEventListener("click", async () => {
+    error.textContent = "";
+    try { await rebuildJobPackage(job.id, rebuild); }
+    catch (failure) { error.textContent = `Rebuild failed: ${failure.message}`; }
+  });
+  actions.append(rebuild, error);
+}
+
 function renderJobs(jobs, options = {}) {
   allJobs = jobs || [];
   currentJobs = getFocusedJobs(allJobs, options);
@@ -2413,6 +2431,7 @@ function renderJobs(jobs, options = {}) {
       retry.textContent = "Retry";
       retry.addEventListener("click", () => runJob(job.id, getWorkflowRunMode(job)));
       actions.append(retry);
+      appendPackageRebuildAction(actions, job);
     } else if (getWorkflowStage(job) === "format-review") {
       const recreate = document.createElement("button");
       recreate.type = "button";
@@ -2436,12 +2455,7 @@ function renderJobs(jobs, options = {}) {
         actions.append(fixQa);
       }
 
-      const rebuild = document.createElement("button");
-      rebuild.type = "button";
-      rebuild.className = "secondary";
-      rebuild.textContent = "Rebuild Package";
-      rebuild.addEventListener("click", () => rebuildJobPackage(job.id, rebuild));
-      actions.append(rebuild);
+      appendPackageRebuildAction(actions, job);
 
       const refresh = document.createElement("button");
       refresh.type = "button";

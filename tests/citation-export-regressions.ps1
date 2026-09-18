@@ -31,14 +31,34 @@ Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'lib/EbookGenerator.
     Check ((ConvertTo-EbookCitationMarkdown ($legacy.Replace('id="chapter-2-note-1"', "id='chapter-2-note-1'"))) -eq $canonical) 'Single-quoted legacy anchor failed.'
     $inlineAnchor = $legacy.Replace('<span id="chapter-2-note-1"></span>' + "`n1. ", '1. <a id="chapter-2-note-1"></a>')
     Check ((ConvertTo-EbookCitationMarkdown $inlineAnchor) -notmatch '<a\s+id=') 'Safe inline legacy anchor was not normalized.'
+    foreach ($tag in @('a','span')) {
+        foreach ($attribute in @('id','name')) {
+            foreach ($separator in @('-','_')) {
+                $anchor = '<' + $tag + ' ' + $attribute + '="' + ('chapter-2-note-1'.Replace('-', $separator)) + '"></' + $tag + '>'
+                for ($escape = 0; $escape -lt 4; $escape++) {
+                    if ($escape) { $anchor = [Net.WebUtility]::HtmlEncode($anchor) }
+                    $standalone = $legacy.Replace('<span id="chapter-2-note-1"></span>', $anchor)
+                    Check ((ConvertTo-EbookCitationMarkdown $standalone) -ceq $canonical) "Safe standalone target failed: $anchor"
+                    $inline = $legacy.Replace('<span id="chapter-2-note-1"></span>' + "`n1. ", '1. ' + $anchor)
+                    Check ((ConvertTo-EbookCitationMarkdown $inline) -ceq $canonical) "Safe inline target failed: $anchor"
+                }
+            }
+        }
+    }
+    $encodedSource = $inlineAnchor.Replace('Source 1]', 'Source &amp; Title &lt;2026&gt;]')
+    Check ((ConvertTo-EbookCitationMarkdown $encodedSource).Contains('Source &amp; Title &lt;2026&gt;]')) 'Normalizing an anchor decoded or altered source text.'
     $badInputs = @(
         $legacy.Replace('id="chapter-2-note-1"','id="chapter-9-note-1"'),
         $legacy.Replace('id="chapter-2-note-1"','id="chapter-2-note-2"'),
         $legacy.Replace('1. [Source 1]','32. [Source 1]'),
         $canonical.Replace('2. [Source 2]','3. [Source 2]'),
-        $legacy.Replace('<span id="chapter-2-note-1"></span>','&lt;span id="chapter-2-note-1"&gt;&lt;/span&gt;'),
-        $legacy.Replace('<span id="chapter-2-note-1"></span>','&amp;lt;span id="chapter-2-note-1"&amp;gt;&amp;lt;/span&amp;gt;'),
+        $legacy.Replace('<span id="chapter-2-note-1"></span>','&lt;span id="chapter-9-note-1"&gt;&lt;/span&gt;'),
+        $legacy.Replace('<span id="chapter-2-note-1"></span>','&amp;lt;span id="chapter-2-note-2"&amp;gt;&amp;lt;/span&amp;gt;'),
+        $legacy.Replace('<span id="chapter-2-note-1"></span>','&lt;span id="chapter-2-note-1"&gt;Do not lose this text&lt;/span&gt;'),
+        $legacy.Replace('<span id="chapter-2-note-1"></span>','&lt;a class="custom" id="chapter-2-note-1"&gt;&lt;/a&gt;'),
+        $legacy.Replace('See [1]', '<a id="chapter-2-note-1"></a>See [1]'),
         $legacy.Replace('<span id="chapter-2-note-1"></span>','<span class="broken" id="chapter-2-note-1"></span>'),
+        $legacy.Replace('<span id="chapter-2-note-1"></span>','0. <a id="chapter-2-note-1"></a>'),
         $inlineAnchor.Replace('<a id="chapter-2-note-1"></a>', '<a id="chapter-2-note-2"></a>'),
         $legacy.Replace('[1](#chapter-2-note-1)','[99](#chapter-2-note-99)'),
         ($canonical + "`n`n## Notes`n`n1. Duplicate source."),

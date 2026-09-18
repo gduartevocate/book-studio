@@ -28,6 +28,20 @@ try {
   const match = source.match(/function renderJobQaSummary\(container, job\) \{[\s\S]*?(?=\nfunction )/);
   if (!match) throw new Error('Real QA rendering function missing');
   function makeElement(tag, className, text) { const e = document.createElement(tag); e.className = className; if (text) e.textContent = text; return e; }
+  const rebuildSource = source.match(/function appendPackageRebuildAction\(actions, job\) \{[\s\S]*?\n\}(?=\r?\n)/);
+  if (!rebuildSource) throw new Error('Actual rebuild action is missing');
+  const rebuildCalls = [];
+  const addRebuild = new Function('makeElement', 'isJobProcessing', 'rebuildJobPackage', rebuildSource[0] + '; return appendPackageRebuildAction;')(
+    makeElement, job => job.busy, (id, button) => { rebuildCalls.push(id); button.disabled = true; });
+  const failedBook = { id: 'failed-book', status: 'Failed', outputFolder: 'fixture', artifacts: [{name:'Markdown ebook'}] };
+  const rebuildHost = document.createElement('div'); addRebuild(rebuildHost, failedBook);
+  if (!rebuildHost.querySelector('button') || !rebuildHost.textContent.includes('Rebuild Package')) throw new Error('Failed book cannot rebuild its saved manuscript');
+  rebuildHost.querySelector('button').click();
+  if (rebuildCalls.join() !== 'failed-book' || !rebuildHost.querySelector('button').disabled) throw new Error('Recovery did not invoke the existing rebuild handler');
+  for (const change of [{busy:true}, {artifacts:[]}, {outputFolder:''}, {status:'Running'}]) {
+    const host = document.createElement('div'); addRebuild(host, {...failedBook, ...change});
+    if (host.querySelector('button')) throw new Error('Unsafe or unavailable rebuild was offered');
+  }
   const render = new Function('makeElement', match[0] + '; return renderJobQaSummary;')(makeElement);
   function check(qa, wanted, absent) {
     const host = document.createElement('div'); render(host, {qaSummary: qa});

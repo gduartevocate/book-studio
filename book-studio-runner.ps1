@@ -140,6 +140,9 @@ function Get-RunnerArtifactSpecs {
         @{ name = "Codex drafting report"; fileName = "codex-drafting-report.md" },
         @{ name = "Codex drafting prompt"; fileName = "codex-drafting-prompt.md" },
         @{ name = "Codex drafting response"; fileName = "codex-drafting-response.md" },
+        @{ name = "Manuscript preflight"; fileName = "manuscript-preflight.md" },
+        @{ name = "Targeted format repair"; fileName = "codex-format-repair-report.md" },
+        @{ name = "Targeted format repair log"; fileName = "codex-format-repair-error.log" },
         @{ name = "Codex drafting log"; fileName = "codex-drafting-error.log" },
         @{ name = "Codex image report"; fileName = "codex-image-report.md" },
         @{ name = "Codex image prompt"; fileName = "codex-image-prompt.md" },
@@ -533,9 +536,9 @@ $FailureMessage
 Required workflow:
 1. Inspect quality-report.md, publishing-editor-report.md, agent-report.md, export-validation.md, ebook-output-audit.md, ebook-outline.md, ebook-planning-packet.md, sources.md, and the current E-Book Markdown when those files exist.
 2. Identify every blocking QA/export/output-audit issue.
-3. Revise the actual manuscript source, preferably the chapter Markdown/JSON files under chapters/ and the current E-Book Markdown when needed.
+3. Revise the actual E-Book Markdown source; keep chapter Markdown/JSON files synchronized if you edit them. Target reported failures and preserve unaffected chapters, exact objectives, source details, and image references. Do not rewrite the entire book for a formatting defect.
 4. Keep the work as a clean e-book. Do not add assignments, tests, quiz language, visible ADA descriptions, placeholder captions, or process notes for reviewers.
-5. Preserve numbered scholarly source links and source integrity. Do not invent citations.
+5. Preserve numbered scholarly source links and source integrity. Use plain Markdown source notes (1. Source details), restarting at 1 per chapter, with matching body links such as [1](#chapter-1-note-1). Do not add raw or escaped HTML a/span anchors; the exporter creates targets. Never remove sources to make a check pass or invent citations.
 6. Fix content depth, missing sections, broken image references, weak visuals, obvious accessibility issues, and export problems that are visible from the reports.
 
 Publication format contract (also applies to repairs):

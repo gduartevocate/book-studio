@@ -31,6 +31,94 @@ function Test-EbookDeprecatedCaseLabel {
     return [string]$Text -match '(?i)\bcase\s+and\s+(?:a\s+)?face\b'
 }
 
+function ConvertTo-EbookPublicationMarkdown {
+    param([AllowNull()][string]$Markdown)
+
+    # Normalize syntax only. Never invent sections, renumber chapters, or change
+    # objectives, source text, quotations, or examples inside code fences.
+    # Known layout aliases retain their original title after the canonical label.
+    $lines = New-Object Collections.Generic.List[string]
+    $chapter = 0; $section = 0; $inOpening = $false; $fence = ''; $awaitingSynthesis = $false
+    foreach ($rawLine in ([string]$Markdown -split '\r?\n')) {
+        $line = $rawLine
+        if ($line -match '^\s*(`{3,}|~{3,})') {
+            $awaitingSynthesis = $false
+            $marker = $Matches[1]
+            if (-not $fence) { $fence = $marker }
+            elseif ($marker[0] -eq $fence[0] -and $marker.Length -ge $fence.Length) { $fence = '' }
+            $lines.Add($line); continue
+        }
+        if ($fence) { $lines.Add($line); continue }
+        if ($line -match '^#{1,6}[ \t]+(.+?)[ \t]*$') {
+            $title = $Matches[1] -replace '[ \t]+#+[ \t]*$', ''
+            if ($title -match '^\*\*(.+)\*\*$') { $title = $Matches[1] }
+            $inOpening = $false
+            # An immediate Synthesis wrapper is a layout alias, not missing prose.
+            if ($awaitingSynthesis -and $title -eq 'Synthesis') { $awaitingSynthesis = $false; continue }
+            $awaitingSynthesis = $false
+            if ($title -match '^Chapter[ \t]+(\d+):[ \t]*(\S.*)$') {
+                $chapter = [int]$Matches[1]
+                $line = "# Chapter ${chapter}: $($Matches[2])"
+                $section = 0
+            }
+            elseif ($chapter -gt 0 -and $title -match '^(?:Section[ \t]+)?(\d+)\.([1-4])[ \t]*(?:[-\u2013\u2014:]|[ \t])[ \t]*(\S.*)$') {
+                # Keep mismatched numbering visible to validation.
+                if ([int]$Matches[1] -eq $chapter) {
+                    $section = [int]$Matches[2]; $sectionTitle = $Matches[3]
+                    if ($section -eq 4 -and $sectionTitle -notmatch '^Integrating\b') { $sectionTitle = "Integrating: $sectionTitle" }
+                    $line = "## Section $chapter.$section - $sectionTitle"
+                    $awaitingSynthesis = $section -eq 4
+                }
+            }
+            elseif ($chapter -gt 0 -and $section -eq 3 -and $title -match '^Modeled (?:Communication )?Artifact(?:[ \t]*:.*)?$') { $line = "### Communication Toolbox: $title" }
+            elseif ($chapter -gt 0 -and $title -match '^(Introduction|Learning Objectives|Opening Scenario(?:[ \t]*:.*)?|Chapter Roadmap|Case Study Progression(?:[ \t]*:.*)?|Communication Toolbox(?:[ \t]*:.*)?|(?:Practical )?Field Guide(?:[ \t]*:.*)?|Key Takeaways|Vocabulary Review|Looking Ahead|Conclusion|Scholarly Sources(?:\s*/\s*Numbered Notes)?|Numbered Scholarly Notes|Numbered Notes|Notes)$') {
+                $line = "### $title"
+                $inOpening = $title -match '^Opening Scenario(?:[ \t]*:|$)'
+            }
+        }
+        elseif ($inOpening -and $line -match '^[ \t]*(?:\*\*Business Case\*\*[ \t]*:|\*\*Business Case:\*\*|__Business Case__\s*:|__Business Case:__|Business Case:)[ \t]+(\S.*)$') {
+            $line = "**Business Case:** $($Matches[1])"
+        }
+        elseif (-not [string]::IsNullOrWhiteSpace($line)) { $awaitingSynthesis = $false }
+        $lines.Add($line)
+    }
+    return ($lines -join "`n")
+}
+
+function Test-EbookManuscriptPreflight {
+    param([AllowNull()][string]$Markdown, [int[]]$ExpectedChapterNumbers = @())
+
+    $normalized = ConvertTo-EbookPublicationMarkdown -Markdown $Markdown
+    $issues = New-Object Collections.Generic.List[string]
+    try { $normalized = ConvertTo-EbookCitationMarkdown -Markdown $normalized }
+    catch { $issues.Add($_.Exception.Message) }
+    $template = Test-EbookPublicationTemplate -Markdown $normalized
+    foreach ($issue in $template.issues) { $issues.Add($issue) }
+    if ($ExpectedChapterNumbers.Count) {
+        $actual = @([regex]::Matches($normalized, '(?m)^# Chapter (\d+):') | ForEach-Object { [int]$_.Groups[1].Value })
+        if (($actual -join ',') -ne ($ExpectedChapterNumbers -join ',')) { $issues.Add('The manuscript chapter numbers do not match the approved plan. Restore missing chapters and preserve their order.') }
+    }
+    [pscustomobject]@{ status = $(if ($issues.Count) { 'FAIL' } else { 'PASS' }); issues = $issues.ToArray(); markdown = $normalized }
+}
+
+function Update-EbookManuscriptPreflight {
+    param([Parameter(Mandatory)][string]$MarkdownPath, [int[]]$ExpectedChapterNumbers = @())
+
+    $original = Get-Content -LiteralPath $MarkdownPath -Raw -Encoding UTF8
+    $result = Test-EbookManuscriptPreflight -Markdown $original -ExpectedChapterNumbers $ExpectedChapterNumbers
+    $folder = Split-Path -Parent $MarkdownPath
+    if ($result.markdown -cne ($original -replace '\r\n', "`n")) {
+        $backupFolder = Join-Path $folder 'manuscript-backups'
+        New-Item -ItemType Directory -Path $backupFolder -Force | Out-Null
+        Copy-Item -LiteralPath $MarkdownPath -Destination (Join-Path $backupFolder ('preflight-' + [guid]::NewGuid().ToString('N') + '.md'))
+        Set-Content -LiteralPath $MarkdownPath -Value $result.markdown -Encoding UTF8 -NoNewline
+    }
+    $report = [pscustomobject]@{status=$result.status;checkedAt=(Get-Date).ToString('o');manuscriptSha256=(Get-FileHash -LiteralPath $MarkdownPath).Hash;issues=@($result.issues)}
+    $report | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $folder 'manuscript-preflight.json') -Encoding UTF8
+    @('# Manuscript preflight', '', "Status: $($result.status)", '', 'Checked chapter structure and citation syntax before image generation or export.', '') + @($result.issues | ForEach-Object { "- $_" }) | Set-Content -LiteralPath (Join-Path $folder 'manuscript-preflight.md') -Encoding UTF8
+    return $report
+}
+
 function Test-EbookPublicationTemplate {
     param([AllowNull()][string]$Markdown)
     $template = Get-EbookPublicationTemplate
@@ -72,6 +160,7 @@ function Get-EbookTemplateInstructions {
     return @"
 Use the $($t.name) ($($t.id)) as a FORMAT-ONLY standard for every course.
 Begin with Chapter 1, not a cover or preface. Each chapter starts with Introduction and Learning Objectives, then has exactly four main sections, numbered N.1 through N.4 with course-specific titles.
+Use '# Chapter N: Title', '## Section N.1 - Title' through '## Section N.4 - Integrating ...', and '###' for required support headings (including Scholarly Sources). Use a plain hyphen between section number and title, not an en/em dash. Section N.4 must include at least 25 words of developed synthesis before its first subsection.
 Section N.1 contains Opening Scenario, a named **Business Case:**, Chapter Roadmap, and context. Section N.2 develops the concepts. Section N.3 contains Case Study Progression, Communication Toolbox, and Practical Field Guide. Section N.4 begins with synthesis prose, then Key Takeaways, Vocabulary Review, Looking Ahead (or Conclusion in the final chapter), and Scholarly Sources.
 Write the opening heading as '### Opening Scenario' (an optional ': scenario title' may follow). In its body, before the next heading, start a paragraph with the literal '**Business Case:** ' immediately followed by the scenario person's capitalized name, then their role, decision, and stakes. Keep the colon inside the bold label. Do not turn that label into a separate heading or replace it with '**Business Case**:'.
 Use $($t.font) $($t.bodyPoints)-point body text and the shared $($t.chapterPoints)/$($t.sectionPoints)/$($t.subsectionPoints)-point heading hierarchy. Tables or visuals support the explanation only where useful.

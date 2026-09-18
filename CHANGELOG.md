@@ -1,5 +1,13 @@
 # Book Studio ID Changelog
 
+## v2026.09.18.4 (2026-09-18)
+
+- Normalize equivalent section headings, Business Case labels, modeled-artifact/toolbox labels, and immediate synthesis wrappers without replacing manuscript prose. Back up the original before saving normalized text.
+- Safely normalize matching standalone/inline citation anchors, including escaped forms. Preserve source details; still reject wrong chapter/note IDs, broken links, invalid numbering, and unsupported markup.
+- Validate manuscripts before fresh or resumed image generation. Remaining structure/citation findings get one targeted repair and a recheck; failed repairs stop before images and retain separate logs and backups.
+- Failed books with a saved manuscript now offer Rebuild Package, avoiding another AI generation for recoverable export failures. Existing content and source-integrity checks remain enforced.
+- Introduction checks recognize both supported heading levels and no longer count learning objectives as introduction prose.
+
 ## v2026.09.18.3 (2026-09-18)
 
 - Preserve the original generator error and repair-log location. Automatic QA repair now requires a confirmed QA failure and current evidence of completed drafting; interrupted, empty-response, and stale runs do not start another edit pass.
