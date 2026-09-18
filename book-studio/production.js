@@ -23,13 +23,14 @@ function appendProductionPreferences(container, job) {
       mode.value = saved.sourceMode || "UploadedOnly";
       const readings = addField("Required reading list (review links extracted from the blueprint)", document.createElement("textarea"));
       readings.rows = 10; readings.maxLength = 40000; readings.value = saved.requiredSources || "";
-      readings.placeholder = "Week 1:\n[Title](https://example.org/article)\nAll chapters:\nhttps://example.org/shared-reading";
+      readings.placeholder = "Week 1:\n[Title](https://example.org/article)\n[Orientation video](https://example.org/video) (reference only)\nAll chapters:\nhttps://example.org/shared-reading";
       const context = addField("Image setting", document.createElement("select"));
       for (const [value, label] of [["Generic", "Generic / everyday (nonclinical)"], ["Healthcare", "Healthcare"], ["Business", "Business (nonclinical)"], ["Custom", "Custom"]]) context.append(new Option(label, value));
       context.value = saved.imageSettings?.context || "Generic";
       const instructions = addField("Image instructions", document.createElement("textarea"));
       instructions.maxLength = 4000; instructions.value = saved.imageSettings?.instructions || "";
       content.append(makeElement("p", "hint", "Save → Check required sources → Fix QA with Codex to revise existing teaching and citations. Rebuild only refreshes exports. The blueprint is not a scholarly source. Use accessible article/chapter URLs; PDF extraction requires Poppler pdftotext. Saving an image setting does not replace existing images or spend AI usage."));
+      content.append(makeElement("p", "hint", "End a line with (reference only) for a source the app cannot read, such as a video, an interactive tool, a dataset, or a sign-in page. It may then be cited but is never used as teaching evidence, so every chapter still needs at least one reading whose text can be retrieved."));
       const actions = makeElement("div", "actions");
       const status = makeElement("p", "hint"); status.setAttribute("role", "status");
       const report = makeElement("div", "");
@@ -39,6 +40,9 @@ function appendProductionPreferences(container, job) {
         report.textContent = "";
         if (preferences.sourceMode === "Assigned" && !(preferences.readings || []).length) {
           report.append(makeElement("p", "hint", "No required readings found. A course outline with objectives is not a reading list. Add the article/chapter URLs to use, save, and check required sources before generating."));
+        }
+        if (preferences.sourceReport?.skippedCount) {
+          report.append(makeElement("p", "hint", `${preferences.sourceReport.skippedCount} reading(s) could not be read and were skipped, so the book does not teach from them. They may still be cited. Replace a link with the exact article or chapter page to teach from one.`));
         }
         const list = makeElement("ul", "");
         for (const reading of preferences.readings || []) {

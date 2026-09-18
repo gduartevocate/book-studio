@@ -1,5 +1,12 @@
 # Book Studio ID Changelog
 
+## v2026.09.18.11 (2026-09-18)
+
+- Required readings that cannot be retrieved no longer stop generation; they are skipped, listed with the reason in the source report and the Sources panel, and never used as teaching evidence.
+- Source retrieval now sends normal browser headers, which recovers public pages that previously answered 403 Forbidden.
+- Mark a source (reference only) in the reading list for a video, interactive tool, dataset, or sign-in page so it is cited without being read.
+- Every chapter still needs at least one reading whose text was retrieved, and a reading with a missing or wrong URL still blocks.
+
 ## v2026.09.18.10 (2026-09-18)
 
 - Sources and image setting is now visible on the active book screen, where the required-readings message points.

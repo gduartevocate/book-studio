@@ -89,4 +89,59 @@ $prose="# Chapter 1: Test`n`n## Introduction`n`nWe check the form. We tell the t
 $metrics1=& $module {param($m) Get-UmaWritingStyleGuideMetrics $m} $prose
 $metrics2=& $module {param($m) Get-UmaWritingStyleGuideMetrics $m} ($prose+"### Scholarly Sources`n`n1. " + ('Extraordinarily complicated bibliographical attribution. '*30))
 Check ($metrics1.fleschKincaidGrade -eq $metrics2.fleschKincaidGrade) 'Level-three bibliography polluted learner readability metrics.'
+# Get-EbookReadingId stays internal to the module; reach it the same way
+# the other module-scope checks in this file do.
+function ReadingId([string]$Value) { return & $module { param($v) Get-EbookReadingId $v } $Value }
+# A source that can never be machine-read (video, interactive tool, dataset,
+# sign-in page) is marked "(reference only)": cited, never taught from, and
+# never a chapter's only reading.
+$list = "Week 1:`n[Readable article](https://example.org/read)`n[Orientation video](https://example.org/video) (reference only)`nWeek 2:`n[Tool](https://example.org/tool) (Reference Only)"
+$parsed = @(ConvertFrom-EbookReadingList -Text $list)
+Check ($parsed.Count -eq 3) "Reference-only lines were dropped (got $($parsed.Count))."
+Check (-not $parsed[0].referenceOnly -and $parsed[1].referenceOnly -and $parsed[2].referenceOnly) 'The reference-only marker was not recognized in both spellings.'
+Check ($parsed[1].url -eq 'https://example.org/video' -and $parsed[1].title -eq 'Orientation video') 'The marker leaked into the reading title or URL.'
+Check ((ConvertTo-EbookReadingListText $parsed) -match '\(reference only\)') 'Saving the list dropped the reference-only marker.'
+Check (@(ConvertFrom-EbookReadingList -Text (ConvertTo-EbookReadingListText $parsed) | Where-Object referenceOnly).Count -eq 2) 'The marker did not survive a save and reload.'
+Check (@(Merge-EbookReadingLists @() $parsed | Where-Object referenceOnly).Count -eq 2) 'Merging lost the reference-only marker.'
+
+$refPlan = [pscustomobject]@{chapters=@([pscustomobject]@{number=1}); requiredReadings=@(
+    [pscustomobject]@{id=(ReadingId 'https://example.org/read');url='https://example.org/read';title='Readable article';chapters=@(1);origin='Designer';referenceOnly=$false},
+    [pscustomobject]@{id=(ReadingId 'https://example.org/video');url='https://example.org/video';title='Orientation video';chapters=@(1);origin='Designer';referenceOnly=$true})}
+$refFolder = Join-Path $fixture 'reference-only'
+New-Item -ItemType Directory -Path $refFolder -Force | Out-Null
+$fetched = [Collections.Generic.List[string]]::new()
+$refReport = Update-EbookRequiredSourceEvidence $refPlan $refFolder { param($url, $folder) $fetched.Add($url); [pscustomobject]@{text=('Synthetic teaching text. ' * 60); resolvedUrl=$url; contentType='text/html'} }
+Check ($refReport.status -eq 'PASS') "A reference-only reading blocked retrieval: $($refReport.issues -join ' ')"
+Check (@($fetched).Count -eq 1 -and $fetched[0] -eq 'https://example.org/read') 'A reference-only reading was downloaded anyway.'
+Check ((@($refReport.readings | Where-Object status -eq 'Reference only').Count -eq 1)) 'The report did not record the reference-only decision.'
+
+# A site the designer cannot control (403, JavaScript-only, timeout) is skipped
+# and reported instead of stopping the book.
+$blockedPlan = [pscustomobject]@{chapters=@([pscustomobject]@{number=1}); requiredReadings=@(
+    $refPlan.requiredReadings[0],
+    [pscustomobject]@{id=(ReadingId 'https://example.gov/blocked');url='https://example.gov/blocked';title='Agency page';chapters=@(1);origin='Designer';referenceOnly=$false})}
+$blockedFolder = Join-Path $fixture 'blocked-source'
+New-Item -ItemType Directory -Path $blockedFolder -Force | Out-Null
+$blockedReport = Update-EbookRequiredSourceEvidence $blockedPlan $blockedFolder { param($url, $folder) if ($url -match 'blocked') { throw 'The remote server returned an error: (403) Forbidden.' }; [pscustomobject]@{text=('Synthetic teaching text. ' * 60); resolvedUrl=$url; contentType='text/html'} }
+Check ($blockedReport.status -eq 'PASS') "An unreachable source still blocked generation: $($blockedReport.issues -join ' ')"
+Check ($blockedReport.skippedCount -eq 1 -and ($blockedReport.skipped -join ' ') -match '403') 'The skipped source was not reported with its reason.'
+Check ((@($blockedReport.readings | Where-Object status -eq 'Not retrieved').Count -eq 1)) 'An unreachable source was not recorded as Not retrieved.'
+Check ((Get-Content -LiteralPath (Join-Path $blockedFolder 'required-source-report.md') -Raw) -match 'could not be read') 'The report does not list skipped readings for the designer.'
+
+# A wrong list is still the designer's to fix.
+$badPlan = [pscustomobject]@{chapters=@([pscustomobject]@{number=1}); requiredReadings=@(
+    $refPlan.requiredReadings[0],
+    [pscustomobject]@{id=(ReadingId 'title-only');url='';title='A title with no link';chapters=@(1);origin='Designer';referenceOnly=$false})}
+$badFolder = Join-Path $fixture 'bad-list'
+New-Item -ItemType Directory -Path $badFolder -Force | Out-Null
+$badListReport = Update-EbookRequiredSourceEvidence $badPlan $badFolder { param($url, $folder) [pscustomobject]@{text=('Synthetic teaching text. ' * 60); resolvedUrl=$url; contentType='text/html'} }
+Check ($badListReport.status -eq 'FAIL' -and ($badListReport.issues -join ' ') -match 'exact URL') 'A reading with no URL was accepted.'
+
+# Every chapter still needs one source that was actually read.
+$onlyRefPlan = [pscustomobject]@{chapters=@([pscustomobject]@{number=1}); requiredReadings=@($refPlan.requiredReadings[1])}
+$onlyRefFolder = Join-Path $fixture 'reference-only-alone'
+New-Item -ItemType Directory -Path $onlyRefFolder -Force | Out-Null
+$aloneReport = Update-EbookRequiredSourceEvidence $onlyRefPlan $onlyRefFolder { param($url, $folder) throw 'must not fetch' }
+Check ($aloneReport.status -eq 'FAIL' -and ($aloneReport.issues -join ' ') -match 'no reading that could be read') 'A chapter with nothing readable was allowed.'
+
 "PASS: $script:checks required-source and QA regression checks. Fixtures: $fixture"

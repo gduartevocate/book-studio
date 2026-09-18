@@ -3110,7 +3110,7 @@ function Resolve-EbookSources {
     if ($SourceMode -eq 'Assigned') {
         if (-not $SourceOutputFolder) { throw 'A package folder is required to record assigned-source retrieval.' }
         $report = Update-EbookRequiredSourceEvidence -Plan $Plan -OutputFolder $SourceOutputFolder
-        if ($report.status -ne 'PASS') { throw "Required source retrieval failed before drafting. $($report.issues -join ' ') See required-source-report.md. The blueprint will not be substituted." }
+        if ($report.status -ne 'PASS') { throw "Required source retrieval failed before drafting. $($report.issues -join ' ') See required-source-report.md. Fix each reading in Sources and image setting: correct a wrong address, assign the exact article or chapter page instead of a site home page, or end the line with (reference only) for a video, interactive tool, dataset, or sign-in page so it is cited without being read. Every chapter still needs at least one reading whose text can be retrieved. The blueprint will not be substituted." }
         return @(New-EbookRequiredSourceBrief -Plan $Plan -OutputFolder $SourceOutputFolder -SourceContext $SourceContext)
     }
     $sourceMap = if($SourceMode -eq 'Discovery'){Get-Content -LiteralPath $SourceMapPath -Raw | ConvertFrom-Json}else{$null}
