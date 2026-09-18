@@ -62,6 +62,28 @@ function appendProductionPreferences(container, job) {
         const updated = await api(`/api/jobs/${job.id}/production-settings`, { method: "POST", body: JSON.stringify({ sourceMode: mode.value, requiredSources: readings.value, imageContext: context.value, imageInstructions: instructions.value }) });
         dirty = false; renderReport(updated); status.textContent = "Saved. Existing manuscript and images are unchanged. Check sources before requesting a revision.";
       });
+      addAction("Remove entries with no URL", async () => {
+        // An older version extracted learning objectives into this list. They
+        // carry no link, so generation stays blocked until they are removed.
+        const hasLink = (text) => text.indexOf("http://") >= 0 || text.indexOf("https://") >= 0;
+        const isHeading = (text) => text.endsWith(":") && !hasLink(text);
+        const lines = readings.value.replace(/\r/g, "").split("\n");
+        const withLinks = lines.filter((line) => {
+          const text = line.trim();
+          return !text || isHeading(text) || hasLink(text);
+        });
+        const kept = withLinks.filter((line, index) => {
+          if (!isHeading(line.trim())) return true;
+          // Drop a week heading whose readings were all removed.
+          const next = withLinks.slice(index + 1).find((value) => value.trim());
+          return Boolean(next) && !isHeading(next.trim());
+        });
+        const removed = lines.filter((line) => line.trim()).length - kept.filter((line) => line.trim()).length;
+        if (!removed) { status.textContent = "Every entry already has a URL."; return; }
+        readings.value = kept.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+        dirty = true;
+        status.textContent = `${removed} entr${removed === 1 ? "y" : "ies"} without a URL removed. Review the list, then Save settings.`;
+      });
       addAction("Check required sources", async () => {
         if (dirty) throw new Error("Save your settings first.");
         if (mode.value !== "Assigned") throw new Error("Select Required readings and save first.");

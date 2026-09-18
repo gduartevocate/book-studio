@@ -39,7 +39,7 @@ function Assert-BookStudioGenerationReady {
     if ($Job.options.sourceMode -eq 'Assigned') {
         $readings = @($Job.options.requiredReadings | Where-Object { $_ })
         if (-not $readings.Count) { throw 'No required readings are assigned. Open Sources and image setting, add the article/chapter URLs to use, and save before generating. Course objectives are not scholarly sources.' }
-        if (@($readings | Where-Object { -not $_.url }).Count) { throw 'Some required readings have no URL. Review Sources and image setting: remove objectives incorrectly extracted by an older version, and add the exact article/chapter URLs for genuine readings before generating.' }
+        if (@($readings | Where-Object { -not $_.url }).Count) { throw "$(@($readings | Where-Object { -not $_.url }).Count) required reading(s) have no URL. Open Sources and image setting on this book, click Remove entries with no URL to drop objectives an older version extracted by mistake, add the exact article or chapter URL for any genuine reading, then Save settings. If this course has no assigned reading list, set Sources to use to Uploaded teaching documents only and save." }
     }
     $drafting = $null -eq $Job.options.useCodexDrafting -or [bool]$Job.options.useCodexDrafting
     if ($drafting -or $Job.options.useCodexImages) {

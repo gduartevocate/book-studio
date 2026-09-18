@@ -2653,3 +2653,7 @@ button:disabled {
 .outcome-replacement > label > span { display: block; margin-bottom: 4px; }
 .outcome-replacement input:not([type="checkbox"]), .outcome-replacement textarea { width: 100%; box-sizing: border-box; }
 .outcome-diff { max-height: 500px; overflow: auto; }
+
+/* Sources and image setting: visible in the book list and the active book. */
+.production-panel { margin-top: 12px; }
+.production-panel:empty { display: none; }

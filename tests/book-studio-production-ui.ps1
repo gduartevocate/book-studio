@@ -35,9 +35,20 @@ $html=@'
   if(calls.length!==count) throw new Error('Cancelled generation still submitted');
   window.confirm=()=>true;await click('Generate images for saved setting');
   if(!calls.some(call=>call.path.endsWith('/generate-images'))) throw new Error('Image generation action not wired');
+  const readingBox=host.querySelector('textarea');
+  readingBox.value='Week 1:\nDescribe the stages of the revenue cycle\n[Reading](https://example.org/read)\nWeek 2:\nExplain how departments contribute\nWeek 3:\nhttps://example.org/other';
+  await click('Remove entries with no URL');
+  const cleaned=readingBox.value;
+  if(cleaned.includes('Describe the stages') || cleaned.includes('Explain how departments')) throw new Error('Objectives without a URL were kept');
+  if(!cleaned.includes('https://example.org/read') || !cleaned.includes('https://example.org/other')) throw new Error('Genuine readings were removed');
+  if(cleaned.includes('Week 2:')) throw new Error('An emptied week heading was kept');
+  if(!cleaned.includes('Week 1:') || !cleaned.includes('Week 3:')) throw new Error('Headings with readings were removed');
+  if(!host.textContent.includes('Review the list, then Save settings')) throw new Error('Cleanup did not ask for a save');
+  await click('Remove entries with no URL');
+  if(!host.textContent.includes('Every entry already has a URL')) throw new Error('A clean list was not reported as clean');
   state.readings=[];state.requiredSources='';await click('Refresh source results');
   if(!host.textContent.includes('No required readings found')) throw new Error('Missing readings are not explained');
-  document.body.textContent='PASS: production controls, persistence, dirty-state guard, source failures, and explicit image generation';
+  document.body.textContent='PASS: production controls, persistence, dirty-state guard, URL-less entry cleanup, source failures, and explicit image generation';
 } catch(error) { document.body.textContent='FAIL: '+error.message; } })();
 </script>
 '@
@@ -48,5 +59,15 @@ $args=@('--headless','--disable-gpu','--disable-extensions','--no-first-run','--
 $process=Start-Process -FilePath $browser -ArgumentList $args -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
 if(-not $process.WaitForExit(45000)){throw "Browser test exceeded 45 seconds. Fixture: $fixture"}
 $result=Get-Content -LiteralPath $stdout -Raw -Encoding UTF8
+# The panel must live in a container the active-book view shows; the
+# workflow panel it used to share is hidden there.
+$index=Get-Content -LiteralPath (Join-Path $root 'book-studio/index.html') -Raw -Encoding UTF8
+$app=Get-Content -LiteralPath (Join-Path $root 'book-studio/app.js') -Raw -Encoding UTF8
+$css=Get-Content -LiteralPath (Join-Path $root 'book-studio/styles.css') -Raw -Encoding UTF8
+if($index -notmatch 'class="production-panel"'){throw 'The job template has no production-panel container.'}
+if($app -notmatch 'appendProductionPreferences\(productionPanel'){throw 'Production preferences are not rendered into the visible container.'}
+if($css -match '\.active-job-panel[^
+]*\.production-panel[^
+]*display:\s*none'){throw 'The active-book view hides the production panel.'}
 if($result -notmatch '<body>PASS: production controls[^<]+</body>'){throw "Production UI test failed; inspect $fixture"}
 'PASS: production controls, persistence, dirty-state guard, source failures, and explicit image generation.'

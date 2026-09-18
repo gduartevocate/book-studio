@@ -2445,6 +2445,7 @@ function renderJobs(jobs, options = {}) {
     const status = node.querySelector(".job-status");
     const actions = node.querySelector(".job-actions");
     const workflowPanel = node.querySelector(".workflow-panel");
+    const productionPanel = node.querySelector(".production-panel");
     const log = node.querySelector(".job-log");
     const artifacts = node.querySelector(".artifact-list");
     const formatReviewPanel = node.querySelector(".format-review-panel");
@@ -2465,7 +2466,7 @@ function renderJobs(jobs, options = {}) {
     appendJobLogLinks(log, job);
     renderJobQaSummary(log, job);
     renderWorkflowPanel(workflowPanel, job);
-    if (!isJobProcessing(job) && job.outputFolder) appendProductionPreferences(workflowPanel, job);
+    if (!isJobProcessing(job) && job.outputFolder) appendProductionPreferences(productionPanel, job);
     if (!isJobProcessing(job) && job.outputFolder) {
       const review = makeElement("button", "secondary qa-review-button", "Run QA again");
       review.type = "button";

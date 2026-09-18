@@ -1,5 +1,11 @@
 # Book Studio ID Changelog
 
+## v2026.09.18.10 (2026-09-18)
+
+- Sources and image setting is now visible on the active book screen, where the required-readings message points.
+- New Remove entries with no URL button clears learning objectives an older version saved as readings, keeping genuine linked readings.
+- The blocked-generation message names the exact button to use and the alternative for courses with no assigned reading list.
+
 ## v2026.09.18.9 (2026-09-18)
 
 - Deleting a book stored in OneDrive works again; only real shortcuts (junctions and symbolic links) are refused, and the message names the file.
