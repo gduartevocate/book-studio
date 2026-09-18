@@ -64,6 +64,15 @@ else {
     Write-Host "Install/sign in to Codex, or create codex-path.txt beside Start Book Studio.cmd with the full path to codex.exe."
 }
 
+if (Get-Command Get-BookStudioInstallPathStatus -ErrorAction SilentlyContinue) {
+    $installStatus = Get-BookStudioInstallPathStatus -ProjectRoot $projectRoot
+    if ($installStatus.warning) {
+        Write-Host ""
+        Write-Host "WARNING: $($installStatus.warning)"
+        Write-Host ""
+    }
+}
+
 # Tell the designer when a newer Book Studio is published. The update itself
 # runs from Settings so it never interrupts a book that is generating.
 if (Get-Command Get-BookStudioUpdateStatus -ErrorAction SilentlyContinue) {

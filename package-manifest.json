@@ -41,7 +41,7 @@
     },
     {
         "path":  "ID Quick Start.txt",
-        "sha256":  "D21BC8BDE9FCE01C6123F37293F85A1839142AE8EF54EDFB7F80A77D32066047"
+        "sha256":  "74C044D136A6C4FE1886BFA215402BF4F7A55BBF818E8654AF75F17C0AD5E219"
     },
     {
         "path":  "Publish-SmeReviewPackage.ps1",
@@ -69,7 +69,7 @@
     },
     {
         "path":  "Start-BookStudioCompanion.ps1",
-        "sha256":  "FF517B44A07468EC90685D86BFFB320AC69D57B4D2F07BE0BEC4E365021001C8"
+        "sha256":  "98F90A3E91E131697B23E9EC9FFE25F1FBC421EF95A67C47474615EF5D807FE2"
     },
     {
         "path":  "Stop Book Studio.cmd",
@@ -85,15 +85,15 @@
     },
     {
         "path":  "VERSION.txt",
-        "sha256":  "1358CBDB977639018BC2D09F3FC4DDC249E5B209C4848D193ABCEAC5FD7DB23E"
+        "sha256":  "CDAE58D3FE2CDF5C293A08AD0B452589475C11AEC3C53638114BF09B12BEB9DD"
     },
     {
         "path":  "book-studio/app.js",
-        "sha256":  "49106E1F029C87DC1AF58863A1E211AAD28BA95EF5EBC992C389C982D491E486"
+        "sha256":  "933C5DEA00C8C5E2B3FCFA01BDD39AED110C298DEBE6624AE2F1498FDCCD57FF"
     },
     {
         "path":  "book-studio/index.html",
-        "sha256":  "28093D62AF6F0F4522FCED6404D5ADBA1FC481F545760F07E4D3DB8D8718E833"
+        "sha256":  "5CAC9D8E5A4D81D3EAC7367283C875EFB101BC83BA8B975782124BDF26223A35"
     },
     {
         "path":  "book-studio/styles.css",
@@ -101,7 +101,7 @@
     },
     {
         "path":  "book-studio/version.json",
-        "sha256":  "F14924AF4AA1E3147E35F0C5DBECE33891413F2DCB26F66A9F1AA70D10DA1A83"
+        "sha256":  "3BD622B8EBEA61C24816E0F55800DFBFFE4FF4279A0AC977AB1020095D6526CE"
     },
     {
         "path":  "cloudflare/ebook-generator-worker.js",
@@ -129,7 +129,7 @@
     },
     {
         "path":  "docs/book-studio-colleague-setup.md",
-        "sha256":  "4F4CE2E3326DE5F339307924B78A77FEF83B41285AB71FAA4242AB499F9AB2ED"
+        "sha256":  "3930309FCE44322A950027CFEAE34E0B970ACC88FA8B11424C0D50627B30D7EA"
     },
     {
         "path":  "docs/book-studio-pilot-checklist.md",
@@ -141,7 +141,7 @@
     },
     {
         "path":  "lib/BookStudio.psm1",
-        "sha256":  "BAC2FA34A7577C5D2BEC81A0CC235F3B2656267B75E5FABF12F1D8220F9A8DE9"
+        "sha256":  "EB829740F9D90664AC8DA1810C810AB932A1BCA7ACFEA0BEFC01FB2456BB8926"
     },
     {
         "path":  "lib/BookStudioChat.ps1",
@@ -181,7 +181,7 @@
     },
     {
         "path":  "lib/EbookGenerator.psm1",
-        "sha256":  "723705DE364C426F51FD05A557FEA9401AE7FA774B405CDAECE1931817F9C46A"
+        "sha256":  "86C1BE2B93C875F1102FE56D0CA7961CB86381046446C0C9DD270791C19784B9"
     },
     {
         "path":  "lib/EbookImages.ps1",
@@ -214,6 +214,10 @@
     {
         "path":  "tests/book-studio-database-regressions.ps1",
         "sha256":  "325D37176C1BF3DB3C554CEA9E6DB5673D964EAC8C8AAF4CBDB60688C267112A"
+    },
+    {
+        "path":  "tests/book-studio-path-regressions.ps1",
+        "sha256":  "9B1C5E77C86BB0A3E333C81CC4B8D122F0913CF9670F98E33C91C30B02D132D7"
     },
     {
         "path":  "tests/book-studio-readiness-ui.ps1",

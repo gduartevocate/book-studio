@@ -5,6 +5,47 @@
 . (Join-Path $PSScriptRoot 'BookStudioChat.ps1')
 . (Join-Path $PSScriptRoot 'BookStudioUpdates.ps1')
 
+function Get-BookStudioInstallPathStatus {
+    # Windows PowerShell cannot write paths longer than 259 characters, and a
+    # book package nests about 130 characters below the install folder
+    # (.bookstudio/outputs/<job>/<course folder>/codex-requests/<id>/file).
+    param([Parameter(Mandatory)][string]$ProjectRoot)
+
+    $root = [System.IO.Path]::GetFullPath($ProjectRoot).TrimEnd('\')
+    # 259 minus the deepest package path (about 138 characters with capped names).
+    $limit = 120
+    $suggested = Join-Path ([Environment]::GetFolderPath('UserProfile')) 'book-studio'
+    $warning = ''
+    if ($root.Length -gt $limit) {
+        $warning = "Book Studio is installed at a long path ($($root.Length) characters): $root. Windows limits file paths to 260 characters and book packages nest deeply, so long course titles or Codex requests can fail to save. Move Book Studio to a short local folder such as $suggested (copy the .bookstudio folder with it), then start it from there."
+    }
+    elseif ($root -match '(?i)\\OneDrive') {
+        $warning = "Book Studio is installed inside OneDrive ($root). Sync can interfere with the book database and generated files; a local folder such as $suggested is safer."
+    }
+    return [pscustomobject]@{
+        installPath = $root
+        installPathLength = $root.Length
+        limit = $limit
+        warning = $warning
+        suggestedPath = $suggested
+    }
+}
+
+function Assert-BookStudioPathLength {
+    # Fail before any work is done, with the fix, instead of a bare
+    # "Could not find a part of the path" from deep inside a request.
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$What,
+        [string]$ProjectRoot = ''
+    )
+
+    $full = [System.IO.Path]::GetFullPath($Path)
+    if ($full.Length -le 259) { return }
+    $advice = if ($ProjectRoot) { (Get-BookStudioInstallPathStatus -ProjectRoot $ProjectRoot).suggestedPath } else { 'C:\book-studio' }
+    throw "The file path for $What would be $($full.Length) characters; Windows allows 259. Move Book Studio to a shorter local folder such as $advice (copy the .bookstudio folder with it), then open this book again."
+}
+
 function Get-BookStudioDefaultRoot {
     param([string]$ProjectRoot)
 
@@ -789,6 +830,9 @@ function New-BookStudioJob {
     $jobId = ([guid]::NewGuid().ToString("N")).Substring(0, 12)
     $uploadFolder = Join-Path (Join-Path $databaseRoot "uploads") $jobId
     $outputRoot = Join-Path (Join-Path $databaseRoot "outputs") $jobId
+    # Fail at intake, before any upload or Codex time, if this install path
+    # cannot hold a full package (course folder + deepest request file).
+    Assert-BookStudioPathLength -Path (Join-Path $outputRoot (('x' * 48) + '\codex-requests\ai-00000000-000000-000000\exit-code.txt')) -What "this book's package files" -ProjectRoot $ProjectRoot
     $logPath = Join-Path (Join-Path $databaseRoot "logs") "$jobId.log"
 
     New-Item -ItemType Directory -Path $uploadFolder -Force | Out-Null
@@ -3925,13 +3969,14 @@ function New-BookStudioAiRequest {
     $requestId = "ai-{0}-{1}" -f (Get-Date).ToString("yyyyMMdd-HHmmss"), ([guid]::NewGuid().ToString("N").Substring(0, 6))
     $requestRelativeFolder = "codex-requests/$requestId"
     $requestFolder = Join-Path $job.outputFolder ($requestRelativeFolder -replace "/", [System.IO.Path]::DirectorySeparatorChar)
+    Assert-BookStudioPathLength -Path (Join-Path $requestFolder "exit-code.txt") -What "this Codex request" -ProjectRoot $ProjectRoot
     New-Item -ItemType Directory -Path $requestFolder -Force | Out-Null
 
     $promptPath = Join-Path $requestFolder "prompt.md"
     $responsePath = Join-Path $requestFolder "response.md"
     $errorPath = Join-Path $requestFolder "error.log"
     $exitCodePath = Join-Path $requestFolder "exit-code.txt"
-    $runScriptPath = Join-Path $requestFolder "run-codex-request.ps1"
+    $runScriptPath = Join-Path $requestFolder "run.ps1"
 
     $chapterContext = ""
     if (-not [string]::IsNullOrWhiteSpace($ChapterId)) {
@@ -4688,10 +4733,15 @@ function Start-BookStudioServer {
             }
 
             if ($request.HttpMethod -eq "GET" -and $path -eq "/api/health") {
+                $installStatus = Get-BookStudioInstallPathStatus -ProjectRoot $ProjectRoot
                 Send-BookStudioResponse -Context $context -Body (ConvertTo-BookStudioJson ([pscustomobject]@{
                     status = "ok"
                     service = "book-studio"
                     port = $Port
+                    installPath = $installStatus.installPath
+                    installPathLength = $installStatus.installPathLength
+                    installPathWarning = $installStatus.warning
+                    suggestedPath = $installStatus.suggestedPath
                 }))
                 continue
             }

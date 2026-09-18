@@ -2827,6 +2827,26 @@ async function applyUpdate() {
   }
 }
 
+// Settings > Install location: warn early about paths that will fail Windows' 260-character limit.
+const installStatus = document.getElementById("installStatus");
+const installBadge = document.getElementById("installBadge");
+async function loadInstallStatus() {
+  try {
+    const health = await api("/api/health");
+    const warning = health.installPathWarning || "";
+    installStatus.className = `codex-status ${warning ? "warning" : "ready"}`;
+    installStatus.textContent = warning || `Installed at ${health.installPath} (${health.installPathLength} characters). This location is fine.`;
+    installBadge.hidden = !warning;
+  } catch (error) {
+    installStatus.className = "codex-status";
+    installStatus.textContent = `Could not read the install location: ${error.message}`;
+  }
+}
+installBadge.addEventListener("click", () => {
+  showView("settings");
+  document.getElementById("installHeading").scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
 checkUpdatesButton.addEventListener("click", () => loadUpdateStatus(true));
 applyUpdateButton.addEventListener("click", () => applyUpdate());
 updateBadge.addEventListener("click", () => {
@@ -3305,6 +3325,7 @@ for (const quickButton of document.querySelectorAll(".quick-chat-button")) {
 showView("books");
 loadAppVersion().catch(() => {});
 loadUpdateStatus(false).catch(() => {});
+loadInstallStatus().catch(() => {});
 loadPackages().catch((error) => setImportStatus(error.message));
 loadCodexStatus().catch((error) => {
   codexStatus.className = "codex-status warning";

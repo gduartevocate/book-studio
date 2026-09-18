@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.18.1 (2026-09-18)
+
+- Book packages now stay under Windows' 260-character path limit (capped folder names, shorter request files) and Codex chats on long install paths no longer fail; Settings shows an Install location check with a warning for long or OneDrive paths.
+
 ## v2026.09.17.6 (2026-09-17)
 
 - Spec sheets that use Word automatic numbering for course objectives now parse; lessons are matched to their course objective even when its number is missing, and the error names the week to fix. Spec files still open in Word can be read.

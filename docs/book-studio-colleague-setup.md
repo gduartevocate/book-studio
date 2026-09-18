@@ -30,6 +30,8 @@ git clone https://github.com/gduartevocate/book-studio
 
 Then double-click `Start Book Studio.cmd` in that folder. Git for Windows and Codex CLI are the only prerequisites; no administrator rights are needed.
 
+Keep the folder path short, for example `C:\Users\<you>\book-studio`. Windows limits file paths to 260 characters and a book package nests about 130 characters below the install folder, so an install under a long OneDrive or Documents path can fail to save chapter files or Codex requests. Book Studio shows a warning in Settings > Install location and in the launcher when the path is risky. To move an install, close Book Studio, move the whole folder including `.bookstudio`, and start it from the new location.
+
 To update, open **Settings** in Book Studio and click **Check for updates**, then **Get latest updates**. Book Studio downloads the new release and restarts itself; books, uploads, and settings stay in place. The header shows an **Update available** badge when a newer release exists, and the launcher prints the same notice. Updates wait until no book is generating and no Codex request is running. Do not edit files inside the Book Studio folder; local edits block updates until they are discarded.
 
 If you received Book Studio as a ZIP instead, it cannot update itself. Replace the folder with the new ZIP, keeping your `.bookstudio` folder.

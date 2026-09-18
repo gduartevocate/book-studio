@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Book Studio</title>
-  <link rel="stylesheet" href="/styles.css?v=20260917-updates">
+  <link rel="stylesheet" href="/styles.css?v=20260918-paths">
 </head>
 <body>
   <header class="topbar">
@@ -18,6 +18,7 @@
       <button id="settingsButton" class="icon-button" type="button">Settings</button>
       <div id="appVersion" class="app-version">Book Studio ID</div>
       <button id="updateBadge" class="update-badge" type="button" hidden></button>
+      <button id="installBadge" class="update-badge" type="button" hidden>Check install location</button>
     </nav>
   </header>
 
@@ -115,12 +116,13 @@
       <section id="settingsView" class="settings-view" hidden aria-labelledby="settingsHeading">
         <div class="view-heading"><div><p class="eyebrow">Settings</p><h2 id="settingsHeading">Connection and diagnostics</h2><p class="view-intro">These technical settings are only needed when Book Studio cannot connect to Codex.</p></div><button id="settingsBack" class="text-button" type="button">Back to books</button></div>
         <section class="codex-panel" aria-labelledby="codexHeading"><div class="section-heading"><h2 id="codexHeading">Codex connection</h2><button id="refreshCodex" class="icon-button small-button" type="button">Refresh status</button></div><div id="codexStatus" class="codex-status">Checking Codex...</div><form id="codexPathForm" class="codex-path-form"><label><span>Codex executable path</span><input id="codexPathInput" type="text" placeholder="C:\Users\...\codex.exe"></label><div class="actions"><button id="saveCodexPath" type="submit">Save path</button><button id="clearCodexPath" class="secondary" type="button">Clear</button><span id="codexPathStatus" role="status" aria-live="polite"></span></div></form><div class="command-list"><div><span>Sign in</span><code id="codexLoginCommand">codex login</code></div><div><span>Open app</span><code id="codexAppCommand">codex app .</code></div></div><button id="testCodexConnection" type="button">Test connection</button><p class="hint">Sends a short test message through your Codex account. No book files are read or edited.</p><details><summary>Sign-in recovery (PowerShell)</summary><p>Use the same profile shown below. Signing out may also sign out other Codex clients that share it.</p><pre id="codexRecoveryCommand"></pre></details><div id="codexNotes" class="codex-notes"></div></section>
+        <section class="codex-panel install-panel" aria-labelledby="installHeading"><div class="section-heading"><h2 id="installHeading">Install location</h2></div><div id="installStatus" class="codex-status">Checking the install location...</div><p class="hint">Windows limits file paths to 260 characters. Keep Book Studio in a short local folder outside OneDrive so long course titles and Codex requests always save.</p></section>
         <section class="codex-panel updates-panel" aria-labelledby="updatesHeading"><div class="section-heading"><h2 id="updatesHeading">Updates</h2><button id="checkUpdates" class="icon-button small-button" type="button">Check for updates</button></div><div id="updatesStatus" class="codex-status">Checking the installed version...</div><ul id="updatesChanges" class="updates-changes" hidden></ul><div class="actions"><button id="applyUpdate" type="button" hidden>Get latest updates</button></div><p class="hint">Downloads the latest Book Studio from the update server and restarts it. Your books, uploads, and settings stay in place. Updates wait until no book is generating and no Codex request is running.</p><div id="updatesProgress" class="qa-repair-status" role="status" aria-live="polite" hidden><p></p><pre id="updatesLog"></pre></div></section>
       </section>
     </section>
   </main>
 
   <template id="jobTemplate"><article class="job-row"><div class="job-main"><div class="job-title"></div><div class="job-meta"></div></div><div class="job-status"></div><div class="job-actions"></div><div class="workflow-panel"></div><div class="job-log"></div><div class="artifact-list"></div><div class="format-review-panel" hidden></div><div class="chapter-panel" hidden></div><div class="codex-prompt-panel" hidden></div><div class="visual-panel" hidden></div></article></template>
-  <script src="/app.js?v=20260917-updates"></script>
+  <script src="/app.js?v=20260918-paths"></script>
 </body>
 </html>

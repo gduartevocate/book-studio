@@ -5824,7 +5824,7 @@ function New-EngagementPlan {
     foreach ($chapter in $Plan.chapters) {
         Write-EbookGeneratorChapterProgress -ChapterNumber $chapter.number -ChapterTitle $chapter.title -Phase "Planning visual assets" -Status "Working" -Detail "Choosing opener, quick-check, study-aid, and interaction requirements."
         $visual = Get-EngagementVisualSpec -Chapter $chapter
-        $chapterSlug = (ConvertTo-SafePathPart $chapter.title).ToLowerInvariant()
+        $chapterSlug = (ConvertTo-SafePathPart $chapter.title -MaxLength 40).ToLowerInvariant()
         $assetSlug = (($visual.title -replace "[^\w\-]+", "-").Trim("-")).ToLowerInvariant()
         if ([string]::IsNullOrWhiteSpace($assetSlug)) { $assetSlug = "study-aid" }
         $quickCheck = Get-QuickVisualCheckSpec -Chapter $chapter
@@ -12095,12 +12095,21 @@ function Export-MarkdownToDocx {
 }
 
 function ConvertTo-SafePathPart {
-    param([string]$Text)
+    # Windows limits a full path to 259 characters and packages nest several
+    # levels deep, so folder and file parts built from course titles are capped
+    # at a word boundary. The full title stays in the plan and manifest.
+    param([string]$Text, [int]$MaxLength = 0)
 
     $safe = $Text -replace "[^\w\-]+", "-"
     $safe = $safe.Trim("-")
     if ([string]::IsNullOrWhiteSpace($safe)) {
         return "ebook"
+    }
+    if ($MaxLength -gt 0 -and $safe.Length -gt $MaxLength) {
+        $cut = $safe.Substring(0, $MaxLength)
+        $boundary = $cut.LastIndexOf("-")
+        if ($boundary -ge [Math]::Floor($MaxLength / 2)) { $cut = $cut.Substring(0, $boundary) }
+        $safe = $cut.Trim("-")
     }
 
     return $safe
@@ -12575,7 +12584,7 @@ function Export-EbookBlueprintPackage {
         [Parameter(Mandatory)][string]$OutputRoot
     )
 
-    $folderName = ConvertTo-SafePathPart "$($Package.course.courseCode)-$($Package.course.courseName)"
+    $folderName = ConvertTo-SafePathPart "$($Package.course.courseCode)-$($Package.course.courseName)" -MaxLength 48
     $outputFolder = Join-Path $OutputRoot $folderName
     New-Item -ItemType Directory -Force -Path $outputFolder | Out-Null
     foreach ($legacyReviewFile in @("ebook-blueprint.docx", "ebook-blueprint.json", "ebook-blueprint.md", "ebook-outline.docx")) {
@@ -12644,7 +12653,7 @@ function Export-EbookPackage {
         throw "Refusing to export a learner-facing package containing Reflection Activity, Workplace Challenge, or redundant Chapter Summary headings: $($learnerSectionGate.detail)"
     }
 
-    $folderName = ConvertTo-SafePathPart "$($Package.course.courseCode)-$($Package.course.courseName)"
+    $folderName = ConvertTo-SafePathPart "$($Package.course.courseCode)-$($Package.course.courseName)" -MaxLength 48
     $outputFolder = Join-Path $OutputRoot $folderName
     New-Item -ItemType Directory -Force -Path $outputFolder | Out-Null
     foreach ($legacyReviewFile in @("ebook-blueprint.docx", "ebook-blueprint.json", "ebook-blueprint.md", "ebook-outline.docx", "ebook.md", "ebook.html", "ebook.docx")) {
