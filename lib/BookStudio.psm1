@@ -978,6 +978,7 @@ function Get-BookStudioArtifactsForOutputFolder {
         @{ name = "Codex drafting report"; fileName = "codex-drafting-report.md" },
         @{ name = "Codex drafting prompt"; fileName = "codex-drafting-prompt.md" },
         @{ name = "Codex drafting response"; fileName = "codex-drafting-response.md" },
+        @{ name = "Codex drafting log"; fileName = "codex-drafting-error.log" },
         @{ name = "Codex image report"; fileName = "codex-image-report.md" },
         @{ name = "Codex image prompt"; fileName = "codex-image-prompt.md" },
         @{ name = "Codex image response"; fileName = "codex-image-response.md" },
@@ -3530,6 +3531,7 @@ function Get-BookStudioAiRequests {
     $completedEditRequestIds = New-Object System.Collections.ArrayList
     $requests = New-Object System.Collections.ArrayList
     foreach ($request in @($job.aiRequests)) {
+        $requestJustCompleted = $false
         $responsePreview = Get-BookStudioTextFilePreview -Path $request.responsePath -MaxCharacters 8000
         $logPreview = Get-BookStudioAiLogPreview -Path $request.errorPath
         if ($request.status -eq "Completed with notes" -and $request.responsePath -and (Test-Path -LiteralPath $request.responsePath) -and ((Get-Item -LiteralPath $request.responsePath).Length -gt 0)) {
@@ -3540,14 +3542,15 @@ function Get-BookStudioAiRequests {
             $exitCode = $null
             $hasExitCode = $false
             if ($request.PSObject.Properties.Name -contains "exitCodePath" -and $request.exitCodePath -and (Test-Path -LiteralPath $request.exitCodePath)) {
-                $exitText = (Get-Content -LiteralPath $request.exitCodePath -Raw -Encoding UTF8 -ErrorAction SilentlyContinue).Trim()
+                [string]$exitText = Get-Content -LiteralPath $request.exitCodePath -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+                $exitText = if ([string]::IsNullOrWhiteSpace($exitText)) { '' } else { $exitText.Trim() }
                 if ($exitText -match "^-?\d+$") {
                     $exitCode = [int]$exitText
                     $hasExitCode = $true
                 }
             }
 
-            $responseExists = $request.responsePath -and (Test-Path -LiteralPath $request.responsePath) -and ((Get-Item -LiteralPath $request.responsePath).Length -gt 0)
+            $responseExists = -not [string]::IsNullOrWhiteSpace($responsePreview)
             $process = $null
             if ($request.processId -and -not $hasExitCode) {
                 $process = Get-Process -Id ([int]$request.processId) -ErrorAction SilentlyContinue
@@ -3557,18 +3560,14 @@ function Get-BookStudioAiRequests {
                 $request.status = if ($hasExitCode -and $exitCode -ne 0) {
                     "Failed"
                 }
-                elseif ($responseExists) {
+                elseif ($hasExitCode -and $responseExists) {
                     "Completed"
                 }
                 else {
                     "Failed"
                 }
                 $request.completedAt = (Get-Date).ToString("s")
-                if ($request.status -eq "Completed" -and [bool]$request.allowEdits -and -not ($request.PSObject.Properties.Name -contains "postProcessedAt")) {
-                    Add-OrSet-BookStudioNoteProperty -InputObject $request -Name "postProcessedAt" -Value (Get-Date).ToString("s")
-                    Add-OrSet-BookStudioNoteProperty -InputObject $request -Name "postProcessStatus" -Value "Package rebuild queued after edit-mode Codex request."
-                    [void]$completedEditRequestIds.Add([string]$request.id)
-                }
+                $requestJustCompleted = $request.status -eq "Completed"
                 if ($hasExitCode) {
                     if ($request.PSObject.Properties.Name -contains "exitCode") {
                         $request.exitCode = $exitCode
@@ -3598,10 +3597,23 @@ function Get-BookStudioAiRequests {
         if ([bool]$request.allowEdits -and $request.errorPath -and (Test-Path -LiteralPath $request.errorPath) -and $request.status -ne "Running") {
             $sandboxProblem = Get-EbookCodexSandboxFailure -Text (Get-Content -LiteralPath $request.errorPath -Raw -ErrorAction SilentlyContinue) -ExpectedSandbox 'workspace-write'
         }
+        if ($sandboxProblem -and $requestJustCompleted) {
+            $request.status = "Failed"
+            $changed = $true
+        }
+        if ($requestJustCompleted -and -not $sandboxProblem -and [bool]$request.allowEdits -and -not ($request.PSObject.Properties.Name -contains "postProcessedAt")) {
+            Add-OrSet-BookStudioNoteProperty -InputObject $request -Name "postProcessedAt" -Value (Get-Date).ToString("s")
+            Add-OrSet-BookStudioNoteProperty -InputObject $request -Name "postProcessStatus" -Value "Package rebuild queued after edit-mode Codex request."
+            [void]$completedEditRequestIds.Add([string]$request.id)
+        }
         if ($request.status -eq "Failed") {
-            $failure=Get-BookStudioCodexFailure -Text $logPreview
+            $failureExitCode = if ($null -ne $request.exitCode) { [int]$request.exitCode } else { 1 }
+            $failure=Get-BookStudioCodexFailure -Text $logPreview -ExitCode $failureExitCode
             if ($sandboxProblem) { $failure = [pscustomobject]@{kind='sandbox';message=$sandboxProblem;exitCode=$failure.exitCode} }
-            $statusDetail=$failure.message
+            $exitDescription = if ($null -ne $request.exitCode) { [string]$request.exitCode } else { 'not recorded' }
+            $statusDetail = if ($failure.kind -eq 'execution' -and -not [string]::IsNullOrWhiteSpace($responsePreview)) {
+                "Codex returned a response but successful completion was not confirmed (exit code: $exitDescription). Review the full log and any partial edits before retrying."
+            } else { $failure.message }
             Add-OrSet-BookStudioNoteProperty -InputObject $request -Name 'failureKind' -Value $failure.kind
             if($failure.kind -eq 'authentication' -and $ProjectRoot -and -not $request.PSObject.Properties['connectionFailureRecordedAt']){
                 Add-OrSet-BookStudioNoteProperty -InputObject $request -Name 'connectionFailureRecordedAt' -Value (Get-Date).ToString('o')

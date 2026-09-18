@@ -8,6 +8,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 . (Join-Path $ProjectRoot 'lib/EbookReadiness.ps1')
+. (Join-Path $ProjectRoot 'lib/EbookPublicationTemplate.ps1')
 
 $modulePath = Join-Path $ProjectRoot "lib\BookStudio.psm1"
 Import-Module $modulePath -Force
@@ -139,6 +140,7 @@ function Get-RunnerArtifactSpecs {
         @{ name = "Codex drafting report"; fileName = "codex-drafting-report.md" },
         @{ name = "Codex drafting prompt"; fileName = "codex-drafting-prompt.md" },
         @{ name = "Codex drafting response"; fileName = "codex-drafting-response.md" },
+        @{ name = "Codex drafting log"; fileName = "codex-drafting-error.log" },
         @{ name = "Codex image report"; fileName = "codex-image-report.md" },
         @{ name = "Codex image prompt"; fileName = "codex-image-prompt.md" },
         @{ name = "Codex image response"; fileName = "codex-image-response.md" },
@@ -251,6 +253,31 @@ function Test-RunnerCodexUsageLimitText {
     }
 
     return ($Text -match '(?i)\busage limit\b' -or $Text -match '(?i)\btry again at\b')
+}
+
+function Get-RunnerGeneratorFailure {
+    param([string]$LogPath, [string]$ErrorLogPath, [string]$ExitCode)
+
+    # The generator's structured error is authoritative. A QA/export exception
+    # is not evidence that Codex crashed or failed to return a response.
+    $outputText = if (Test-Path -LiteralPath $LogPath) { Get-Content -LiteralPath $LogPath -Raw -Encoding UTF8 } else { '' }
+    $errors = [regex]::Matches([string]$outputText, '(?m)^\[BOOKSTUDIO-ERROR\]\s*[^|]*\|\s*[^|]*\|\s*[^|]*\|\s*[^|]*\|\s*([^\r\n]+)')
+    $detail = if ($errors.Count) { $errors[$errors.Count - 1].Groups[1].Value.Trim() } else { '' }
+    if (-not $detail -and (Test-Path -LiteralPath $ErrorLogPath)) {
+        $detail = (@(Get-Content -LiteralPath $ErrorLogPath -Tail 12 -Encoding UTF8) -join ' ').Trim()
+        if ($detail.Length -gt 2000) { $detail = $detail.Substring($detail.Length - 2000) }
+    }
+    if (-not $detail) { $detail = "Generator exited with code $ExitCode without recording a specific error." }
+
+    $kind = 'execution'
+    if ($errors.Count -and $detail -match '^(Release artifact gate failed during repair\.|Final export validation failed\.|E-book output audit status is (FAIL|WARN)\.)') {
+        $kind = 'qa'
+    }
+    else {
+        $classified = & (Get-Module BookStudio) { param($text) Get-BookStudioCodexFailure -Text $text } $detail
+        $kind = $classified.kind
+    }
+    [pscustomobject]@{ kind = $kind; message = $detail }
 }
 
 function Get-RunnerCodexUsageLimitMessage {
@@ -409,25 +436,58 @@ function Get-RunnerTechnicalStatus {
     return 'FAIL'
 }
 
+function Test-RunnerCodexDraftComplete {
+    param(
+        [Parameter(Mandatory)][string]$OutputFolder,
+        [Parameter(Mandatory)][datetime]$StartedAt
+    )
+
+    try {
+        foreach ($name in @('codex-drafting-exit-code.txt', 'codex-drafting-response.md', 'codex-drafting-report.md', 'codex-drafting-error.log')) {
+            $file = Get-Item -LiteralPath (Join-Path $OutputFolder $name) -ErrorAction Stop
+            if ($file.LastWriteTime -lt $StartedAt -or $file.Length -eq 0) { return $false }
+        }
+        $exitText = (Get-Content -LiteralPath (Join-Path $OutputFolder 'codex-drafting-exit-code.txt') -Raw -Encoding UTF8).Trim()
+        if ($exitText -ne '0') { return $false }
+        $response = Get-Content -LiteralPath (Join-Path $OutputFolder 'codex-drafting-response.md') -Raw -Encoding UTF8
+        if ([string]::IsNullOrWhiteSpace($response)) { return $false }
+        $report = Get-Content -LiteralPath (Join-Path $OutputFolder 'codex-drafting-report.md') -Raw -Encoding UTF8
+        if ($report -notmatch '(?m)^- Exit code: 0\s*$') { return $false }
+        $draftLog = Get-Content -LiteralPath (Join-Path $OutputFolder 'codex-drafting-error.log') -Raw -Encoding UTF8
+        $sandboxProblem = & (Get-Module BookStudio) { param($text) Get-EbookCodexSandboxFailure -Text $text -ExpectedSandbox 'workspace-write' } $draftLog
+        if ($sandboxProblem) { return $false }
+
+        $manuscripts = @(Get-ChildItem -LiteralPath $OutputFolder -Filter '* - E-Book.md' -File)
+        if ($manuscripts.Count -ne 1 -or $manuscripts[0].LastWriteTime -lt $StartedAt) { return $false }
+        $markdown = Get-Content -LiteralPath $manuscripts[0].FullName -Raw -Encoding UTF8
+        $plan = Get-Content -LiteralPath (Join-Path $OutputFolder 'ebook-plan.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        $actual = @([regex]::Matches([string]$markdown, '(?m)^# Chapter (\d+):[^\r\n]+') | ForEach-Object { [int]$_.Groups[1].Value })
+        $expected = @($plan.chapters | Sort-Object { [int]$_.number } | ForEach-Object { [int]$_.number })
+        if ($expected.Count -eq 0 -or ($actual -join ',') -ne ($expected -join ',')) { return $false }
+        return $true
+    }
+    catch { return $false }
+}
+
+function Get-RunnerQaRepairDecision {
+    param([string]$FailureKind, [string]$OutputFolder, [datetime]$StartedAt)
+
+    if ($FailureKind -ne 'qa') {
+        return [pscustomobject]@{ allowed = $false; reason = 'The generator failed outside a confirmed QA check. Review the original error and any partial output before retrying.' }
+    }
+    if (-not (Test-RunnerCodexDraftComplete -OutputFolder $OutputFolder -StartedAt $StartedAt)) {
+        return [pscustomobject]@{ allowed = $false; reason = 'A completed drafting pass for this run could not be verified. Review the drafting log and partial manuscript before retrying.' }
+    }
+    return [pscustomobject]@{ allowed = $true; reason = '' }
+}
+
 function Confirm-RunnerCodexGenerationProof {
     param(
         [Parameter(Mandatory)][string]$OutputFolder,
         [Parameter(Mandatory)][datetime]$StartedAt
     )
 
-    $exitCodePath = Join-Path $OutputFolder 'codex-drafting-exit-code.txt'
-    $responsePath = Join-Path $OutputFolder 'codex-drafting-response.md'
-    if (-not (Test-Path -LiteralPath $exitCodePath -PathType Leaf) -or -not (Test-Path -LiteralPath $responsePath -PathType Leaf)) {
-        return $false
-    }
-    $exitCodeFile = Get-Item -LiteralPath $exitCodePath -ErrorAction SilentlyContinue
-    if (-not $exitCodeFile -or $exitCodeFile.LastWriteTime -lt $StartedAt.AddSeconds(-2)) {
-        return $false
-    }
-    try { $draftExitCode = [int](Get-Content -LiteralPath $exitCodePath -Raw -ErrorAction Stop).Trim() } catch { return $false }
-    if ($draftExitCode -ne 0) {
-        return $false
-    }
+    if (-not (Test-RunnerCodexDraftComplete -OutputFolder $OutputFolder -StartedAt $StartedAt)) { return $false }
 
     $command = Resolve-BookStudioCodexCommand -ProjectRoot $ProjectRoot
     if (-not $command) {
@@ -478,6 +538,9 @@ Required workflow:
 5. Preserve numbered scholarly source links and source integrity. Do not invent citations.
 6. Fix content depth, missing sections, broken image references, weak visuals, obvious accessibility issues, and export problems that are visible from the reports.
 
+Publication format contract (also applies to repairs):
+$(Get-EbookTemplateInstructions)
+
 After editing, summarize exactly which files changed and which QA issues you addressed.
 "@
 }
@@ -525,8 +588,16 @@ function Wait-RunnerAiRequest {
 function Invoke-RunnerAutomaticQaRepair {
     param(
         [Parameter(Mandatory)][string]$OutputFolder,
-        [Parameter(Mandatory)][string]$FailureMessage
+        [Parameter(Mandatory)][string]$FailureMessage,
+        [Parameter(Mandatory)][string]$FailureKind,
+        [Parameter(Mandatory)][datetime]$StartedAt
     )
+
+    $decision = Get-RunnerQaRepairDecision -FailureKind $FailureKind -OutputFolder $OutputFolder -StartedAt $StartedAt
+    if (-not $decision.allowed) {
+        Add-BookStudioLogEntry -DatabasePath $DatabasePath -JobId $JobId -Message "Automatic QA repair skipped. $($decision.reason)"
+        return $false
+    }
 
     if (Test-RunnerCodexUsageLimitText -Text $FailureMessage) {
         Add-BookStudioLogEntry -DatabasePath $DatabasePath -JobId $JobId -Message "Automatic QA repair skipped because Codex reported a usage limit."
@@ -549,6 +620,7 @@ function Invoke-RunnerAutomaticQaRepair {
     if ($technicalBefore -eq "PASS") {
         return $false
     }
+    if (-not (Confirm-RunnerCodexGenerationProof -OutputFolder $OutputFolder -StartedAt $StartedAt)) { return $false }
 
     Set-BookStudioJobProgress -DatabasePath $DatabasePath -JobId $JobId -Phase "Automatic QA repair" -Detail "QA did not pass. Starting one Codex repair pass before finalizing the job." -Percent 94 -AddLog
     Add-BookStudioLogEntry -DatabasePath $DatabasePath -JobId $JobId -Message "Automatic QA repair started because technical readiness was $technicalBefore."
@@ -560,6 +632,7 @@ function Invoke-RunnerAutomaticQaRepair {
         -Scope "Package" `
         -ChapterId "" `
         -AllowEdits `
+        -IncludeHistory:$false `
         -KeepJobActive `
         -ActiveProcessId $PID `
         -RequestKind 'QaRepair' `
@@ -576,7 +649,7 @@ function Invoke-RunnerAutomaticQaRepair {
     if (-not $completedRequest -or $completedRequest.status -ne "Completed") {
         $detail = if ($completedRequest) { $completedRequest.statusDetail } else { "No request status was returned." }
         Set-RunnerAiRequestPostProcess -RequestId $request.id -Status "Package rebuild skipped: the automatic QA repair request did not complete. $detail"
-        throw "Automatic QA repair did not complete successfully. $detail"
+        throw "Automatic QA repair did not complete successfully. $detail Repair log: $($request.errorPath). Partial edits may exist; review them before retrying."
     }
     if ($completedRequest.failureKind -eq 'sandbox') {
         Set-RunnerAiRequestPostProcess -RequestId $request.id -Status "Package rebuild skipped: $($completedRequest.statusDetail)"
@@ -776,14 +849,15 @@ try {
     if ($exitCode -ne 0) {
         $availableOutputFolder = Save-RunnerArtifactsIfAvailable -OutputRoot $outputRoot -LogPath $logPath
         $failureText = Get-RunnerRecentText -Paths @($errorLogPath, $logPath)
-        $failure = & (Get-Module BookStudio) {param($text) Get-BookStudioCodexFailure $text} $failureText
+        $failure = Get-RunnerGeneratorFailure -LogPath $logPath -ErrorLogPath $errorLogPath -ExitCode $exitCode
+        Add-BookStudioLogEntry -DatabasePath $DatabasePath -JobId $JobId -Message "Original generator failure: $($failure.message)"
         if ($failure.kind -eq 'authentication') {
             & (Get-Module BookStudio) {
                 param($root,$message)
                 $command=Resolve-BookStudioCodexCommand -ProjectRoot $root
                 if($command){Set-BookStudioConnectionResult -ProjectRoot $root -Result ([pscustomobject]@{status='FAIL';checkedAt=(Get-Date).ToString('o');identity=(Get-BookStudioConnectionIdentity $command.Source);kind='authentication';message=$message})}
             } $ProjectRoot $failure.message
-            throw "$($failure.message) Generation did not complete. Review the logs and any partial output before retrying."
+            throw "$($failure.message) Generation did not complete. See $logPath and $errorLogPath; review any partial output before retrying."
         }
         if (Test-RunnerCodexUsageLimitText -Text $failureText) {
             $usageLimitMessage = Get-RunnerCodexUsageLimitMessage -Text $failureText
@@ -831,13 +905,12 @@ try {
 
         if ($RunMode -eq 'Full' -and $availableOutputFolder -and (Test-Path -LiteralPath (Join-Path $availableOutputFolder.FullName 'image-production-run.json'))) {
             $imageRun = Get-Content -LiteralPath (Join-Path $availableOutputFolder.FullName 'image-production-run.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-            if ($imageRun.status -ne 'Complete') { throw "Images incomplete. $($imageRun.failure) Retry will resume images only; the manuscript and successful images are preserved." }
+            if ($imageRun.status -ne 'Complete') { throw "Original failure: $($failure.message) Images incomplete. $($imageRun.failure) Retry will resume images only; the manuscript and successful images are preserved. See $logPath and $errorLogPath." }
         }
         if ($RunMode -eq "Full" -and $availableOutputFolder -and $useCodexDrafting) {
             try {
-                Confirm-RunnerCodexGenerationProof -OutputFolder $availableOutputFolder.FullName -StartedAt $generatorStartedAt | Out-Null
                 $repairApplied = if ((Get-RunnerTechnicalStatus -OutputFolder $availableOutputFolder.FullName) -ne 'PASS') {
-                    Invoke-RunnerAutomaticQaRepair -OutputFolder $availableOutputFolder.FullName -FailureMessage "Generator exited with code $exitCode. See $logPath."
+                    Invoke-RunnerAutomaticQaRepair -OutputFolder $availableOutputFolder.FullName -FailureKind $failure.kind -StartedAt $generatorStartedAt -FailureMessage $failure.message
                 } else { $false }
                 if ($repairApplied) {
                     $exitCode = 0
@@ -850,7 +923,7 @@ try {
         }
 
         if ($exitCode -ne 0) {
-            throw "Generator exited with code $exitCode. See $logPath."
+            throw "Generator exited with code $exitCode. Original failure: $($failure.message) See $logPath and $errorLogPath. Review any partial output before retrying."
         }
     }
 
@@ -902,7 +975,7 @@ try {
     $technicalStatus = Get-RunnerTechnicalStatus -OutputFolder $outputFolder.FullName
     if ($RunMode -eq "Full" -and $technicalStatus -ne "PASS" -and $useCodexDrafting) {
         try {
-            Invoke-RunnerAutomaticQaRepair -OutputFolder $outputFolder.FullName -FailureMessage "Generator completed, but technical readiness is $technicalStatus." | Out-Null
+            Invoke-RunnerAutomaticQaRepair -OutputFolder $outputFolder.FullName -FailureKind 'qa' -StartedAt $generatorStartedAt -FailureMessage "Generator completed, but technical readiness is $technicalStatus. Inspect release-integrity.json and ebook-output-audit.md for the failed checks." | Out-Null
             New-BookStudioFormatPreview -Job $job -OutputFolder $outputFolder.FullName | Out-Null
             $artifacts = Get-RunnerArtifactsForOutputFolder -OutputFolder $outputFolder.FullName -JobId $JobId
             $qaStatus = Get-RunnerQaStatus -OutputFolder $outputFolder.FullName
@@ -914,7 +987,7 @@ try {
     }
 
     if ($RunMode -eq "Full" -and $technicalStatus -ne "PASS") {
-        throw "Generator completed, but technical readiness still failed after automatic repair. See ebook-output-audit.md, export-validation.md, and release-integrity.json."
+        throw "Generator completed, but technical readiness still failed. See the repair status in the job log, ebook-output-audit.md, export-validation.md, and release-integrity.json."
     }
 
     if ($RunMode -eq "Full" -and $qaStatus -ne "PASS") {

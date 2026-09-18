@@ -417,6 +417,46 @@ function applySuggestedOutlineChanges(jobId, changes) {
   return "";
 }
 
+async function applySuggestedOutlineChangesAndRegenerate(jobId, changes) {
+  const editor = outlineEditors.get(jobId);
+  if (!editor || !editor.container.isConnected) return "Open this book's format review to apply suggestions.";
+
+  let applied = 0;
+  for (const change of changes) {
+    const field = editor.fields.find((entry) => entry.number === change.number);
+    if (!field) continue;
+    const input = change.field === "title" ? field.titleInput : change.field === "focus" ? field.focusInput : field.guidanceInput;
+    input.value = change.value;
+    input.classList.add("outline-suggested");
+    applied += 1;
+  }
+  if (!applied) return "The suggestions did not match this book's chapters.";
+
+  const chapters = editor.fields.map((field) => ({
+    number: field.number,
+    title: field.titleInput.value.trim(),
+    focus: field.focusInput.value.trim(),
+    guidance: field.guidanceInput.value.trim(),
+    objectives: field.objectiveInput.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean)
+  }));
+  if (chapters.some((chapter) => !chapter.title || !chapter.focus || !chapter.objectives.length)) {
+    return "Each chapter needs a title, focus, and source objectives.";
+  }
+
+  editor.save.disabled = true;
+  editor.status.textContent = "Applying suggestions and rebuilding the complete preview...";
+  try {
+    await api(`/api/jobs/${jobId}/outline`, { method: "POST", body: JSON.stringify({ chapters }) });
+    editor.status.textContent = "Suggestions applied. Reloading the updated preview...";
+    await loadJobs({ force: true, focusJobId: jobId });
+    return "";
+  } catch (error) {
+    editor.save.disabled = false;
+    editor.status.textContent = error.message;
+    return error.message;
+  }
+}
+
 function renderOutlineEditor(container, job, outline) {
   container.textContent = "";
   const heading = makeElement("div", "outline-editor-heading");
@@ -492,7 +532,7 @@ function renderOutlineEditor(container, job, outline) {
   actions.append(save, status);
   form.append(actions);
   container.append(form);
-  outlineEditors.set(job.id, { fields, form, status, container });
+  outlineEditors.set(job.id, { fields, form, status, save, container });
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -1899,15 +1939,23 @@ function renderAiRequestList(container, requests, options = {}) {
       codexBubble.append(response);
       const suggestions = parseSuggestedOutlineChanges(request.responsePreview);
       if (suggestions.length) {
-        const apply = makeElement("button", "secondary outline-apply-button", `Load ${suggestions.length} suggested outline change(s) into the editor`);
-        apply.type = "button";
+        const load = makeElement("button", "secondary outline-apply-button", `Load ${suggestions.length} suggested outline change(s) into the editor`);
+        load.type = "button";
         const applyStatus = makeElement("span", "hint", "");
-        apply.addEventListener("click", () => {
+        load.addEventListener("click", () => {
           const job = getSelectedBookChatJob();
           applyStatus.textContent = job ? applySuggestedOutlineChanges(job.id, suggestions) : "Select the book first.";
         });
+        const apply = makeElement("button", "secondary outline-apply-button", "Apply suggestions & regenerate preview");
+        apply.type = "button";
+        apply.addEventListener("click", async () => {
+          const job = getSelectedBookChatJob();
+          applyStatus.textContent = job
+            ? await applySuggestedOutlineChangesAndRegenerate(job.id, suggestions)
+            : "Select the book first.";
+        });
         const applyRow = makeElement("div", "outline-apply-row");
-        applyRow.append(apply, applyStatus);
+        applyRow.append(load, apply, applyStatus);
         codexBubble.append(applyRow);
       }
     } else if (request.status === "Running") {

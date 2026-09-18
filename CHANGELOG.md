@@ -1,5 +1,12 @@
 # Book Studio ID Changelog
 
+## v2026.09.18.3 (2026-09-18)
+
+- Preserve the original generator error and repair-log location. Automatic QA repair now requires a confirmed QA failure and current evidence of completed drafting; interrupted, empty-response, and stale runs do not start another edit pass.
+- Drafting rejects missing or stale exit results and final responses. Drafting and repair prompts spell out the exact Opening Scenario/Business Case format required by publication checks.
+- Format-review suggestions can be applied directly to the outline and regenerate the preview, alongside the existing load-and-review option.
+- Double-click Install Book Studio.cmd to create desktop shortcuts for starting and stopping Book Studio.
+
 ## v2026.09.18.2 (2026-09-18)
 
 - Outline editor gains Guidance for the writer per chapter, carried into the outline and Codex drafting. Review with Codex at format review knows the planned outline and can hand back suggested title, focus, and guidance changes that load into the editor with one click.

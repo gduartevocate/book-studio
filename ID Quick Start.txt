@@ -1,16 +1,16 @@
-Book Studio ID v2026.09.18.2
+Book Studio ID v2026.09.18.3
 
 1. Preferred: install with git so updates are one click. In PowerShell: git clone https://github.com/gduartevocate/book-studio
    If you received this as a ZIP instead, unzip it; ZIP installs are updated by replacing the folder.
-2. Use a local writable folder outside OneDrive or other sync folders for the pilot. Double-click Start Book Studio.cmd.
-3. Your browser should open to Book Studio automatically.
+2. Use a local writable folder outside OneDrive or other sync folders for the pilot. Double-click Install Book Studio.cmd once to create desktop shortcuts.
+3. Double-click the new Book Studio shortcut. Your browser should open automatically.
 4. Keep using the browser while the server runs in the background.
-5. Double-click Stop Book Studio.cmd when finished.
+5. Double-click the new Stop Book Studio shortcut when finished.
 
 Version check and updates:
 - The Book Studio header shows the installed Book Studio ID version and an Update available badge when a newer release exists.
 - Settings > Updates > Get latest updates downloads the release and restarts Book Studio. Books, uploads, and settings stay in place.
-- When troubleshooting, report this exact version: v2026.09.18.2.
+- When troubleshooting, report this exact version: v2026.09.18.3.
 
 Codex assistant and AI generation:
 - AI drafting and real chapter-image generation are enabled by default. All chapter images must pass generation and Word/HTML checks; disabled or partial image runs remain incomplete.

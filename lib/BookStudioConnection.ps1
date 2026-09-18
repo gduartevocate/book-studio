@@ -13,7 +13,9 @@ function Get-BookStudioCodexFailure {
     }elseif($Text -match '(?i)usage limit|rate.limit|quota|429\b'){
         $kind='quota';$message='Codex reported a usage or rate limit. Check the full log for the reset time. Do not repeat an edit request until you have reviewed its result.'
     }elseif($Text -match '(?i)timed? out|timeout'){
-        $kind='timeout';$message='The Codex connection test timed out. Check connectivity and sign-in, then test again.'
+        $kind='timeout';$message='The Codex operation timed out. Check the full log and any partial edits, then Test connection before retrying.'
+    }elseif($Text -match '(?i)stream disconnected|connection reset|connection closed before|error sending request|dns.*failed|failed to connect'){
+        $kind='network';$message='The Codex connection was interrupted. Check the full log and any partial edits, then Test connection before retrying.'
     }elseif($Text -match '(?i)cannot find path|not found|no such file'){
         $kind='configuration';$message='Codex could not find a required executable or file. Check the configured path and full log.'
     }

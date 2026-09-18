@@ -360,6 +360,7 @@ $guidanceSection
 "@
     Set-Content -LiteralPath $runScriptPath -Value $script -Encoding UTF8
 
+    $draftStartedAt = Get-Date
     $process = Start-Process -FilePath "powershell" -ArgumentList @(
         "-NoProfile",
         "-ExecutionPolicy", "Bypass",
@@ -386,12 +387,14 @@ $guidanceSection
         throw "Codex drafting timed out after $TimeoutSeconds second(s). See $errorPath"
     }
 
-    $exitCode = if (Test-Path -LiteralPath $exitCodePath) {
-        [int]((Get-Content -LiteralPath $exitCodePath -Raw -ErrorAction SilentlyContinue).Trim())
+    # A missing/stale result from the wrapper must not be treated as exit 0.
+    $exitFile = Get-Item -LiteralPath $exitCodePath -ErrorAction SilentlyContinue
+    [string]$exitText = if ($exitFile) { Get-Content -LiteralPath $exitCodePath -Raw -Encoding UTF8 } else { '' }
+    $exitText = if ([string]::IsNullOrWhiteSpace($exitText)) { '' } else { $exitText.Trim() }
+    if (-not $exitFile -or $exitFile.LastWriteTime -lt $draftStartedAt -or $exitText -notmatch '^-?\d+$') {
+        throw "Codex drafting stopped without a valid exit result for this run. Review $errorPath and any partial edits before retrying."
     }
-    else {
-        $process.ExitCode
-    }
+    $exitCode = [int]$exitText
 
     # A downgraded sandbox exits 0 with an apologetic response and no edits.
     # Name that cause before the generic "did not modify" failure.
@@ -421,7 +424,11 @@ $guidanceSection
         throw "Codex drafting completed but did not modify the e-book Markdown. Review $responsePath and $errorPath, then retry with clearer source files or instructions."
     }
 
-    $response = if (Test-Path -LiteralPath $responsePath) { Get-Content -LiteralPath $responsePath -Raw -Encoding UTF8 } else { "" }
+    $responseFile = Get-Item -LiteralPath $responsePath -ErrorAction SilentlyContinue
+    $response = if ($responseFile) { Get-Content -LiteralPath $responsePath -Raw -Encoding UTF8 } else { "" }
+    if (-not $responseFile -or $responseFile.LastWriteTime -lt $draftStartedAt -or [string]::IsNullOrWhiteSpace($response)) {
+        throw "Codex drafting stopped without a usable final response for this run. Partial manuscript edits were preserved. Review $errorPath before retrying."
+    }
     $report = @"
 # Codex Drafting Report
 
