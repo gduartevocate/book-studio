@@ -420,6 +420,7 @@ function applySuggestedOutlineChanges(jobId, changes) {
 async function applySuggestedOutlineChangesAndRegenerate(jobId, changes) {
   const editor = outlineEditors.get(jobId);
   if (!editor || !editor.container.isConnected) return "Open this book's format review to apply suggestions.";
+  if (editor.save.disabled) return "An outline update is already in progress.";
 
   let applied = 0;
   for (const change of changes) {
@@ -446,7 +447,7 @@ async function applySuggestedOutlineChangesAndRegenerate(jobId, changes) {
   editor.save.disabled = true;
   editor.status.textContent = "Applying suggestions and rebuilding the complete preview...";
   try {
-    await api(`/api/jobs/${jobId}/outline`, { method: "POST", body: JSON.stringify({ chapters }) });
+    await api(`/api/jobs/${jobId}/outline`, { method: "POST", body: JSON.stringify({ chapters, planHash: editor.planHash }) });
     editor.status.textContent = "Suggestions applied. Reloading the updated preview...";
     await loadJobs({ force: true, focusJobId: jobId });
     return "";
@@ -465,7 +466,8 @@ function renderOutlineEditor(container, job, outline) {
     makeElement("span", "hint", "Changes regenerate the complete preview and clear any previous approval.")
   );
   container.append(heading);
-  container.append(makeElement("p", "outline-editor-intro", "Edit chapter titles and focus before approving the format. Learning objectives are shown for traceability and remain locked to the authoritative course source. Chapter order, chapter count, and source assignments stay fixed."));
+  container.append(makeElement("p", "outline-editor-intro", "Edit chapter titles, focus, and writer guidance. Saving refreshes the browser preview and downloadable outlines/planning packets. Objectives remain unchanged unless you explicitly review and confirm a replacement below."));
+  if (outline.lastUpdate?.message) { const receipt = makeElement("p", "outline-update-receipt", outline.lastUpdate.message); receipt.setAttribute("role", "status"); container.append(receipt); }
 
   const form = document.createElement("form");
   form.className = "outline-editor-form";
@@ -493,7 +495,7 @@ function renderOutlineEditor(container, job, outline) {
     focusInput.type = "text";
     focusInput.value = chapter.focus || "";
     focusInput.required = true;
-    focusInput.maxLength = 240;
+    focusInput.maxLength = 2000;
     focusLabel.append(focusInput);
     card.append(focusLabel);
 
@@ -532,7 +534,8 @@ function renderOutlineEditor(container, job, outline) {
   actions.append(save, status);
   form.append(actions);
   container.append(form);
-  outlineEditors.set(job.id, { fields, form, status, save, container });
+  const outcomeEditor = appendOutcomeReplacement(container, job, outline);
+  outlineEditors.set(job.id, { fields, form, status, save, container, planHash: outline.planHash, outcomeEditor });
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -550,7 +553,7 @@ function renderOutlineEditor(container, job, outline) {
     save.disabled = true;
     status.textContent = "Saving and rebuilding the complete preview...";
     try {
-      await api(`/api/jobs/${job.id}/outline`, { method: "POST", body: JSON.stringify({ chapters }) });
+      await api(`/api/jobs/${job.id}/outline`, { method: "POST", body: JSON.stringify({ chapters, planHash: outline.planHash }) });
       status.textContent = "Outline saved. Reloading the updated preview...";
       await loadJobs({ force: true, focusJobId: job.id });
     } catch (error) {
@@ -863,7 +866,30 @@ function renderJobProgress(container, job) {
 
 function renderJobQaSummary(container, job) {
   const qa = job.qaSummary;
+  if (job.qaReview) {
+    const receipt = makeElement("p", "qa-review-result", `Last QA run: ${formatDate(job.qaReview.checkedAt)}. ${job.qaReview.message}`);
+    receipt.setAttribute("role", "status");
+    container.append(receipt);
+  }
   if (!qa || !qa.status || qa.status === "Unknown") return;
+
+  if (qa.stage === "outline") {
+    const banner = makeElement("div", "qa-summary preview");
+    banner.append(makeElement("strong", "", `Outline: ${qa.outlineStatus}`));
+    banner.append(makeElement("span", "", qa.summary));
+    for (const issue of qa.outlineIssues || []) banner.append(makeElement("span", "", issue));
+    banner.append(makeElement("span", "", `Sources: ${qa.sourceReadiness?.status || "Not checked"}. ${qa.sourceReadiness?.detail || ""}`));
+    banner.append(makeElement("span", "", "Book QA: not run yet. No manuscript has been generated; citations, images, and publication checks run later."));
+    if (qa.sourceReadiness?.issues?.length) {
+      const details = makeElement("details", "");
+      details.append(makeElement("summary", "", `${qa.sourceReadiness.issues.length} source setup issue(s)`));
+      const list = makeElement("ul", "");
+      for (const issue of qa.sourceReadiness.issues) list.append(makeElement("li", "", issue));
+      details.append(list); banner.append(details);
+    }
+    container.append(banner);
+    return;
+  }
 
   const status = String(qa.status).toUpperCase();
   const banner = makeElement("div", status === "PASS" ? "qa-summary pass" : "qa-summary fail");
@@ -1966,6 +1992,17 @@ function renderAiRequestList(container, requests, options = {}) {
         const applyRow = makeElement("div", "outline-apply-row");
         applyRow.append(load, apply, applyStatus);
         codexBubble.append(applyRow);
+        codexBubble.append(makeElement("p", "hint", "Applies titles, focus, and writer guidance only. Official outcomes are unchanged; use the separate outcome review to replace them."));
+      }
+      if (/^CO\d+[.:]\s/m.test(request.instruction || "")) {
+        const outcomes = makeElement("button", "secondary", "Review outcome replacement from this request"); outcomes.type = "button";
+        outcomes.addEventListener("click", () => {
+          const job = getSelectedBookChatJob(); const editor = outlineEditors.get(job?.id);
+          if (!editor?.container.isConnected) { bookChatStatus.textContent = "Open this book's format review first."; return; }
+          const start = request.instruction.search(/^CO\d+[.:]\s/m);
+          editor.outcomeEditor.openWithText(request.instruction.slice(start));
+        });
+        codexBubble.append(outcomes);
       }
     } else if (request.status === "Running") {
       codexBubble.append(renderAiProgressCard(request, elapsed));
@@ -2192,12 +2229,13 @@ async function loadBookChat(options = {}) {
     }
 
     if (loadGeneration !== chatLoadGeneration || job.id !== selectedBookChatJobId) return;
-    const threadSignature = `${job.id}|${data.sessionId || "legacy"}|${(data.requests || []).map((request) => `${request.id}:${request.status}:${request.completedAt || ""}:${request.responsePreview || ""}:${request.statusDetail || ""}:${request.currentAction || ""}:${request.latestActivity || ""}:${request.activityPreview || ""}:${request.logPreview || ""}:${request.postProcessedAt || ""}:${request.postProcessStatus || ""}`).join("|")}`;
+    const threadSignature = `${job.id}|${job.outlineUpdate?.at || ""}|${job.outlineUpdate?.planHash || ""}|${data.sessionId || "legacy"}|${(data.requests || []).map((request) => `${request.id}:${request.status}:${request.completedAt || ""}:${request.responsePreview || ""}:${request.statusDetail || ""}:${request.currentAction || ""}:${request.latestActivity || ""}:${request.activityPreview || ""}:${request.logPreview || ""}:${request.postProcessedAt || ""}:${request.postProcessStatus || ""}`).join("|")}`;
     if (!options.force && !options.showLoading && threadSignature === renderedBookChatThreadSignature) {
       return;
     }
     renderedBookChatThreadSignature = threadSignature;
     renderAiRequestList(bookChatThread, data.requests || [], { forceScroll: options.forceScroll || options.showLoading });
+    if (job.outlineUpdate?.message) { const receipt = makeElement("p", "outline-update-receipt", job.outlineUpdate.message); receipt.setAttribute("role", "status"); bookChatThread.prepend(receipt); }
   } catch (error) {
     if (loadGeneration !== chatLoadGeneration || job.id !== selectedBookChatJobId) return;
     const repair = qaRepairStates.get(job.id);
@@ -2428,6 +2466,13 @@ function renderJobs(jobs, options = {}) {
     renderJobQaSummary(log, job);
     renderWorkflowPanel(workflowPanel, job);
     if (!isJobProcessing(job) && job.outputFolder) appendProductionPreferences(workflowPanel, job);
+    if (!isJobProcessing(job) && job.outputFolder) {
+      const review = makeElement("button", "secondary qa-review-button", "Run QA again");
+      review.type = "button";
+      review.title = "Check saved outline or manuscript and source evidence without rewriting content.";
+      review.addEventListener("click", () => rerunJobQa(job.id, review));
+      actions.append(review);
+    }
 
     if (isJobProcessing(job)) {
       const busy = document.createElement("span");
@@ -2508,13 +2553,8 @@ function renderJobs(jobs, options = {}) {
         actions.append(active);
       }
 
-      const deleteButton = document.createElement("button");
-      deleteButton.type = "button";
-      deleteButton.className = "danger";
-      deleteButton.textContent = "Delete";
-      deleteButton.addEventListener("click", () => deleteBookJob(job, deleteButton));
-      actions.append(deleteButton);
     }
+    appendDeleteBookAction(actions, job);
 
     renderArtifactLinks(artifacts, job.artifacts || []);
     for (const warning of job.packageFormat?.warnings || []) {
@@ -2561,6 +2601,24 @@ async function runJob(jobId, mode = "Auto") {
   }
   await loadJobs({ force: true, focusJobId: jobId });
   return currentJobs.find((job) => job.id === jobId) || null;
+}
+
+async function rerunJobQa(jobId, button) {
+  button.disabled = true;
+  button.textContent = "Running QA...";
+  const result = makeElement("span", "qa-review-result", "Checking saved content...");
+  result.setAttribute("role", "status");
+  button.after(result);
+  try {
+    const review = await api(`/api/jobs/${jobId}/run-qa`, { method: "POST", body: "{}" });
+    result.textContent = review.message;
+    await loadJobs();
+  } catch (error) {
+    result.textContent = `QA review could not finish: ${error.message}`;
+  } finally {
+    button.disabled = false;
+    button.textContent = "Run QA again";
+  }
 }
 
 async function rebuildJobPackage(jobId, button) {
@@ -2772,9 +2830,25 @@ async function updateJobLifecycle(jobId, state, button) {
   }
 }
 
+function isBookDeletionBlocked(job) {
+  return isJobProcessing(job) || (job.aiRequests || []).some(request => activeStatuses.has(request.status));
+}
+
+function appendDeleteBookAction(actions, job) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "danger delete-book-button";
+  button.textContent = "Delete book";
+  button.disabled = isBookDeletionBlocked(job);
+  button.title = button.disabled ? "Wait for generation or Codex work to finish before deleting." : "Permanently remove this book from Book Studio.";
+  button.addEventListener("click", () => deleteBookJob(job, button));
+  actions.append(button);
+}
+
 async function deleteBookJob(job, button) {
+  if (button?.disabled || isBookDeletionBlocked(job)) return;
   const label = job.courseCode || job.id;
-  const typed = window.prompt(`Type ${label} to permanently delete this book and its generated files.`);
+  const typed = window.prompt(`Delete "${job.title || label}"?\n\nThis permanently removes the book, its chat history, and its Book Studio-managed uploads, generated files, and logs. Original documents, downloaded copies, and packages outside this book's managed folders are kept. This cannot be undone in the app.\n\nType ${label} to confirm.`);
   if (typed !== label) {
     return;
   }
@@ -2796,10 +2870,12 @@ async function deleteBookJob(job, button) {
     chapterManifestCache.clear();
     aiRequestCache.clear();
     await loadJobs({ force: true });
+  } catch (error) {
+    window.alert(`Could not complete deletion: ${error.message}`);
   } finally {
     if (button) {
       button.disabled = false;
-      button.textContent = "Delete";
+      button.textContent = "Delete book";
     }
   }
 }

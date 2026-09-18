@@ -1,3 +1,69 @@
+function Get-BookStudioPreviewQualitySummary {
+    param([string]$OutputFolder)
+    $outlineStatus = 'Not checked'
+    $outlineDetail = 'Create or regenerate the outline preview.'
+    $sourceStatus = 'Not checked'
+    $sourceDetail = 'Source readiness is checked separately before drafting.'
+    $sourceIssues = @()
+    $outlineIssues = @()
+    $validation = Join-Path $OutputFolder 'export-validation.json'
+    if (Test-Path -LiteralPath $validation) {
+        try {
+            $report = Get-Content -LiteralPath $validation -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json
+            $outlineStatus = if ($report.status -eq 'PASS') { 'Ready for review' } else { 'Needs attention' }
+            $outlineDetail = if ($report.status -eq 'PASS') { 'Planning exports passed validation. Review the outline and format before approval.' } else { 'Planning export validation did not pass. Open Export validation report.' }
+        } catch { $outlineStatus = 'Needs attention'; $outlineDetail = 'The planning export validation report could not be read.' }
+    }
+    $planPath = Join-Path $OutputFolder 'ebook-plan.json'
+    if (Test-Path -LiteralPath $planPath) {
+        try {
+            $plan = Get-Content -LiteralPath $planPath -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json
+            if (-not @($plan.chapters | Where-Object { $_ }).Count) { throw 'The saved outline has no chapters.' }
+            $planningPath = Join-Path $OutputFolder 'ebook-planning-packet.json'
+            $planning = Get-Content -LiteralPath $planningPath -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json
+            $gates = $planning.planningQualityGates
+            $reviewPath = Join-Path $OutputFolder 'outline-qa.json'
+            if (Test-Path -LiteralPath $reviewPath) {
+                $review = Get-Content -LiteralPath $reviewPath -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json
+                if ($review.planningSha256 -eq (Get-FileHash -LiteralPath $planningPath).Hash) { $gates = $review }
+            }
+            $outlineIssues = @($gates.checks | Where-Object status -eq 'FAIL' | ForEach-Object detail)
+            if ($gates.status -eq 'FAIL') { $outlineStatus = 'Needs attention'; $outlineDetail = 'The outline has planning findings. Review the planning packet before approval.' }
+            if ($plan.sourceMode -eq 'Assigned') {
+                $readings = @($plan.requiredReadings | Where-Object { $_ })
+                if (-not $readings.Count) { $sourceIssues += 'Add the required article/chapter URLs. The blueprint is not a scholarly source.' }
+                foreach ($reading in @($readings | Where-Object { -not $_.url })) {
+                    $sourceIssues += "Missing URL: $($reading.title). Add the reading URL, or remove this entry if it is only a heading."
+                }
+                foreach ($chapter in $plan.chapters) {
+                    if (-not @($readings | Where-Object { 0 -in $_.chapters -or $chapter.number -in $_.chapters }).Count) {
+                        $sourceIssues += "Chapter $($chapter.number) has no assigned readings."
+                    }
+                }
+                $evidencePath = Join-Path $OutputFolder 'required-source-report.json'
+                if (Test-Path -LiteralPath $evidencePath) {
+                    Import-Module (Join-Path $PSScriptRoot 'EbookGenerator.psm1') -Scope Local
+                    $review = Get-EbookRequiredSourceReview -Plan $plan -OutputFolder $OutputFolder -Markdown '' -EvidenceOnly
+                    $sourceIssues += @($review.issues)
+                    $sourceStatus = if ($sourceIssues.Count) { 'Needs attention' } else { 'Ready' }
+                    $sourceDetail = 'Source text and chapter assignments checked; manuscript citations are not evaluated until a manuscript exists.'
+                } else {
+                    $sourceStatus = if ($sourceIssues.Count) { 'Needs attention' } else { 'Not checked' }
+                    $sourceDetail = 'Open Sources and image setting, save the reading list, then Check required sources. Retrieval has not been checked for this outline.'
+                }
+            }
+            elseif ($plan.sourceMode -eq 'UploadedOnly') { $sourceStatus = 'Pending drafting checks'; $sourceDetail = 'Uploaded teaching evidence is validated before drafting; no external readings are selected.' }
+            else { $sourceStatus = 'Pending discovery'; $sourceDetail = 'External sources will be discovered and reviewed during generation.' }
+        } catch { $outlineStatus = 'Needs attention'; $outlineDetail = 'The saved plan or planning packet could not be read.'; $outlineIssues += $_.Exception.Message }
+    } else { $outlineStatus = 'Needs attention'; $outlineDetail = 'The saved plan is missing. Recreate the outline preview.' }
+    [pscustomobject]@{
+        status='Preview'; stage='outline'; outlineStatus=$outlineStatus; summary=$outlineDetail; outlineIssues=$outlineIssues
+        sourceReadiness=[pscustomobject]@{status=$sourceStatus;detail=$sourceDetail;issues=@($sourceIssues | Select-Object -Unique)}
+        manuscriptStatus='Not generated'; findings=@(); qualityStatus=''; publishingStatus=''; auditStatus=''
+        draftReadyForReview=$false; publicationReady=$false
+    }
+}
+
 function Assert-BookStudioProductionIdle {
     param([object]$Job)
     if (-not $Job) { throw 'Book not found.' }

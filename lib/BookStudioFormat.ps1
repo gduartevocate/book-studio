@@ -1,7 +1,7 @@
 function Get-BookStudioFormatPlanSignature {
     param([string]$Path)
     $plan=Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
-    @($plan.chapters | Sort-Object number | Select-Object number,title,focus,learningTargetRecords) | ConvertTo-Json -Depth 12 -Compress
+    @($plan.chapters | Sort-Object number | Select-Object number,title,focus,guidance,learningTargetRecords) | ConvertTo-Json -Depth 12 -Compress
 }
 
 function Get-BookStudioFormatState {

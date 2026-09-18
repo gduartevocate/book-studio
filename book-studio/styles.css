@@ -547,6 +547,17 @@ button:disabled {
   background: #ecfdf3;
 }
 
+.qa-summary.preview {
+  border-color: #7194aa;
+  background: #eef5fa;
+  color: #23455b;
+}
+
+.qa-review-result {
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
 .qa-summary.fail {
   border-color: var(--danger);
   color: #7a271a;
@@ -2636,3 +2647,9 @@ button:disabled {
 .outline-suggested { border-color: var(--warning) !important; background: #fff7e8; }
 .outline-apply-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px; }
 .outline-apply-row .hint { margin: 0; }
+.outline-update-receipt { padding: 12px 16px; border: 1px solid #81b49a; border-radius: 8px; background: #edf8f1; color: #17432b; }
+.outcome-replacement { margin-top: 18px; padding: 12px; }
+.outcome-replacement > label { display: block; margin: 12px 0; }
+.outcome-replacement > label > span { display: block; margin-bottom: 4px; }
+.outcome-replacement input:not([type="checkbox"]), .outcome-replacement textarea { width: 100%; box-sizing: border-box; }
+.outcome-diff { max-height: 500px; overflow: auto; }

@@ -11,7 +11,7 @@ $base="http://localhost:$port"
 $server=Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+(Join-Path $fixture 'book-studio.ps1')+'"'),'-Port',$port) -PassThru -WindowStyle Hidden -RedirectStandardOutput (Join-Path $fixture 'server.log') -RedirectStandardError (Join-Path $fixture 'server-error.log')
 $script:checks=0
 function Check([bool]$Ok,[string]$Message){if(-not $Ok){throw $Message};$script:checks++}
-function Post([string]$Path,[object]$Body){Invoke-RestMethod -Uri ($base+$Path) -Method Post -ContentType 'application/json' -Body ($Body | ConvertTo-Json -Depth 15) -TimeoutSec 10}
+function Post([string]$Path,[object]$Body){Invoke-RestMethod -Uri ($base+$Path) -Method Post -ContentType 'application/json' -Body ([Text.Encoding]::UTF8.GetBytes(($Body | ConvertTo-Json -Depth 15))) -TimeoutSec 30}
 function Reject([scriptblock]$Action,[int]$Status){$caught=$false;try{& $Action | Out-Null}catch{$caught=$true;Check ([int]$_.Exception.Response.StatusCode -eq $Status) "Wrong HTTP status: $_"};Check $caught 'Expected HTTP rejection.'}
 try{
     $ready=$false
@@ -54,6 +54,10 @@ Week 2 Workflow Coordination
     }while($job.status -in @('Running','Queued') -and (Get-Date) -lt $deadline)
     Check ($job.status -eq 'Completed' -and $job.workflowStage -eq 'format-review') "Blueprint workflow failed: $($job.error) (fixture: $fixture)"
     Check ($job.formatState.fingerprint -and -not $job.formatState.needsRefresh) 'Preview manifest/fingerprint missing from API.'
+    $qa = Post "/api/jobs/$($job.id)/run-qa" @{}
+    Check ($qa.status -eq 'Completed' -and $qa.qaSummary.stage -eq 'outline' -and $qa.qaSummary.status -ne 'FAIL') 'Outline QA rerun failed or ran manuscript gates.'
+    $reviewedJob = Invoke-RestMethod "$base/api/jobs/$($job.id)"
+    Check ($reviewedJob.qaReview.checkedAt -and $reviewedJob.qaReview.message -match 'Outline:') 'QA rerun receipt did not persist.'
     $preview=Invoke-WebRequest -UseBasicParsing -Uri "$base/api/jobs/$($job.id)/asset?path=book-format-preview.html"
     Check ($preview.Content -match 'Organize office records using clear naming rules' -and $preview.Content -notmatch 'Knowledge Check|Chapter Summary') 'Real preview lost blueprint objectives or included excluded sections.'
     $generatedPlan=Get-Content -LiteralPath (Join-Path $job.outputFolder 'ebook-plan.json') -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -76,7 +80,7 @@ Week 2 Workflow Coordination
     $editedFocus="repeatable naming, filing, and retrieval of office records"
     $outline.chapters[0].title=$editedTitle
     $outline.chapters[0].focus=$editedFocus
-    $editedGuidance='Use a clinic front-desk example and keep the tone practical.'
+    $editedGuidance='Use a clinic front-desk example and keep the tone practical. Preserve the patient'+[char]0x2019+'s perspective.'
     $outline.chapters[0] | Add-Member -NotePropertyName guidance -NotePropertyValue $editedGuidance -Force
     Check ($outline.editableFields -contains 'writer guidance' -and $outline.chapters[0].PSObject.Properties['guidance']) 'Outline editor API did not expose writer guidance.'
     $null=Post "/api/jobs/$($job.id)/outline" @{chapters=@($outline.chapters)}
@@ -88,6 +92,41 @@ Week 2 Workflow Coordination
     Check ((Get-Content -LiteralPath (Join-Path $job.sourceContextPath 'book-studio-reviewed-outline.json') -Raw -Encoding UTF8) -match [regex]::Escape($editedTitle) -and $updatedPlan.chapters[0].title -eq $editedTitle) 'Saved outline edits were not persisted for the full-generation runner.'
     Check ($updatedOutline.chapters[0].guidance -eq $editedGuidance -and $updatedPlan.chapters[0].guidance -eq $editedGuidance) 'Writer guidance was not saved with the outline.'
     Check ($job.formatReview.status -eq 'Needs revision' -and [string]::IsNullOrWhiteSpace([string]$job.formatReview.fingerprint)) 'Outline editing did not clear the previous format approval.'
+    Check ($job.outlineUpdate.message -match 'Word/Markdown' -and $updatedOutline.lastUpdate.planHash) 'Persisted save receipt is missing.'
+    Check ((Get-Content -LiteralPath (Join-Path $job.outputFolder 'ebook-outline.md') -Raw -Encoding UTF8).Contains($editedTitle)) 'Markdown outline is stale after saving.'
+    Import-Module (Join-Path $fixture 'lib/EbookGenerator.psm1') -Force -DisableNameChecking
+    $outlineWord=Get-ChildItem -LiteralPath $job.outputFolder -Filter '* - E-Book Outline.docx' | Select-Object -First 1
+    Check ((& (Get-Module EbookGenerator) {param($p) Get-DocxText $p} $outlineWord.FullName).Contains($editedTitle)) 'Word outline is stale after saving.'
+    Check ($updatedPlan.chapters[0].guidance -ceq $editedGuidance) 'Browser-style UTF-8 JSON corrupted punctuation.'
+    Reject {Post "/api/jobs/$($job.id)/outline" @{chapters=@($outline.chapters);planHash='stale'}} 400
+    $beforeLockedSave=(Get-FileHash -LiteralPath (Join-Path $job.outputFolder 'ebook-plan.json')).Hash
+    $locked=[IO.File]::Open($outlineWord.FullName,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+    try { Reject {Post "/api/jobs/$($job.id)/outline" @{chapters=@($outline.chapters);planHash=$beforeLockedSave}} 400 }
+    finally { $locked.Dispose() }
+    Check ((Get-FileHash -LiteralPath (Join-Path $job.outputFolder 'ebook-plan.json')).Hash -eq $beforeLockedSave) 'A locked Word export left a partially updated plan.'
+
+    $originalSpecHash=(Get-FileHash -LiteralPath $job.specPath).Hash
+    $outcomes=@{text="CO1: Organize reliable records.`nLO1.1: Identify record owners.`nLO1.2: Apply a naming convention.`nCO2: Coordinate reliable handoffs.`nLO2.1: Identify handoff risks.`nLO2.2: Explain follow-up responsibilities.";assignments=@(@{number=1;ids='CO1'},@{number=2;ids='CO2'})}
+    $beforeOutcomeHash=(Get-FileHash -LiteralPath (Join-Path $job.outputFolder 'ebook-plan.json')).Hash
+    $replacement=Post "/api/jobs/$($job.id)/outcomes/preview" $outcomes
+    Check ($replacement.previousCount -eq @($updatedPlan.chapters | ForEach-Object {$_.learningTargetRecords}).Count -and $replacement.newCount -eq 4 -and $replacement.uniqueOutcomes -eq 4) 'Outcome replacement comparison is incorrect.'
+    Check ((Get-FileHash -LiteralPath (Join-Path $job.outputFolder 'ebook-plan.json')).Hash -eq $beforeOutcomeHash) 'Preview changed the book.'
+    Reject {Post "/api/jobs/$($job.id)/outcomes/apply" $outcomes} 400
+    $outcomes.confirm=$true;$outcomes.reviewedBy='Fixture ID';$outcomes.reason='Revised approved outcomes';$outcomes.planHash='stale'
+    Reject {Post "/api/jobs/$($job.id)/outcomes/apply" $outcomes} 400
+    $outcomes.planHash=$replacement.planHash
+    $null=Post "/api/jobs/$($job.id)/outcomes/apply" $outcomes
+    $job=@((Invoke-RestMethod "$base/api/jobs").jobs | Where-Object id -eq $job.id)[0]
+    $amendedPlan=Get-Content -LiteralPath (Join-Path $job.outputFolder 'ebook-plan.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    Check ($job.outlineUpdate.outcomesChanged -and ($amendedPlan.chapters[0].learningTargetRecords.objectiveId -join ',') -eq 'LO1.1,LO1.2') 'Outcome replacement lost official IDs.'
+    Check ((Get-FileHash -LiteralPath $job.specPath).Hash -eq $originalSpecHash -and (Test-Path -LiteralPath (Join-Path $job.sourceContextPath 'book-studio-outcomes.json'))) 'Original blueprint changed or amendment missing.'
+    $amendedCourse=Import-CourseSpec $job.specPath
+    $regenerated=New-EbookPlan $amendedCourse
+    $regenerated=Merge-EbookReviewedOutline $regenerated (Join-Path $job.sourceContextPath 'book-studio-reviewed-outline.json')
+    Check ($regenerated.chapters[0].learningTargetRecords[0].objectiveId -eq 'LO1.1' -and $regenerated.chapters[0].title -eq $editedTitle) 'Regeneration discarded the accepted outcomes or edited title.'
+    $packet=Get-Content -LiteralPath (Join-Path $job.outputFolder 'ebook-planning-packet.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    Check ($packet.course.weeks[0].modules[0].objectiveId -eq 'LO1.1' -and $packet.course.outcomeRevision.reviewedBy -eq 'Fixture ID') 'Planning packet lacks effective source/provenance.'
+    Check ((Get-Content -LiteralPath (Join-Path $job.outputFolder 'ebook-outline.md') -Raw -Encoding UTF8).Contains('Identify record owners.') -and (& (Get-Module EbookGenerator) {param($p) Get-DocxText $p} $outlineWord.FullName).Contains('Identify record owners.')) 'Outcome replacement left stale Markdown or Word.'
     $editedTitleForFullGeneration=$editedTitle
     $old=$job.formatState.fingerprint
     $null=Post "/api/jobs/$($job.id)/format-review" @{action='request-changes';layout='large-text';notes='Check larger text.'}
@@ -106,6 +145,7 @@ Week 2 Workflow Coordination
     $generatedPlan=Get-Content -LiteralPath (Join-Path $job.outputFolder 'ebook-plan.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     Check ($generatedPlan.sourceMode -eq 'UploadedOnly' -and @($sourceBrief | Where-Object {$_.sourcePolicy.mode -ne 'UploadedOnly' -or @($_.openStax).Count -or @($_.researchCandidates).Count}).Count -eq 0) 'Source mode was lost in real full generation.'
     Check ($generatedPlan.chapters[0].title -eq $editedTitleForFullGeneration -and $generatedPlan.chapters[0].focus -eq $editedFocus) 'Full generation did not apply the saved instructional-designer outline.'
+    Check ($generatedPlan.chapters[0].learningTargetRecords[0].objectiveId -eq 'LO1.1' -and $generatedPlan.chapters[0].learningTargets[0] -eq 'Identify record owners.') 'Full generation reverted to obsolete source objectives.'
     Check ($generatedPlan.chapters[0].guidance -eq $editedGuidance -and (Get-Content -LiteralPath (Join-Path $job.outputFolder 'ebook-outline.md') -Raw -Encoding UTF8) -match ('Designer guidance: ' + [regex]::Escape($editedGuidance))) 'Writer guidance did not reach the generated plan and outline.'
     Check (-not $job.qaSummary.draftReadyForReview) 'An unreviewed short-source scaffold was incorrectly marked ready.'
     Import-Module (Join-Path $fixture 'lib/EbookGenerator.psm1') -Force
@@ -142,6 +182,12 @@ Week 2 Workflow Coordination
     try { $null=Post "/api/jobs/$($bare.id)/format-review" @{action='approve';previewFingerprint=$bare.formatState.fingerprint;notesResolved=$true} }
     catch { if($_.ErrorDetails.Message -notmatch 'No required readings are assigned'){throw};$rejected=$true }
     Check $rejected 'Missing sources were not caught before full generation.'
+    # Delete only the synthetic preview fixture through the real HTTP route.
+    $deleted = Post "/api/jobs/$($bare.id)/delete" @{deleteFiles=$true}
+    Check ($deleted.deleted -and -not (Test-Path -LiteralPath $bare.outputFolder)) 'Preview deletion did not remove managed output.'
+    Check (@((Invoke-RestMethod "$base/api/jobs").jobs | Where-Object id -eq $bare.id).Count -eq 0) 'Deleted preview is still in the library.'
+    Check (Test-Path -LiteralPath $word.FullName) 'Deleting a preview damaged another book.'
+    Reject {Post "/api/jobs/$($bare.id)/delete" @{deleteFiles=$true}} 400
     [pscustomobject]@{status='PASS';assertions=$script:checks;fixture=$fixture;scope='Real HTTP intake, blueprint, approval, local full scaffold and Word export; no AI drafting. Fixture correctly remains uncleared for review.'} | ConvertTo-Json
 }finally{
     # Stop only the isolated server process created by this test.

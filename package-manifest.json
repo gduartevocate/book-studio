@@ -8,20 +8,72 @@
         "sha256":  "B5D01DB3A39DC6C3C4AB330470D960521109BD906A243AE6640C5E15C6B38A5B"
     },
     {
+        "path":  "book-studio.ps1",
+        "sha256":  "F03B3944C27ADDBF2690E245A604D5D9E07C8DB592A47B1AC46E34BC7D465C38"
+    },
+    {
+        "path":  "book-studio/app.js",
+        "sha256":  "1235CE3C45287F8B670114A3FF7E5F54684F90B6601920BE805893AD7C3FD021"
+    },
+    {
+        "path":  "book-studio/index.html",
+        "sha256":  "F4B05529837500EF6AD54A239F0B00BD90A1DDFF68813B8317165612F268AFFB"
+    },
+    {
+        "path":  "book-studio/outcomes.js",
+        "sha256":  "2D808EDAA5A2823DD1DE7189E114FC94DFD979B0F0C01C5251E4933661B4A5CF"
+    },
+    {
+        "path":  "book-studio/production.js",
+        "sha256":  "CE83A75C44BDA9A503E94E7F160FBA3FDAE6929B259F4F9BA04EEAC44530CFD6"
+    },
+    {
+        "path":  "book-studio/styles.css",
+        "sha256":  "2B16BD535FBB35CD7836A20E40C55A5B29C5F212601CF3CFA4E5AE4ED83BD75B"
+    },
+    {
+        "path":  "book-studio/version.json",
+        "sha256":  "662A2B43F8610ABCEA9378E2BBFF53462F1DC38B97FB77CFAF8E177E3C695543"
+    },
+    {
         "path":  "book-studio-runner.ps1",
         "sha256":  "6FEB9CEAEB8389E1D82FA8280B32A0F2F0A64D316EC7726CAFB6D5B12A3FD91A"
     },
     {
-        "path":  "book-studio.ps1",
-        "sha256":  "F03B3944C27ADDBF2690E245A604D5D9E07C8DB592A47B1AC46E34BC7D465C38"
+        "path":  "book-studio-source-runner.ps1",
+        "sha256":  "1618766288260632980ED2103156BDAC1E3BA75D9753357C854AD78F5389324B"
+    },
+    {
+        "path":  "CHANGELOG.md",
+        "sha256":  "7A236B07D56F5E9F51BC2122708EBBBF7B8A938BC43E92288D854130078560A9"
     },
     {
         "path":  "Cloudflare Setup Notes.txt",
         "sha256":  "C1C845FE1D863CEE19774B283222B4482119F47D725D248FFD2FA6520EFABC32"
     },
     {
+        "path":  "cloudflare/ebook-generator-worker.js",
+        "sha256":  "966F12CDA0A660DC31F01A76B8D80A505C916BD346E4178D6A3B46AC82FE9920"
+    },
+    {
+        "path":  "cloudflare/sme-review-worker.js",
+        "sha256":  "D0D251A726E553AF1D99E8BECF6CFD129C683D37324A87D0CA02D0F46B63FB9A"
+    },
+    {
         "path":  "codex-path.example.txt",
         "sha256":  "D774E511874119B0E25BDCE48CB3E16D3C8569B73802245EA086C5F4C6DBE674"
+    },
+    {
+        "path":  "config/book-publication-template.json",
+        "sha256":  "E5CA817E980F85B4CCEF45ADC3A8571D65BC72642F8137FDC462A93DAA1B6893"
+    },
+    {
+        "path":  "config/openstax-map.json",
+        "sha256":  "562D193AB66765DF4F2DBE5904CB7C2B5FD658476122326DE1495D1DC925A9CF"
+    },
+    {
+        "path":  "config/uma-brand-profile.json",
+        "sha256":  "CF6AAFA13DFBC60569A04FF4864A494145A15487555525FA36188579301B9444"
     },
     {
         "path":  "deliver-reviewed-book.ps1",
@@ -30,6 +82,22 @@
     {
         "path":  "deploy-sme-review-cloudflare.ps1",
         "sha256":  "B9F3E417612EB94B008F35CE14F39C1F46B3B119CF6F72AE13DDC67DAFD031EF"
+    },
+    {
+        "path":  "docs/book-studio-architecture.md",
+        "sha256":  "2DBEFDABFE3CA9678250CA3EE855FEA843354B783B1FF282AE63A49C80661A21"
+    },
+    {
+        "path":  "docs/book-studio-colleague-setup.md",
+        "sha256":  "3930309FCE44322A950027CFEAE34E0B970ACC88FA8B11424C0D50627B30D7EA"
+    },
+    {
+        "path":  "docs/book-studio-pilot-checklist.md",
+        "sha256":  "D3BDEC44055F93C39BB26C8ED5E72FF846E28E6FF415EDF0F706213295FA94DC"
+    },
+    {
+        "path":  "docs/image-production-contract.md",
+        "sha256":  "EC1377F2BB45259045160A195D69FAB1216BFF1B094F71604B6FF0EFCDC44722"
     },
     {
         "path":  "ebook-generator.ps1",
@@ -50,6 +118,94 @@
     {
         "path":  "Install-BookStudio.ps1",
         "sha256":  "15DAE593A7D5DF4DB345052B7AE5752311B78C216A1588A644E62579870A872F"
+    },
+    {
+        "path":  "lib/BookStudio.psm1",
+        "sha256":  "43AEF5628595083C1C177B604F0DF3FE8AC1C830A24BF6B9E477282C2A6B2713"
+    },
+    {
+        "path":  "lib/BookStudioChat.ps1",
+        "sha256":  "7E6537CCD059771FF686906B01B9F5DCCCC571D60BC699212CE239DC5848A544"
+    },
+    {
+        "path":  "lib/BookStudioConnection.ps1",
+        "sha256":  "D198C38C4018ADDC2B1825B731095BAF9A3123C08E49DEAAD21D86851B2A95A4"
+    },
+    {
+        "path":  "lib/BookStudioFormat.ps1",
+        "sha256":  "110536B321118A483F57694A3D902B335616DCDFBA56ADEC77A82237B39AE56E"
+    },
+    {
+        "path":  "lib/BookStudioIntake.ps1",
+        "sha256":  "5BAF03908A7EDA006D8DCA5A8EFFE28D8510DB411A383D0E3031D82308DE3BF6"
+    },
+    {
+        "path":  "lib/BookStudioOutline.ps1",
+        "sha256":  "838E316E00BABCB2F2B24112F089D1DC46B5FBA37671D27A20E749A58910199D"
+    },
+    {
+        "path":  "lib/BookStudioProduction.ps1",
+        "sha256":  "CC8C4564AB190DF230F543C11A73667C837D627B0B223CBA0357157FF5B95535"
+    },
+    {
+        "path":  "lib/BookStudioQa.ps1",
+        "sha256":  "EE453A963679C0D214EF0621389228E06BC391236E6E5BCDBD92EA61E106B539"
+    },
+    {
+        "path":  "lib/BookStudioUpdates.ps1",
+        "sha256":  "8BF8E9B617457779DF396D393E7F564340406FE029B9A717DA8FF8544AACD164"
+    },
+    {
+        "path":  "lib/EbookAssignedSources.ps1",
+        "sha256":  "338A644D4EF12977A8D87A92618F3E4FBD22377D3D35ACEC3FEAF99AC143EF45"
+    },
+    {
+        "path":  "lib/EbookCitationIntegrity.ps1",
+        "sha256":  "4F0A759D024FFB89C107C3677A2092C22B39B5B41F2DE141E2B0770A36726EF5"
+    },
+    {
+        "path":  "lib/EbookCodexImages.ps1",
+        "sha256":  "696B096887736E0E9CFEF6DD8BCEFA4A1DBC30FF4ACB2D9C462BEAC4BAF37F52"
+    },
+    {
+        "path":  "lib/EbookCodexSandbox.ps1",
+        "sha256":  "91C82D7B279B2FF97ADC45BEAEB6132B5D5D4D640D19B7BB857BCE551153C476"
+    },
+    {
+        "path":  "lib/EbookGenerator.psm1",
+        "sha256":  "351F434F5B1809DA28123118E05BE4792E5B7E6A1F6019267905FD6F22013145"
+    },
+    {
+        "path":  "lib/EbookImages.ps1",
+        "sha256":  "CDFA0B8757F7CEA85E4BC98E4DAAC55F948FF28FF6BFC9310871091BEB8AC74E"
+    },
+    {
+        "path":  "lib/EbookOutcomeRevisions.ps1",
+        "sha256":  "6592BC8057829E248A8B13B07D9828DB890E3EDF69BCE1DF3DB26A33F8335E5A"
+    },
+    {
+        "path":  "lib/EbookPublicationTemplate.ps1",
+        "sha256":  "06906C11995E0015D0A8B3A450D1F852490520EECF671FC3F728B2A220F5209F"
+    },
+    {
+        "path":  "lib/EbookReadiness.ps1",
+        "sha256":  "38744114226D2F3A1BD4B5B6A1CE0F756BA5958EC498696E433CA05904E78FC7"
+    },
+    {
+        "path":  "lib/EbookRequiredReadings.ps1",
+        "sha256":  "6149D471F585C8669311912B9F2CF96BF7D4ABAFD41880E345C859B4F9852983"
+    },
+    {
+        "path":  "lib/EbookUploadedSources.ps1",
+        "sha256":  "306A12291C4FD9B07D2680E2B510E72F8055E2F13CF83D17C6D43FB829558E87"
+    },
+    {
+        "path":  "lib/Gm1000AssignedSources.ps1",
+        "sha256":  "27FBDC63995EDB99A310505ADFD65FB5A3B6B1593F35E2959144B8AC28FC39AB"
+    },
+    {
+        "path":  "lib/Gm1025AssignedSources.ps1",
+        "sha256":  "88B9BD91C98CF2DF8BBDAF0DCA928577943A28D5E0B840681DB3D32D018C20BB"
     },
     {
         "path":  "Publish-SmeReviewPackage.ps1",
@@ -88,156 +244,44 @@
         "sha256":  "F0694F9A8EEDD2FF88F76676AFC79E7642E4443972FF827E9E5D7FDDA2CC3CF1"
     },
     {
-        "path":  "verify-assigned-source-links.ps1",
-        "sha256":  "2B6ACAE2B37C8AEB6E93C677227CA682F5E01CA44ECA8DB3DC7BBADB41AC96EC"
-    },
-    {
-        "path":  "VERSION.txt",
-        "sha256":  "194B1667CB7C99B001CC6CFACED12C1579FA1AB8942DF0DD24656654618A2D5F"
-    },
-    {
-        "path":  "book-studio/app.js",
-        "sha256":  "85B20104873A43F932AE4364BE14C529B79E3E1CD93B2B33BC33CD39F9FFE741"
-    },
-    {
-        "path":  "book-studio/index.html",
-        "sha256":  "394AF905EF390DE0A3F36F32FACA40848032D5811F113513DA51E2CD9C2D3189"
-    },
-    {
-        "path":  "book-studio/styles.css",
-        "sha256":  "AE84949F57C710B07863EA00B9F870C8E8C3208AD4CB4DA0BD9DB31C11E0B704"
-    },
-    {
-        "path":  "book-studio/version.json",
-        "sha256":  "1F81684EF57CA50A8A7B74050C4A67F78E079CA55758B199C63625A06871FE68"
-    },
-    {
-        "path":  "cloudflare/ebook-generator-worker.js",
-        "sha256":  "966F12CDA0A660DC31F01A76B8D80A505C916BD346E4178D6A3B46AC82FE9920"
-    },
-    {
-        "path":  "cloudflare/sme-review-worker.js",
-        "sha256":  "D0D251A726E553AF1D99E8BECF6CFD129C683D37324A87D0CA02D0F46B63FB9A"
-    },
-    {
-        "path":  "config/book-publication-template.json",
-        "sha256":  "E5CA817E980F85B4CCEF45ADC3A8571D65BC72642F8137FDC462A93DAA1B6893"
-    },
-    {
-        "path":  "config/openstax-map.json",
-        "sha256":  "562D193AB66765DF4F2DBE5904CB7C2B5FD658476122326DE1495D1DC925A9CF"
-    },
-    {
-        "path":  "config/uma-brand-profile.json",
-        "sha256":  "CF6AAFA13DFBC60569A04FF4864A494145A15487555525FA36188579301B9444"
-    },
-    {
-        "path":  "docs/book-studio-architecture.md",
-        "sha256":  "2DBEFDABFE3CA9678250CA3EE855FEA843354B783B1FF282AE63A49C80661A21"
-    },
-    {
-        "path":  "docs/book-studio-colleague-setup.md",
-        "sha256":  "3930309FCE44322A950027CFEAE34E0B970ACC88FA8B11424C0D50627B30D7EA"
-    },
-    {
-        "path":  "docs/book-studio-pilot-checklist.md",
-        "sha256":  "D3BDEC44055F93C39BB26C8ED5E72FF846E28E6FF415EDF0F706213295FA94DC"
-    },
-    {
-        "path":  "docs/image-production-contract.md",
-        "sha256":  "EC1377F2BB45259045160A195D69FAB1216BFF1B094F71604B6FF0EFCDC44722"
-    },
-    {
-        "path":  "lib/BookStudio.psm1",
-        "sha256":  "31C2004632DDA56BA6F1522CAF4EAAF22DCAFBFC404D38F3BE946306584A8F32"
-    },
-    {
-        "path":  "lib/BookStudioChat.ps1",
-        "sha256":  "7E6537CCD059771FF686906B01B9F5DCCCC571D60BC699212CE239DC5848A544"
-    },
-    {
-        "path":  "lib/BookStudioConnection.ps1",
-        "sha256":  "D198C38C4018ADDC2B1825B731095BAF9A3123C08E49DEAAD21D86851B2A95A4"
-    },
-    {
-        "path":  "lib/BookStudioFormat.ps1",
-        "sha256":  "A9FA448B04CED167FCEDE0D13BCFA887E6A9F0F713548E02FA90EFBF717BEE0A"
-    },
-    {
-        "path":  "lib/BookStudioIntake.ps1",
-        "sha256":  "5BAF03908A7EDA006D8DCA5A8EFFE28D8510DB411A383D0E3031D82308DE3BF6"
-    },
-    {
-        "path":  "lib/BookStudioUpdates.ps1",
-        "sha256":  "8BF8E9B617457779DF396D393E7F564340406FE029B9A717DA8FF8544AACD164"
-    },
-    {
-        "path":  "lib/EbookAssignedSources.ps1",
-        "sha256":  "338A644D4EF12977A8D87A92618F3E4FBD22377D3D35ACEC3FEAF99AC143EF45"
-    },
-    {
-        "path":  "lib/EbookCitationIntegrity.ps1",
-        "sha256":  "4F0A759D024FFB89C107C3677A2092C22B39B5B41F2DE141E2B0770A36726EF5"
-    },
-    {
-        "path":  "lib/EbookCodexImages.ps1",
-        "sha256":  "696B096887736E0E9CFEF6DD8BCEFA4A1DBC30FF4ACB2D9C462BEAC4BAF37F52"
-    },
-    {
-        "path":  "lib/EbookCodexSandbox.ps1",
-        "sha256":  "91C82D7B279B2FF97ADC45BEAEB6132B5D5D4D640D19B7BB857BCE551153C476"
-    },
-    {
-        "path":  "lib/EbookGenerator.psm1",
-        "sha256":  "BBB5793EFDDCA553DFB14B858199C241FD91C58F192EC833ECDA4651A1890129"
-    },
-    {
-        "path":  "lib/EbookImages.ps1",
-        "sha256":  "CDFA0B8757F7CEA85E4BC98E4DAAC55F948FF28FF6BFC9310871091BEB8AC74E"
-    },
-    {
-        "path":  "lib/EbookPublicationTemplate.ps1",
-        "sha256":  "06906C11995E0015D0A8B3A450D1F852490520EECF671FC3F728B2A220F5209F"
-    },
-    {
-        "path":  "lib/EbookReadiness.ps1",
-        "sha256":  "38744114226D2F3A1BD4B5B6A1CE0F756BA5958EC498696E433CA05904E78FC7"
-    },
-    {
-        "path":  "lib/EbookUploadedSources.ps1",
-        "sha256":  "306A12291C4FD9B07D2680E2B510E72F8055E2F13CF83D17C6D43FB829558E87"
-    },
-    {
-        "path":  "lib/Gm1000AssignedSources.ps1",
-        "sha256":  "27FBDC63995EDB99A310505ADFD65FB5A3B6B1593F35E2959144B8AC28FC39AB"
-    },
-    {
-        "path":  "lib/Gm1025AssignedSources.ps1",
-        "sha256":  "88B9BD91C98CF2DF8BBDAF0DCA928577943A28D5E0B840681DB3D32D018C20BB"
-    },
-    {
         "path":  "tests/book-studio-api-regressions.ps1",
-        "sha256":  "6376605778047C03D326C8AE76C619423651E1930B249381DE6789D7DEBA5CC5"
+        "sha256":  "8083217073A602580FF89412FC3231B419A5A9E81E531BE5BDDB8627A2FA42F5"
     },
     {
         "path":  "tests/book-studio-database-regressions.ps1",
         "sha256":  "325D37176C1BF3DB3C554CEA9E6DB5673D964EAC8C8AAF4CBDB60688C267112A"
     },
     {
+        "path":  "tests/book-studio-delete-regressions.ps1",
+        "sha256":  "7A39F8D29F4D35A61FFE3B60D7FAD2ACBA7D4ABC4D8A7409A98D104C942707EA"
+    },
+    {
+        "path":  "tests/book-studio-outcomes-ui.ps1",
+        "sha256":  "7B891AE48B521FD5709C2C22C7188CE60C80C306B938564E531650CE07716DB3"
+    },
+    {
         "path":  "tests/book-studio-path-regressions.ps1",
         "sha256":  "873A5E0B35C1C9423D468341B95AF2033FEB17B3E5F09577BEFA9CABA3EC2E2E"
     },
     {
-        "path":  "tests/book-studio-readiness-ui.ps1",
-        "sha256":  "6BCE1205F53EA4217C9ED68F5B961F8F4CC931D2CD5308F5D4E55641E3CE6344"
+        "path":  "tests/book-studio-production-ui.ps1",
+        "sha256":  "AF181CB40559ADD4AAA706BAB3497BE12CD74833FA83F4984A7DFB2C83BDD744"
     },
     {
-        "path":  "tests/book-studio-update-regressions.ps1",
-        "sha256":  "59BD63C24D9090D903AFF427115318AF537245B3208A60C14D4EC87E01B36AC2"
+        "path":  "tests/book-studio-qa-review-regressions.ps1",
+        "sha256":  "45F9E9125694BD21ACFBBE124D35F4954D038767F577D8CD61014DFD0D43DF65"
+    },
+    {
+        "path":  "tests/book-studio-readiness-ui.ps1",
+        "sha256":  "2E232A815314302C5BA6450330C3608056198F247360A116C8AAE40616DCC63B"
     },
     {
         "path":  "tests/book-studio-recovery-regressions.ps1",
         "sha256":  "11FA0864F5B9C9BE361B5F359B812669D5AECFC949EEDDCD78892E7A38169BD9"
+    },
+    {
+        "path":  "tests/book-studio-update-regressions.ps1",
+        "sha256":  "59BD63C24D9090D903AFF427115318AF537245B3208A60C14D4EC87E01B36AC2"
     },
     {
         "path":  "tests/book-studio-workflow-regressions.ps1",
@@ -264,22 +308,6 @@
         "sha256":  "A488365229DBD18B526CC2BC8C242EA188708166D1DACC47007F89EC9C601AA4"
     },
     {
-        "path":  "tests/image-production-regressions.ps1",
-        "sha256":  "B1EE5705B9A39BA6D74280EE1ED9A4BFFCC7D2D327429082209E940302A7D1DE"
-    },
-    {
-        "path":  "tests/manuscript-preflight-regressions.ps1",
-        "sha256":  "FB613DCA27B601A8CEF2DFC9D2E58729187A63BBA9A577C376C3BB1702C6CE57"
-    },
-    {
-        "path":  "tests/publication-regressions.ps1",
-        "sha256":  "97A8EC1F81EA0FD8CC6827C0A287A27B9E6FF7091516E9EFEA323B33EFDF5028"
-    },
-    {
-        "path":  "tests/word-layout-regressions.ps1",
-        "sha256":  "3BEAA9E542CA77E9440972A9B58843A0726876518691E837F70B2EFFE654F75E"
-    },
-    {
         "path":  "tests/fixtures/book-studio-qa-repair-ui.js",
         "sha256":  "1A5B3AD10D479225A8054838117DAF2BFB001A3AEE21B0F98BB82A481CBACCC7"
     },
@@ -288,35 +316,39 @@
         "sha256":  "C4DC84491E9210E40934CAC4722FFA353086A7F3EABB4031B9933586A7060AA2"
     },
     {
-        "path":  "book-studio/production.js",
-        "sha256":  "CE83A75C44BDA9A503E94E7F160FBA3FDAE6929B259F4F9BA04EEAC44530CFD6"
+        "path":  "tests/image-production-regressions.ps1",
+        "sha256":  "B1EE5705B9A39BA6D74280EE1ED9A4BFFCC7D2D327429082209E940302A7D1DE"
     },
     {
-        "path":  "book-studio-source-runner.ps1",
-        "sha256":  "1618766288260632980ED2103156BDAC1E3BA75D9753357C854AD78F5389324B"
+        "path":  "tests/manuscript-preflight-regressions.ps1",
+        "sha256":  "FB613DCA27B601A8CEF2DFC9D2E58729187A63BBA9A577C376C3BB1702C6CE57"
     },
     {
-        "path":  "CHANGELOG.md",
-        "sha256":  "8A65BDCA350E075EC24077ECBB99337CCCBAF5255021A6F2B367E5BA3CB64386"
+        "path":  "tests/outcome-replacement-regressions.ps1",
+        "sha256":  "E61FFDF1E9598EC85EA3FFB5F35159046365EAC8736C5F137ABD3E064697D53E"
     },
     {
-        "path":  "lib/BookStudioProduction.ps1",
-        "sha256":  "FFC2556DA15CE60A03ADB6F7D1F99F1703FE234813B8AA4E1EF5C70D1CA9F0D3"
-    },
-    {
-        "path":  "lib/EbookRequiredReadings.ps1",
-        "sha256":  "E1798971B999787E1D46B35ED51AF138625E73E53EA2C8F2768F13D40C870B88"
-    },
-    {
-        "path":  "tests/book-studio-production-ui.ps1",
-        "sha256":  "AF181CB40559ADD4AAA706BAB3497BE12CD74833FA83F4984A7DFB2C83BDD744"
+        "path":  "tests/publication-regressions.ps1",
+        "sha256":  "97A8EC1F81EA0FD8CC6827C0A287A27B9E6FF7091516E9EFEA323B33EFDF5028"
     },
     {
         "path":  "tests/required-readings-regressions.ps1",
-        "sha256":  "4FBEE05A58628D1AA519F98779CF817CB1346F8A7484E751AD2D00ED571EBDC5"
+        "sha256":  "513A1E7C4A47EF37E06195779459AB2770622BBA8E6E48825809D4B62057E4A3"
     },
     {
         "path":  "tests/standalone-week-regressions.ps1",
         "sha256":  "8A8AB92499050A10F00987E30F74170741264C15B45D4F6BDDE7775BA48930B6"
+    },
+    {
+        "path":  "tests/word-layout-regressions.ps1",
+        "sha256":  "3BEAA9E542CA77E9440972A9B58843A0726876518691E837F70B2EFFE654F75E"
+    },
+    {
+        "path":  "verify-assigned-source-links.ps1",
+        "sha256":  "2B6ACAE2B37C8AEB6E93C677227CA682F5E01CA44ECA8DB3DC7BBADB41AC96EC"
+    },
+    {
+        "path":  "VERSION.txt",
+        "sha256":  "24713473B02D5238A7EA88F6319309AC7B4AE7B593EF5AFA7660C9953086453A"
     }
 ]

@@ -22,9 +22,39 @@ New-Item -ItemType Directory -Path $fixture | Out-Null
 $encoded=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($source))
 $html=@'
 <!doctype html><meta charset="utf-8"><body>RUNNING<script>
+(async () => {
 try {
   const source = new TextDecoder().decode(Uint8Array.from(atob('__APP__'), c => c.charCodeAt(0)));
   new Function(source); // Parse the entire real application, without booting it.
+  const deletionSource = source.match(/function isBookDeletionBlocked\(job\) \{[\s\S]*?(?=\r?\nfunction renderPackageMeta)/);
+  if (!deletionSource || !/\}\s*appendDeleteBookAction\(actions, job\);/.test(source)) throw new Error('Delete action must be outside workflow branches');
+  let promptReply = null, promptText = '', alerts = [], calls = [], loads = 0, focus = 'fixture', release;
+  const deletion = new Function('document','window','isJobProcessing','activeStatuses','api','loadJobs','setFocusedJob','visualManifestCache','codexPromptCache','chapterManifestCache','aiRequestCache',
+    'let focusedJobId="fixture";'+deletionSource[0]+'; return {appendDeleteBookAction, deleteBookJob};')(
+    document, {prompt: text => {promptText=text; return promptReply;}, alert: text => alerts.push(text)},
+    job => ['Running','Queued'].includes(job.status), new Set(['Running','Queued']),
+    (path, options) => {calls.push({path,options}); return new Promise((resolve,reject) => {release={resolve,reject};});},
+    async () => {loads++;}, id => {focus=id;}, new Map(),new Map(),new Map(),new Map());
+  const deleteJob = {id:'fixture',courseCode:'TEST',title:'Test book',status:'Completed',workflowStage:'format-review'};
+  for (const change of [{}, {status:'Failed'}, {lifecycleStatus:'Archived'}, {workflowStage:'id-review'}]) {
+    const host=document.createElement('div'); deletion.appendDeleteBookAction(host,{...deleteJob,...change});
+    if (host.querySelector('button')?.textContent !== 'Delete book' || host.querySelector('button').disabled) throw new Error('Idle book missing delete action');
+  }
+  for (const change of [{status:'Running'}, {status:'Queued'}, {aiRequests:[{status:'Running'}]}, {aiRequests:[{status:'Queued'}]}]) {
+    const host=document.createElement('div'); deletion.appendDeleteBookAction(host,{...deleteJob,...change});
+    if (!host.querySelector('button').disabled) throw new Error('Busy book allows deletion');
+  }
+  const deleteButton=document.createElement('button');
+  await deletion.deleteBookJob(deleteJob,deleteButton);
+  promptReply='wrong'; await deletion.deleteBookJob(deleteJob,deleteButton);
+  if (calls.length || !promptText.includes('Test book') || !promptText.includes('cannot be undone')) throw new Error('Delete confirmation failed');
+  promptReply='TEST'; const pending=deletion.deleteBookJob(deleteJob,deleteButton);
+  await deletion.deleteBookJob(deleteJob,deleteButton);
+  if (calls.length !== 1 || !deleteButton.disabled || calls[0].path !== '/api/jobs/fixture/delete' || !JSON.parse(calls[0].options.body).deleteFiles) throw new Error('Deletion is not single-flight or targets wrong book');
+  release.resolve({deleted:true}); await pending;
+  if (loads !== 1 || focus !== '' || deleteButton.disabled) throw new Error('Deleted book was not refreshed/cleared');
+  const failing=deletion.deleteBookJob(deleteJob,deleteButton); release.reject(new Error('File is locked')); await failing;
+  if (!alerts[0]?.includes('File is locked') || deleteButton.disabled || deleteButton.textContent !== 'Delete book') throw new Error('Delete errors are hidden or button cannot retry');
   const match = source.match(/function renderJobQaSummary\(container, job\) \{[\s\S]*?(?=\nfunction )/);
   if (!match) throw new Error('Real QA rendering function missing');
   function makeElement(tag, className, text) { const e = document.createElement(tag); e.className = className; if (text) e.textContent = text; return e; }
@@ -51,6 +81,16 @@ try {
   check({status:'PASS'}, 'Draft not cleared by current gates', 'Technical/editorial gates passed');
   check({status:'FAIL', draftReadyForReview:false}, 'QA FAIL - Needs revision', 'Technical/editorial gates passed');
   check({status:'PASS', draftReadyForReview:true, publicationReady:true}, 'Publication approvals recorded', 'Not publication-approved');
+  check({status:'Preview',stage:'outline',outlineStatus:'Ready for review',summary:'Planning exports passed.',sourceReadiness:{status:'Not checked',issues:['Missing URL: example']}}, 'Book QA: not run yet', 'QA FAIL');
+  const rerunSource = source.match(/async function rerunJobQa\(jobId, button\) \{[\s\S]*?(?=\r?\nasync function )/);
+  if (!rerunSource || !source.includes('"Run QA again"')) throw new Error('QA rerun control missing');
+  let qaCalls = [], qaLoads = 0, qaFail = false;
+  const rerun = new Function('makeElement','api','loadJobs',rerunSource[0]+';return rerunJobQa;')(makeElement,async(path, options)=>{qaCalls.push({path,options});if(qaFail)throw new Error('Missing plan');return {message:'QA finished: sources need attention.'};},async()=>{qaLoads++;});
+  const qaHost=document.createElement('div'), qaButton=document.createElement('button');qaHost.append(qaButton);
+  await rerun('outline-book',qaButton);
+  if(qaCalls[0].path!=='/api/jobs/outline-book/run-qa' || qaCalls[0].options.method!=='POST' || qaLoads!==1 || qaButton.disabled || !qaHost.textContent.includes('sources need attention')) throw new Error('QA rerun result or refresh missing');
+  qaFail=true; await rerun('outline-book',qaButton);
+  if(qaButton.disabled || !qaHost.textContent.includes('Missing plan') || qaLoads!==1) throw new Error('QA rerun failure hidden');
   const formatSource = source.match(/function renderFormatReviewPanel\(job, panel\) \{[\s\S]*?(?=\nfunction )/);
   if (!formatSource) throw new Error('Actual format panel function missing');
   const loadOutlineEditor = (container) => container.append(makeElement('p', 'outline-editor-loading', 'Loading the current planned outline...'));
@@ -75,8 +115,9 @@ try {
   const form = {elements:{files:{files:[{name:'same.docx'},{name:'same.docx'}]},sourceMode:{value:'UploadedOnly'},skipResearch:{type:'checkbox'},skipOpenStaxFetch:{type:'checkbox'},maxResearchPerChapter:{type:'number'}}};
   new Function('form',sourceChoice[0]+'; refreshSourceChoices();')(form);
   if (primary.value !== '' || primary.options.length !== 3 || !form.elements.skipResearch.disabled || !form.elements.skipResearch.checked) throw new Error('Explicit blueprint choice or uploaded-only default failed');
-  document.body.textContent = 'PASS: full app.js syntax, 4 QA states, format/intake rendering, approval checkbox, and explicit source selection';
+  document.body.textContent = 'PASS: full app.js syntax, deletion safety, 4 QA states, format/intake rendering, approval checkbox, and explicit source selection';
 } catch(error) { document.body.textContent = 'FAIL: ' + error.message; }
+})();
 </script>
 '@
 $page=Join-Path $fixture 'test.html'
@@ -86,5 +127,5 @@ $args=@('--headless','--disable-gpu','--disable-extensions','--no-first-run','--
 $process=Start-Process -FilePath $browser -ArgumentList $args -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr
 if(-not $process.WaitForExit(45000)){throw "Browser test exceeded 45 seconds. Test-only process ID: $($process.Id)"}
 $result=Get-Content -LiteralPath $stdout -Raw -Encoding UTF8
-if($result -notmatch '<body>PASS: full app.js syntax, 4 QA states, format/intake rendering, approval checkbox, and explicit source selection\s*</body>'){throw "Browser readiness test failed; inspect $fixture"}
-Write-Output 'PASS: full app.js syntax, 4 QA states, format/intake rendering, approval checkbox, and explicit source selection.'
+if($result -notmatch '<body>PASS: full app.js syntax, deletion safety, 4 QA states, format/intake rendering, approval checkbox, and explicit source selection\s*</body>'){throw "Browser readiness test failed; inspect $fixture"}
+Write-Output 'PASS: full app.js syntax, deletion safety, 4 QA states, format/intake rendering, approval checkbox, and explicit source selection.'

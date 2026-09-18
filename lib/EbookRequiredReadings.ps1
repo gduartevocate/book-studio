@@ -53,6 +53,9 @@ function ConvertFrom-EbookReadingList {
         if ($line -match '(?i)^#{0,6}\s*(?:Week|Chapter)\s*(\d+)(?=\s|:|$)(.*)$') {
             $week = [int]$Matches[1]
             $line = $Matches[2].Trim().TrimStart(':','-').Trim()
+            # A titled week/chapter is an assignment heading, not a reading.
+            # Preserve bare reading titles on their own lines for explicit review.
+            if (-not $isBlueprint -and $line -notmatch 'https?://') { continue }
             # A blueprint's week title/objectives are not assigned readings.
             if ($isBlueprint -and $line -notmatch 'https?://') {
                 if ($line -match '(?i)^(?:(?:Required|Assigned|Scholarly)\s+)?(?:Readings?|Sources|References|Resources)\s*:?$') { $inReadings = $true }
@@ -62,6 +65,7 @@ function ConvertFrom-EbookReadingList {
         }
         if ($line -match '(?i)^(?:All chapters|General readings)\s*:?$') { $week=0; $inReadings=$true; continue }
         if ($line -match '(?i)^#{0,6}\s*(?:(?:Required|Assigned|Scholarly)\s+)?(?:Readings?|Sources|References|Resources)\s*:?$') { $inReadings=$true; continue }
+        if ($line -match '^#{1,6}\s+' -and $line -notmatch 'https?://') { continue }
         if ($isBlueprint -and ($line -match '(?i)^(?:(?:Course|Lesson|Learning|Weekly|Sub)[ -]?)?Objectives?\b|^(?:Course Description|Activities|Assignments|Assessments|Instructor Notes|Production Notes)\b' -or
             $line -match '(?i)^(?:CO|LO)\s*\d|^\d+\.\d+\b|^\d+[.)]\s+(?:Describe|Identify|Compare|Explain|Analyze|Evaluate|Develop|Apply|Examine|Assess|Differentiate|Demonstrate|Define|Discuss|Use)\b')) {
             $inReadings=$false
@@ -224,7 +228,7 @@ function Update-EbookRequiredSourceEvidence {
 function Get-EbookRequiredSourceReview {
     param([object]$Plan, [string]$OutputFolder, [AllowEmptyString()][string]$Markdown, [switch]$EvidenceOnly)
     $issues=[Collections.Generic.List[string]]::new()
-    try { $report=Get-Content -LiteralPath (Join-Path $OutputFolder 'required-source-report.json') -Raw -Encoding UTF8 | ConvertFrom-Json } catch { $report=$null }
+    try { $report=Get-Content -LiteralPath (Join-Path $OutputFolder 'required-source-report.json') -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json } catch { $report=$null }
     $readings=@($Plan.requiredReadings)
     if (-not $readings.Count) { $issues.Add('The required reading list is empty. The course blueprint cannot substitute for assigned readings.') }
     foreach ($reading in $readings) {
@@ -252,7 +256,7 @@ function Get-EbookRequiredSourceReview {
             if (-not @($assigned | Where-Object { $_.url -and $note.Value.Contains("]($($_.url))") }).Count) { $issues.Add("Chapter $($chapter.number): a bibliography note does not identify an assigned reading. Do not cite the blueprint or production notes as teaching evidence.") }
         }
     }
-    [pscustomobject]@{applicable=$true;status=$(if($issues.Count){'FAIL'}else{'PASS'});issues=$issues.ToArray();detail=$(if($issues.Count){$issues -join ' '}else{'Required source text, chapter assignments, bibliography URLs, and body citations verified. Human claim/permissions review remains required.'})}
+    [pscustomobject]@{applicable=$true;status=$(if($issues.Count){'FAIL'}else{'PASS'});issues=$issues.ToArray();detail=$(if($issues.Count){$issues -join ' '}elseif($EvidenceOnly){'Required source text and chapter assignments verified. Manuscript citations have not been checked.'}else{'Required source text, chapter assignments, bibliography URLs, and body citations verified. Human claim/permissions review remains required.'})}
 }
 
 function New-EbookRequiredSourceBrief {

@@ -10,6 +10,7 @@
 . (Join-Path $PSScriptRoot 'EbookReadiness.ps1')
 . (Join-Path $PSScriptRoot 'EbookUploadedSources.ps1')
 . (Join-Path $PSScriptRoot 'EbookRequiredReadings.ps1')
+. (Join-Path $PSScriptRoot 'EbookOutcomeRevisions.ps1')
 
 function ConvertTo-EbookProgressField {
     param([AllowNull()][string]$Value)
@@ -1954,6 +1955,11 @@ function Import-CourseSpec {
         }
     }
     $course.sourcePath = $Path
+    $revisionPath = Join-Path (Split-Path $Path -Parent) 'book-studio-outcomes.json'
+    if (Test-Path -LiteralPath $revisionPath) {
+        $revision = Get-Content -LiteralPath $revisionPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $course = Set-EbookCourseOutcomeRevision -Course $course -Revision $revision
+    }
     return $course
 }
 
@@ -2711,7 +2717,7 @@ function New-EbookPlan {
     $practiceFrame = Get-CoursePracticeFrame -Course $Course
     $courseDomain = Get-CourseDomain -Course $Course
     $structuredBlueprint = Get-StructuredCourseBlueprintFromSourceContext -SourceContext $SourceContext -Course $Course
-    if ($structuredBlueprint) {
+    if ($structuredBlueprint -and -not $Course.outcomeRevision) {
         return (New-EbookPlanFromStructuredBlueprint -Course $Course -StructuredBlueprint $structuredBlueprint)
     }
 
@@ -2810,6 +2816,7 @@ function New-EbookPlan {
         planVersion = "0.1"
         courseCode = $Course.courseCode
         narrativeSpine = $practiceFrame.throughline
+        outcomeRevision = $Course.outcomeRevision
         chapters = @($chapters)
     }
 }
@@ -2845,8 +2852,18 @@ function Merge-EbookReviewedOutline {
         # Keep objective IDs from the newly generated authoritative plan. Older
         # reviewed-outline files may contain blank IDs from the legacy parser.
         $base.learningTargetRecords = @($base.learningTargetRecords)
+        $base.researchQuery = "$($Plan.courseCode) $title $($base.focus)"
     }
     $Plan.chapters = @($baseChapters)
+    if ($reviewed.outlineEditedAt) {
+        $Plan | Add-Member -NotePropertyName outlineEditedAt -NotePropertyValue $reviewed.outlineEditedAt -Force
+        $Plan.narrativeSpine = $reviewed.narrativeSpine
+        for ($i=0; $i -lt $baseChapters.Count; $i++) {
+            $baseChapters[$i].buildsOn = if($i -gt 0){$baseChapters[$i-1].title}else{'the course purpose and prior knowledge'}
+            $baseChapters[$i].setsUp = if($i+1 -lt $baseChapters.Count){$baseChapters[$i+1].title}else{'the final course synthesis'}
+            $baseChapters[$i].cohesionBridge = "Connect $($baseChapters[$i].buildsOn) to $($baseChapters[$i].setsUp), developing $($baseChapters[$i].focus)."
+        }
+    }
     $Plan | Add-Member -NotePropertyName reviewedOutlinePath -NotePropertyValue $ReviewedOutlinePath -Force
     $Plan | Add-Member -NotePropertyName reviewedOutlineAppliedAt -NotePropertyValue (Get-Date).ToString('s') -Force
     return $Plan
@@ -4553,6 +4570,13 @@ function New-EbookBlueprint {
         $learningActions = @(Get-CourseArcLearningActions -Course $Course -Chapter $chapter -ProposedTitle $proposedTitle)
         $introducedConcepts = @(Get-CourseArcIntroducedConcepts -Course $Course -Chapter $chapter -ProposedTitle $proposedTitle -KeyConcepts $keyConcepts)
         $reinforcedConcepts = @(Get-CourseArcReinforcedConcepts -Course $Course -Chapter $chapter -ProposedTitle $proposedTitle -PreviousConcepts @($previousIntroducedConcepts))
+        if ($Plan.outlineEditedAt) {
+            # Do not reintroduce domain-default topics after an ID edits the plan.
+            $keyConcepts = @($chapter.focus) + @($chapter.learningTargets)
+            $learningActions = @($chapter.learningTargets) + @("Apply the chapter focus in a source-supported scenario: $($chapter.focus)", "Explain the reasoning and evidence supporting the scenario's decision.")
+            $introducedConcepts = @($chapter.focus)
+            $reinforcedConcepts = @($chapter.buildsOn)
+        }
         [void]$arcModules.Add([pscustomobject]@{
             moduleNumber = $chapter.number
             proposedTitle = $proposedTitle
@@ -4578,6 +4602,18 @@ function New-EbookBlueprint {
             })
         }
 
+        if ($Plan.outlineEditedAt) {
+            $sections.Clear()
+            $template = Get-EbookPublicationTemplate
+            foreach ($section in $template.sections) {
+                $sectionTitle = if ($section.number -eq 4) { "Integrating $($chapter.title) at Work" } else { $section.name }
+                $subpoints = @("Develop the reviewed chapter focus: $($chapter.focus)")
+                $subpoints += @($chapter.learningTargets | ForEach-Object { "Source-aligned outcome: $_" })
+                $subpoints += "Use a source-supported worked example or case to demonstrate the outcomes within $sectionTitle."
+                if ($chapter.guidance) { $subpoints += "Writer direction: $($chapter.guidance)" }
+                [void]$sections.Add([pscustomobject]@{label=(Get-OutlineLetter -Index ([int]$section.number));title=$sectionTitle;subpoints=$subpoints})
+            }
+        }
         [void]$outlineChapters.Add([pscustomobject]@{
             number = $chapter.number
             roman = Get-RomanNumeral -Number $chapter.number
@@ -4597,6 +4633,12 @@ function New-EbookBlueprint {
         modules = @($arcModules)
         conceptIntroductionReinforcementMap = @(Get-ConceptIntroductionReinforcementMap -Course $Course -ArcModules @($arcModules))
         studentPerformanceThread = Get-StudentPerformanceThread -Course $Course -ArcModules @($arcModules)
+    }
+    if ($Plan.outlineEditedAt) {
+        $courseConceptArc.studentPerformanceThread = [pscustomobject]@{
+            scenario = "A source-supported course scenario develops the reviewed chapter sequence: $($Plan.narrativeSpine)"
+            moduleSteps = @($Plan.chapters | ForEach-Object { [pscustomobject]@{moduleNumber=$_.number;action="Apply $($_.focus) using the assigned outcomes and accepted teaching evidence."} })
+        }
     }
     $ebookOutline = [pscustomobject]@{
         format = "Traditional academic outline with Roman numerals, capital letters, and numbered subpoints."
@@ -4640,6 +4682,7 @@ function New-EbookBlueprint {
             courseObjectives = @($Course.courseObjectives)
             weeks = @($Course.weeks)
             sourcePath = $Course.sourcePath
+            outcomeRevision = $Course.outcomeRevision
         }
         intakeChecklist = @(Get-BlueprintIntakeChecklist -Course $Course -SourceContext $SourceContext -BrandProfile $BrandProfile)
         sourceContextSummary = [pscustomobject]@{
@@ -4704,6 +4747,11 @@ function ConvertTo-EbookOutlineMarkdown {
     [void]$lines.Add("")
     foreach ($chapter in @($Blueprint.ebookOutline.chapters)) {
         [void]$lines.Add("$($chapter.roman). Chapter $($chapter.number): $($chapter.proposedTitle)")
+        [void]$lines.Add("")
+        [void]$lines.Add("Chapter focus: $($chapter.focus)")
+        [void]$lines.Add("")
+        [void]$lines.Add('Learning objectives:')
+        foreach ($objective in @($chapter.learningTargets)) { [void]$lines.Add("- $objective") }
         [void]$lines.Add("")
         if ($chapter.PSObject.Properties['guidance'] -and -not [string]::IsNullOrWhiteSpace([string]$chapter.guidance)) {
             [void]$lines.Add("Designer guidance: $(([string]$chapter.guidance) -replace '\s+', ' ')")
@@ -4913,12 +4961,15 @@ function Get-DraftPlanFromBlueprint {
             assessmentHooks = @($chapter.assessmentHooks)
             researchQuery = $chapter.researchQuery
             requiredSections = @($chapter.requiredSections)
+            guidance = [string]$chapter.guidance
         })
     }
 
     return [pscustomobject]@{
         generatedAt = $Plan.generatedAt
         planVersion = "$($Plan.planVersion)-approved-outline"
+        outcomeRevision = $Plan.outcomeRevision
+        outlineEditedAt = $Plan.outlineEditedAt
         sourceMode = $Plan.sourceMode
         requiredReadings = @($Plan.requiredReadings)
         imageSettings = $Plan.imageSettings
@@ -12853,5 +12904,6 @@ function Export-EbookPackage {
 
 Export-ModuleMember -Function Import-CourseSpec, Import-SourceContext, Import-BrandProfile, New-EbookPlan, Merge-EbookReviewedOutline, Resolve-EbookSources, New-EbookBlueprintPackage, Export-EbookBlueprintPackage, New-EbookPackage, Export-EbookPackage, Repair-EbookPackageOutputs, Get-ProhibitedKnowledgeCheckSignals, Remove-ProhibitedKnowledgeCheckSections, Get-ProhibitedLearnerSectionSignals, Remove-ProhibitedLearnerSections, Test-EbookObjectiveTraceability, Test-EbookReleaseArtifacts, Test-EbookAssignedSources, Test-EbookAssignedSourcePackage, Get-EbookTemplateInstructions, Get-EbookPublicationTemplate, Test-EbookPublicationTemplate
 Export-ModuleMember -Function Test-EbookManuscriptPreflight, Update-EbookManuscriptPreflight
+Export-ModuleMember -Function ConvertFrom-EbookOutcomeCatalog, Set-EbookCourseOutcomeRevision
 Export-ModuleMember -Function Get-EbookBlueprintReadingText, ConvertFrom-EbookReadingList, Merge-EbookReadingLists, ConvertTo-EbookReadingListText, Update-EbookRequiredSourceEvidence, Get-EbookRequiredSourceReview, New-EbookRequiredSourceBrief, ConvertTo-SafePathPart
 

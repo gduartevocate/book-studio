@@ -1,5 +1,16 @@
 # Book Studio ID Changelog
 
+## v2026.09.18.7 (2026-09-18)
+
+- Separate outline readiness, required-source readiness, and manuscript QA. Planning-only packages no longer receive missing-manuscript citation/image findings or inherit stale book QA failures.
+- Add Run QA again for saved previews and manuscripts, with a dated result and visible errors. Refresh validation and review reports without rewriting manuscripts, outlines, or exports. Required-source retrieval remains a separate retry action.
+- Parse titled Week/Chapter headings as assignment labels, preserving real title-only readings for correction. Previously saved title-only entries remain visible until corrected in Sources and image setting.
+- Show Delete book in every book stage, including previews and failures, with typed confirmation. Block deletion during generation/Codex work, restrict cleanup to the book's own managed folders, and surface cleanup errors instead of silently hiding the book.
+- Outline saves refresh the HTML preview, Word/Markdown outlines, and planning packets together, with backups and a persistent receipt. Locked files or export errors stop the update before publication.
+- Add a separate review-and-confirm workflow for revised CO/LO catalogs and chapter assignments. The original blueprint is preserved; a hash-bound, attributed amendment becomes the effective source for future planning, drafting, and objective traceability. Chat suggestions still do not silently change official outcomes.
+- Include writer guidance in preview approval fingerprints, preserve it through drafting, refresh chapter connections, and avoid reintroducing generic default topics into a reviewed outline.
+- Decode browser JSON as UTF-8 to preserve curly apostrophes and other non-ASCII text. No manuscript is written by either planning action.
+
 ## v2026.09.18.6 (2026-09-18)
 
 - Accept standalone Week 1, Week1, and colon/Markdown week headings in content documents. Preserve numbered objectives and lesson assignments, including a course objective split across weeks. Missing course descriptions no longer invent a critical-thinking subject.

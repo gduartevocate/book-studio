@@ -25,6 +25,8 @@ $roundtrip=@(ConvertFrom-EbookReadingList (ConvertTo-EbookReadingListText $readi
 Check (($readings | ConvertTo-Json -Depth 10 -Compress) -eq ($roundtrip | ConvertTo-Json -Depth 10 -Compress)) 'Saving extracted readings changes the assignments.'
 Check (@(ConvertFrom-EbookReadingList "Week 1:`nOpenStax title only")[0].url -eq '') 'A title alone was treated as a retrieved URL.'
 Check (@(ConvertFrom-EbookReadingList 'OpenStax title only').Count -eq 1) 'An explicit designer title without a week label was dropped.'
+$headings = @(ConvertFrom-EbookReadingList "Week 1: Healthcare Systems, Care Delivery, and Organizational Structures`nhttps://example.org/health`n## Week 2 Technology`nhttps://example.org/technology`n## Reference section`nA real reading needing its URL")
+Check ($headings.Count -eq 3 -and $headings[0].chapters[0] -eq 1 -and $headings[1].chapters[0] -eq 2 -and $headings[2].url -eq '') 'Titled headings became readings, assignments were lost, or title-only readings were dropped.'
 $objectiveText="Week 1`n1. Describe healthcare settings.`n1.1 Compare settings.`nWeek2`n2. Analyze workflow.`n2.1 Identify handoffs."
 Check (@(ConvertFrom-EbookReadingList $objectiveText -Origin Blueprint).Count -eq 0) 'Blueprint objectives became phantom readings.'
 $blueprintText=$objectiveText+"`nRequired readings:`nWeek 1`nA title awaiting its URL`nWeek 2`n[Assigned](https://example.org/assigned)`nWeek 3 Workforce design`n3. Develop a workforce plan.`n3.1 Identify roles."
@@ -78,6 +80,7 @@ Check ((Get-EbookRequiredSourceReview $plan $fixture $good -EvidenceOnly).status
 $badReport=Update-EbookRequiredSourceEvidence $plan $fixture
 Check ($badReport.status -eq 'FAIL' -and $badReport.readings[0].detail -match 'identifier') 'Invalid reading id reached the download step.'
 # Actual QA findings must be visible, including source requirements changed after export.
+Set-Content -LiteralPath (Join-Path $fixture 'Test - E-Book.md') -Value $good -Encoding UTF8
 SaveJson ([pscustomobject]@{status='FAIL';chapters=@([pscustomobject]@{chapterNumber=1;checks=@([pscustomobject]@{name='numbered_notes';status='FAIL';detail='Missing body citations.'})})}) 'quality-report.json'
 $summary=& (Get-Module BookStudio) {param($f) Get-BookStudioQualitySummary $f} $fixture
 Check (@($summary.findings | Where-Object name -eq 'numbered_notes').Count -eq 1) 'QA details were discarded.'

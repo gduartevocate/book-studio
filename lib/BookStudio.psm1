@@ -5,6 +5,8 @@
 . (Join-Path $PSScriptRoot 'BookStudioChat.ps1')
 . (Join-Path $PSScriptRoot 'BookStudioUpdates.ps1')
 . (Join-Path $PSScriptRoot 'BookStudioProduction.ps1')
+. (Join-Path $PSScriptRoot 'BookStudioQa.ps1')
+. (Join-Path $PSScriptRoot 'BookStudioOutline.ps1')
 
 function Get-BookStudioInstallPathStatus {
     # Windows PowerShell cannot write paths longer than 259 characters, and a
@@ -242,6 +244,12 @@ function Get-BookStudioQualitySummary {
         return $empty
     }
 
+    # Planning artifacts are not a manuscript. Do not run citation, image, or
+    # publication gates against an empty book, even if old QA files remain.
+    if (-not @(Get-ChildItem -LiteralPath $OutputFolder -File | Where-Object { $_.Name -like '* - E-Book.md' -or $_.Name -like '* - E-Book.docx' }).Count) {
+        return Get-BookStudioPreviewQualitySummary -OutputFolder $OutputFolder
+    }
+
     $qualityStatus = ""
     $publishingStatus = ""
     $auditStatus = ""
@@ -458,63 +466,67 @@ function Remove-BookStudioJob {
         [switch]$DeleteFiles
     )
 
-    $databaseRoot = Split-Path -Parent $DatabasePath
-    $outputsRoot = Join-Path $databaseRoot "outputs"
-    $uploadsRoot = Join-Path $databaseRoot "uploads"
-    $logsRoot = Join-Path $databaseRoot "logs"
-    $job = Get-BookStudioJob -DatabasePath $DatabasePath -JobId $JobId
-    if (-not $job) {
-        throw "Book Studio job not found: $JobId"
-    }
-
-    $removedPaths = New-Object System.Collections.ArrayList
-    if ($DeleteFiles) {
-        $candidates = New-Object System.Collections.ArrayList
-        $expectedUploadFolder = Join-Path $uploadsRoot $JobId
-        $expectedOutputRoot = Join-Path $outputsRoot $JobId
-        $expectedLogPath = Join-Path $logsRoot "$JobId.log"
-        foreach ($path in @($expectedUploadFolder, $expectedOutputRoot, $expectedLogPath)) {
-            if ($path -and (Test-Path -LiteralPath $path)) {
-                [void]$candidates.Add($path)
-            }
-        }
-        foreach ($path in @($job.outputRoot, $job.outputFolder)) {
-            if ($path -and (Test-Path -LiteralPath $path) -and (Test-BookStudioPathWithin -Path $path -Root $outputsRoot)) {
-                [void]$candidates.Add($path)
-            }
-        }
-
-        foreach ($path in @($candidates | Select-Object -Unique)) {
-            if (Test-BookStudioPathWithin -Path $path -Root $databaseRoot) {
-                Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue
-                [void]$removedPaths.Add($path)
-            }
-        }
+    if ($JobId -notmatch '^[A-Za-z0-9][A-Za-z0-9_-]*$') {
+        throw 'Invalid book ID for deletion.'
     }
 
     Invoke-BookStudioDatabaseLock -DatabasePath $DatabasePath -ScriptBlock {
         $db = Read-BookStudioDatabase -DatabasePath $DatabasePath
-        $jobs = New-Object System.Collections.ArrayList
-        $found = $false
-        foreach ($current in @($db.jobs)) {
-            if ($current.id -eq $JobId) {
-                $found = $true
-                continue
-            }
-            [void]$jobs.Add($current)
+        $job = @($db.jobs | Where-Object id -eq $JobId | Select-Object -First 1)[0]
+        if (-not $job) { throw "Book Studio job not found: $JobId" }
+        if ($job.status -in @('Queued','Running') -or @($job.aiRequests | Where-Object { $_.status -in @('Queued','Running') }).Count) {
+            throw 'Wait for generation or Codex work to finish before deleting this book.'
         }
-        if (-not $found) {
-            throw "Book Studio job not found: $JobId"
-        }
-        $db.jobs = @($jobs)
-        Write-BookStudioDatabase -DatabasePath $DatabasePath -Database $db
-    }
 
-    return [pscustomobject]@{
-        id = $JobId
-        deleted = $true
-        deletedFiles = [bool]$DeleteFiles
-        removedPaths = @($removedPaths)
+        $removedPaths = New-Object System.Collections.ArrayList
+        if ($DeleteFiles) {
+            $databaseRoot = [IO.Path]::GetFullPath((Split-Path -Parent $DatabasePath))
+            # Never trust outputRoot/outputFolder as deletion targets: imported
+            # packages can point to a shared parent or an external original.
+            $candidates = @(
+                (Join-Path $databaseRoot "uploads/$JobId"),
+                (Join-Path $databaseRoot "outputs/$JobId"),
+                (Join-Path $databaseRoot "logs/$JobId.log"),
+                (Join-Path $databaseRoot "logs/$JobId.err.log")
+            ) | Where-Object { Test-Path -LiteralPath $_ }
+            # Validate every exact target before any removal. Refuse junctions
+            # and shared packages rather than risk another book's files.
+            foreach ($path in $candidates) {
+                if (-not (Test-BookStudioPathWithin -Path $path -Root $databaseRoot) -or [IO.Path]::GetFullPath($path) -eq $databaseRoot) {
+                    throw 'Book deletion target is outside its managed storage.'
+                }
+                $ancestor = $path
+                while ($ancestor) {
+                    $item = Get-Item -LiteralPath $ancestor -Force -ErrorAction Stop
+                    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Book deletion cannot follow linked folders or files.' }
+                    if ($ancestor -eq $databaseRoot) { break }
+                    $ancestor = Split-Path -Parent $ancestor
+                }
+                if (@(Get-ChildItem -LiteralPath $path -Recurse -Force -ErrorAction Stop | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }).Count) {
+                    throw 'Book deletion cannot follow linked folders or files.'
+                }
+                foreach ($other in @($db.jobs | Where-Object id -ne $JobId)) {
+                    foreach ($reference in @($other.outputRoot, $other.outputFolder, $other.specPath) + @($other.uploadedFiles | ForEach-Object { $_.path })) {
+                        if ($reference -and (Test-BookStudioPathWithin -Path $reference -Root $path)) {
+                            throw "Another book ($($other.id)) uses these files. Deletion was cancelled."
+                        }
+                    }
+                }
+            }
+            foreach ($path in $candidates) {
+                Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop
+                [void]$removedPaths.Add($path)
+            }
+        }
+
+        $db.jobs = @($db.jobs | Where-Object id -ne $JobId)
+        Write-BookStudioDatabase -DatabasePath $DatabasePath -Database $db
+        [pscustomobject]@{
+            id = $JobId
+            deleted = $true
+            deletedFiles = [bool]$DeleteFiles
+            removedPaths = @($removedPaths)
+        }
     }
 }
 
@@ -1104,6 +1116,8 @@ function New-BookStudioFormatPreview {
     foreach ($chapter in $chapters) {
         $n = [int]$chapter.number
         $lines += @("# Chapter ${n}: $($chapter.title)", '', "**Chapter focus:** $($chapter.focus)", '', '## Introduction', '', 'This is representative format-preview text, not drafted course content. Final prose introduces the purpose, setting, and scope of this chapter using the assigned sources.', '', '### Learning Objectives', '', 'By the end of this chapter, you should be able to:', '')
+        # Writer guidance is visible in the planning review, not learner prose.
+        if ($chapter.guidance) { $lines += @("**Designer guidance (planning only):** $($chapter.guidance)", '') }
         $objectiveNumber = 0
         foreach ($record in @($previewObjectiveRecords[$n])) {
             if (-not $record.objective) { throw 'The preview cannot substitute invented objectives for missing source records.' }
@@ -1184,6 +1198,9 @@ function Get-BookStudioOutline {
     return [pscustomobject]@{
         jobId = $JobId
         planVersion = [string]$plan.planVersion
+        planHash = (Get-FileHash -LiteralPath $planPath).Hash
+        lastUpdate = $job.outlineUpdate
+        outcomeRevision = $plan.outcomeRevision
         editableFields = @('chapter title', 'chapter focus', 'writer guidance')
         fixedFields = @('chapter order', 'chapter count', 'source assignments', 'source learning objectives')
         chapters = $chapters
@@ -1195,18 +1212,23 @@ function Set-BookStudioOutline {
     param(
         [Parameter(Mandatory)][string]$DatabasePath,
         [Parameter(Mandatory)][string]$JobId,
-        [Parameter(Mandatory)][object[]]$Chapters
+        [Parameter(Mandatory)][object[]]$Chapters,
+        [string]$ExpectedPlanHash
     )
 
     $job = Get-BookStudioJob -DatabasePath $DatabasePath -JobId $JobId
     if (-not $job) { throw "Book Studio job not found: $JobId" }
     if ($job.status -in @('Running','Queued')) { throw 'Wait for the current job to finish before editing the outline.' }
+    Assert-BookStudioProductionIdle $job
     if (-not $job.outputFolder -or -not (Test-Path -LiteralPath $job.outputFolder -PathType Container)) {
         throw 'Create the format preview before editing the outline.'
     }
     $planPath = Join-Path $job.outputFolder 'ebook-plan.json'
     if (-not (Test-Path -LiteralPath $planPath -PathType Leaf)) { throw 'The generated plan is missing; recreate the format preview.' }
     $plan = Get-Content -LiteralPath $planPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $baseHash = (Get-FileHash -LiteralPath $planPath).Hash
+    if ($ExpectedPlanHash -and $ExpectedPlanHash -ne $baseHash) { throw 'The outline changed. Reload it before saving.' }
+    $changes = [Collections.Generic.List[string]]::new()
     $existingChapters = @($plan.chapters | Sort-Object { [int]$_.number })
     $incomingChapters = @($Chapters)
     if ($incomingChapters.Count -ne $existingChapters.Count) {
@@ -1229,6 +1251,10 @@ function Set-BookStudioOutline {
         if (($objectives -join "`n") -ne ($sourceObjectives -join "`n")) {
             throw "Chapter $number objectives are locked to the authoritative course source. Edit the chapter title or focus here; update the course source before changing official objectives."
         }
+        if ($title.Length -gt 180 -or $focus.Length -gt 2000) { throw 'Chapter title/focus exceeds the input limit.' }
+        foreach ($field in @('title','focus','guidance')) {
+            if ([string]$incoming.$field -cne [string]$existing.$field) { $changes.Add("Chapter $number $field") }
+        }
         $existing.title = $title
         $existing.focus = $focus
         # Writer guidance is the designer's own direction for this chapter. It
@@ -1241,28 +1267,9 @@ function Set-BookStudioOutline {
 
     $plan.chapters = @($updatedChapters)
     Add-OrSet-BookStudioNoteProperty -InputObject $plan -Name 'outlineEditedAt' -Value (Get-Date).ToString('s')
-    $planJson = $plan | ConvertTo-Json -Depth 30
-    $reviewedOutlinePath = Join-Path $job.sourceContextPath 'book-studio-reviewed-outline.json'
-    Set-Content -LiteralPath $reviewedOutlinePath -Value $planJson -Encoding UTF8
-    Set-Content -LiteralPath $planPath -Value $planJson -Encoding UTF8
-    New-BookStudioFormatPreview -Job $job -OutputFolder $job.outputFolder | Out-Null
-
-    $now = (Get-Date).ToString('s')
-    Update-BookStudioJob -DatabasePath $DatabasePath -JobId $JobId -Update {
-        param($current)
-        if (-not ($current.PSObject.Properties.Name -contains 'formatReview')) { $current | Add-Member -MemberType NoteProperty -Name 'formatReview' -Value ([pscustomobject]@{}) }
-        Add-OrSet-BookStudioNoteProperty -InputObject $current.formatReview -Name 'status' -Value 'Needs revision'
-        Add-OrSet-BookStudioNoteProperty -InputObject $current.formatReview -Name 'fingerprint' -Value ''
-        Add-OrSet-BookStudioNoteProperty -InputObject $current.formatReview -Name 'notesResolved' -Value $false
-        Add-OrSet-BookStudioNoteProperty -InputObject $current -Name 'workflowStage' -Value 'format-review'
-        Add-OrSet-BookStudioNoteProperty -InputObject $current -Name 'workflowStatus' -Value 'Outline updated; review the regenerated preview'
-        Add-OrSet-BookStudioNoteProperty -InputObject $current -Name 'reviewedOutlinePath' -Value $reviewedOutlinePath
-        $entries = New-Object System.Collections.ArrayList
-        foreach ($entry in @($current.log)) { [void]$entries.Add($entry) }
-        [void]$entries.Add([pscustomobject]@{ at = $now; message = 'Outline updated by Instructional Designer. Previous format approval was cleared; review the regenerated complete-book preview.' })
-        $current.log = @($entries)
-    }
-    return Get-BookStudioJob -DatabasePath $DatabasePath -JobId $JobId
+    Import-Module (Join-Path $PSScriptRoot 'EbookGenerator.psm1') -Scope Local
+    $course = Import-CourseSpec $job.specPath
+    return Save-BookStudioOutlineArtifacts -DatabasePath $DatabasePath -Job $job -Plan $plan -Course $course -Changes $changes.ToArray() -ExpectedPlanHash $baseHash
 }
 
 function Set-BookStudioFormatReview {
@@ -4761,7 +4768,8 @@ function Send-BookStudioFileResponse {
 function Get-BookStudioRequestJson {
     param([Parameter(Mandatory)]$Request)
 
-    $reader = New-Object System.IO.StreamReader($Request.InputStream, $Request.ContentEncoding)
+    # Browser JSON uses UTF-8 even when no charset parameter is supplied.
+    $reader = New-Object System.IO.StreamReader($Request.InputStream, [Text.UTF8Encoding]::new($false, $true))
     try {
         $buffer = New-Object char[] 8192
         $builder = New-Object Text.StringBuilder
@@ -4855,7 +4863,7 @@ function Start-BookStudioServer {
                 continue
             }
 
-            if ($request.HttpMethod -eq "GET" -and ($path -eq "/styles.css" -or $path -eq "/app.js" -or $path -eq '/production.js' -or $path -eq "/version.json")) {
+            if ($request.HttpMethod -eq "GET" -and ($path -eq "/styles.css" -or $path -eq "/app.js" -or $path -eq '/production.js' -or $path -eq '/outcomes.js' -or $path -eq "/version.json")) {
                 $filePath = Join-Path $webRoot ($path.TrimStart("/"))
                 Send-BookStudioFileResponse -Context $context -Path $filePath -ContentType (Get-BookStudioContentType -Path $filePath)
                 continue
@@ -5018,12 +5026,22 @@ function Start-BookStudioServer {
             if ($path -match "^/api/jobs/([^/]+)/outline$" -and $request.HttpMethod -eq "POST") {
                 try {
                     $payload = Get-BookStudioRequestJson -Request $request
-                    $outline = Set-BookStudioOutline -DatabasePath $DatabasePath -JobId $Matches[1] -Chapters @($payload.chapters)
+                    $outline = Set-BookStudioOutline -DatabasePath $DatabasePath -JobId $Matches[1] -Chapters @($payload.chapters) -ExpectedPlanHash ([string]$payload.planHash)
                     Send-BookStudioResponse -Context $context -Body (ConvertTo-BookStudioJson $outline)
                 }
                 catch {
                     Send-BookStudioResponse -Context $context -StatusCode 400 -ContentType 'text/plain; charset=utf-8' -Body $_.Exception.Message
                 }
+                continue
+            }
+
+            if ($path -match '^/api/jobs/([^/]+)/outcomes/(preview|apply)$' -and $request.HttpMethod -eq 'POST') {
+                try {
+                    $jobId=$Matches[1]; $action=$Matches[2]
+                    $payload=Get-BookStudioRequestJson -Request $request
+                    $result=if($action -eq 'preview'){Get-BookStudioOutcomeReplacement (Get-BookStudioJob -DatabasePath $DatabasePath -JobId $jobId) $payload}else{Set-BookStudioOutcomeReplacement -DatabasePath $DatabasePath -JobId $jobId -Request $payload}
+                    Send-BookStudioResponse -Context $context -Body (ConvertTo-BookStudioJson $result)
+                } catch { Send-BookStudioResponse -Context $context -StatusCode 400 -ContentType 'text/plain; charset=utf-8' -Body $_.Exception.Message }
                 continue
             }
 
@@ -5326,6 +5344,16 @@ function Start-BookStudioServer {
                     Send-BookStudioResponse -Context $context -Body (ConvertTo-BookStudioJson $job)
                 }
                 catch {
+                    Send-BookStudioResponse -Context $context -StatusCode 400 -ContentType "text/plain; charset=utf-8" -Body $_.Exception.Message
+                }
+                continue
+            }
+
+            if ($path -match "^/api/jobs/([^/]+)/run-qa$" -and $request.HttpMethod -eq "POST") {
+                try {
+                    $result = Invoke-BookStudioQaReview -DatabasePath $DatabasePath -JobId $Matches[1] -ProjectRoot $ProjectRoot
+                    Send-BookStudioResponse -Context $context -Body (ConvertTo-BookStudioJson $result)
+                } catch {
                     Send-BookStudioResponse -Context $context -StatusCode 400 -ContentType "text/plain; charset=utf-8" -Body $_.Exception.Message
                 }
                 continue
