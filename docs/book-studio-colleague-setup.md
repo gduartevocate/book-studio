@@ -62,6 +62,8 @@ codex login
 
 Then refresh status and click **Test connection**. If the app uses a configured executable or profile, follow the commands and profile shown in its connection panel. Never share or copy sign-in credentials.
 
+Book Studio starts Codex directly rather than through a shell, so it needs the native `codex.exe`. When Codex was installed with npm, the command on your PATH is a wrapper script (`codex.ps1`); Book Studio finds the real executable that npm vendored beside it automatically, and the Codex connection panel shows the resolved path. Only if that lookup fails do you need to paste a path into **Codex executable path** and click **Save path**.
+
 No administrator rights are needed. Book Studio asks Codex for its non-admin sandbox on every request, and **Test connection** passes only when Codex confirms it can edit files (`workspace-write`). If the test reports a sandbox problem, update Codex with `codex update` and test again.
 
 If you open Codex yourself in a terminal, start it from the ebook generator folder, not from your user profile folder. Codex treats the folder it starts in as the workspace it may write to.

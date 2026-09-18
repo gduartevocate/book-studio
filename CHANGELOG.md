@@ -1,5 +1,12 @@
 # Book Studio ID Changelog
 
+## v2026.09.18.9 (2026-09-18)
+
+- Deleting a book stored in OneDrive works again; only real shortcuts (junctions and symbolic links) are refused, and the message names the file.
+- A book that shares files with a duplicate entry can now be removed from the library while its files are kept.
+- Codex is found automatically when installed with npm, so Test connection no longer asks for the native codex.exe on a fresh install.
+- The launcher again reports available updates and warns about long or OneDrive install paths.
+
 ## v2026.09.18.8 (2026-09-18)
 
 - Recover stale Codex request statuses across all books and archived conversations at startup and before updating. Use recorded exit codes and process identity to distinguish finished/interrupted requests from live work, including recycled Windows process IDs.

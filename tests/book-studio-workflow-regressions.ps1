@@ -120,4 +120,36 @@ Check (-not (& $studio {param($r,$c) Get-BookStudioConnectionResult $r $c} $fixt
 $configured=Join-Path $fixture 'override.exe';Copy-Item -LiteralPath (Join-Path $PSHOME 'powershell.exe') -Destination $configured
 $configured | Set-Content -LiteralPath (Join-Path $fixture 'codex-path.txt') -Encoding UTF8
 Check ((Resolve-BookStudioCodexCommand -ProjectRoot $fixture).Source -eq $configured) 'Saved executable override did not take precedence.'
+
+# npm installs Codex as shell wrappers. Book Studio starts Codex directly, so a
+# wrapper must resolve to the native binary npm vendored inside the package.
+$npmRoot=Join-Path $fixture 'npm'
+$vendorBin=Join-Path $npmRoot 'node_modules\@openai\codex\node_modules\@openai\codex-win32-x64\vendor\x86_64-pc-windows-msvc\bin'
+New-Item -ItemType Directory -Path $vendorBin -Force | Out-Null
+$nativeCodex=Join-Path $vendorBin 'codex.exe'
+Copy-Item -LiteralPath (Join-Path $PSHOME 'powershell.exe') -Destination $nativeCodex
+foreach($wrapperName in @('codex','codex.cmd','codex.ps1')){
+    $wrapper=Join-Path $npmRoot $wrapperName
+    'wrapper that launches node' | Set-Content -LiteralPath $wrapper -Encoding UTF8
+    Check ((& $studio {param($p) Resolve-BookStudioNativeCodexExecutable -Path $p} $wrapper) -eq $nativeCodex) "The npm wrapper $wrapperName did not resolve to the native codex.exe."
+    $wrapper | Set-Content -LiteralPath (Join-Path $fixture 'codex-path.txt') -Encoding UTF8
+    $resolvedCommand=Resolve-BookStudioCodexCommand -ProjectRoot $fixture
+    Check ($resolvedCommand.Source -eq $nativeCodex -and $resolvedCommand.Discovery -match 'npm wrapper') "A configured $wrapperName was not replaced by the native executable."
+}
+# A wrapper inside the package (.../@openai/codex/bin) resolves the same way.
+$packageBin=Join-Path $npmRoot 'node_modules\@openai\codex\bin'
+New-Item -ItemType Directory -Path $packageBin -Force | Out-Null
+$packageWrapper=Join-Path $packageBin 'codex.js'
+'#!/usr/bin/env node' | Set-Content -LiteralPath $packageWrapper -Encoding UTF8
+Check ((& $studio {param($p) Resolve-BookStudioNativeCodexExecutable -Path $p} $packageWrapper) -eq $nativeCodex) 'A wrapper inside the Codex package did not resolve to the native executable.'
+# Without a vendored binary the wrapper is still returned, so the app can explain itself.
+$lonelyWrapper=Join-Path $fixture 'lonely-codex.cmd'
+'wrapper with no package' | Set-Content -LiteralPath $lonelyWrapper -Encoding UTF8
+Check ($null -eq (& $studio {param($p) Resolve-BookStudioNativeCodexExecutable -Path $p} $lonelyWrapper)) 'A wrapper with no vendored binary must not resolve.'
+$lonelyWrapper | Set-Content -LiteralPath (Join-Path $fixture 'codex-path.txt') -Encoding UTF8
+$lonelyResult=Resolve-BookStudioCodexCommand -ProjectRoot $fixture
+# Either the wrapper itself (nothing native anywhere) or a native executable
+# found elsewhere on this machine; never nothing at all.
+Check ($lonelyResult -and ($lonelyResult.Source -eq $lonelyWrapper -or [IO.Path]::GetExtension($lonelyResult.Source) -eq '.exe')) 'A wrapper with no vendored binary must still resolve to a usable Codex command.'
+$configured | Set-Content -LiteralPath (Join-Path $fixture 'codex-path.txt') -Encoding UTF8
 [pscustomobject]@{status='PASS';assertions=$script:checks;fixture=$fixture;liveCodex='Not invoked';productionBooksChanged=$false} | ConvertTo-Json

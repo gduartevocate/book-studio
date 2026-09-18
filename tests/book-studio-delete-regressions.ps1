@@ -56,7 +56,7 @@ $null = Remove-BookStudioJob -DatabasePath $dbPath -JobId imported -DeleteFiles
 Check (Test-Path $external) 'External original was deleted'
 New-Item -ItemType Junction -Path (Join-Path $storage 'outputs/linked') -Target $fixture | Out-Null
 SaveJobs @(@{id='linked';status='Completed'})
-RejectDelete 'linked' 'linked folders'
+RejectDelete 'linked' 'linked folder'
 Check (Test-Path $external) 'Deletion followed a junction'
 SaveJobs @(@{id='busy';status='Completed'})
 $null = Remove-BookStudioJob -DatabasePath $dbPath -JobId busy
@@ -66,4 +66,25 @@ $handle = [IO.File]::Open($busyFile, 'Open', 'Read', 'None')
 try { RejectDelete 'busy' 'being used|access|process'; Check ($null -ne (Get-BookStudioJob $dbPath busy)) 'Cleanup failure hid the book' }
 finally { $handle.Dispose() }
 RejectDelete 'missing' 'not found'
+# OneDrive Files On-Demand sets the ReparsePoint attribute on ordinary files
+# and folders. Only a real link (LinkType/Target) may block deletion, or no
+# book stored inside OneDrive could ever be deleted.
+$studio = Get-Module BookStudio
+function IsLink($item) { return & $studio { param($i) Test-BookStudioFileSystemLink -Item $i } $item }
+$cloudFile = [pscustomobject]@{ Attributes = ([IO.FileAttributes]::ReparsePoint -bor [IO.FileAttributes]::Archive); LinkType = $null; Target = $null }
+$cloudFolder = [pscustomobject]@{ Attributes = ([IO.FileAttributes]::ReparsePoint -bor [IO.FileAttributes]::Directory); LinkType = ''; Target = @() }
+$junctionItem = [pscustomobject]@{ Attributes = ([IO.FileAttributes]::ReparsePoint -bor [IO.FileAttributes]::Directory); LinkType = 'Junction'; Target = 'C:\elsewhere' }
+$symlinkItem = [pscustomobject]@{ Attributes = [IO.FileAttributes]::ReparsePoint; LinkType = ''; Target = @('C:\elsewhere') }
+$plainItem = [pscustomobject]@{ Attributes = [IO.FileAttributes]::Archive; LinkType = $null; Target = $null }
+Check (-not (IsLink $cloudFile)) 'A OneDrive placeholder file was treated as a link'
+Check (-not (IsLink $cloudFolder)) 'A OneDrive placeholder folder was treated as a link'
+Check (IsLink $junctionItem) 'A junction was not treated as a link'
+Check (IsLink $symlinkItem) 'A link reporting only a target was not treated as a link'
+Check (-not (IsLink $plainItem)) 'A plain file was treated as a link'
+# A real junction still reports as a link through the filesystem.
+$realJunctionRoot = Join-Path $fixture 'linkcheck'
+New-Item -ItemType Directory -Path $realJunctionRoot -Force | Out-Null
+New-Item -ItemType Junction -Path (Join-Path $realJunctionRoot 'j') -Target $fixture | Out-Null
+Check (IsLink (Get-Item -LiteralPath (Join-Path $realJunctionRoot 'j') -Force)) 'A real junction was not detected'
+Check (-not (IsLink (Get-Item -LiteralPath $realJunctionRoot -Force))) 'A real folder was treated as a link'
 Write-Output "PASS: $script:checks deletion checks; only disposable fixtures touched: $fixture"

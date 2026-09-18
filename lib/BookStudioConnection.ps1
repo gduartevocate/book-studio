@@ -59,7 +59,7 @@ function Test-BookStudioCodexConnection {
     param([Parameter(Mandatory)][string]$ProjectRoot,[ValidateRange(1,45)][int]$TimeoutSeconds=25)
     $command=Resolve-BookStudioCodexCommand -ProjectRoot $ProjectRoot
     if(-not $command){throw 'Codex is not installed or the configured executable cannot be found.'}
-    if([IO.Path]::GetExtension($command.Source) -ne '.exe'){throw 'For the connection test, select the native codex.exe executable rather than a shell wrapper.'}
+    if([IO.Path]::GetExtension($command.Source) -ne '.exe'){throw "Book Studio found the Codex shell wrapper $($command.Source), but it needs the native codex.exe and could not find one beside it. If Codex came from npm, look for codex.exe under ...\npm\node_modules\@openai\codex\node_modules\@openai\codex-win32-*\vendor\*\bin\ and paste that full path into the Codex executable path box above, then Save path. Reinstalling Codex also restores it."}
     $folder=Join-Path $ProjectRoot ('.bookstudio/connection-checks/'+[guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $folder -Force | Out-Null
     $response=Join-Path $folder 'response.txt';$errorPath=Join-Path $folder 'error.log';$stdout=Join-Path $folder 'stdout.log'

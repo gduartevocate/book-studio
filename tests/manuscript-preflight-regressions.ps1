@@ -48,7 +48,9 @@ Continue applying the workflow.
 1. [Provided source $number](https://example.org/source/$number). (2026). Assigned reading.
 "@
 }
-$canonical = $chapters -join "`n`n"
+# Here-strings inherit this file's CRLF endings, while preflight standardizes
+# on LF exactly as Update-EbookManuscriptPreflight does before comparing.
+$canonical = ($chapters -join "`n`n") -replace "`r`n", "`n"
 Check ((Test-EbookPublicationTemplate $canonical).status -eq 'PASS') 'Synthetic baseline violates the template.'
 $baseline = Test-EbookManuscriptPreflight $canonical -ExpectedChapterNumbers @(1,2,3,4,5)
 Check ($baseline.status -eq 'PASS' -and $baseline.markdown -ceq $canonical) 'Canonical manuscript was changed.'

@@ -2871,7 +2871,28 @@ async function deleteBookJob(job, button) {
     aiRequestCache.clear();
     await loadJobs({ force: true });
   } catch (error) {
-    window.alert(`Could not complete deletion: ${error.message}`);
+    // A duplicate entry, an imported package, or a linked folder can share
+    // files with another book. The entry can still leave the library.
+    const sharesFiles = /uses these files|linked folder|outside its managed storage/i.test(error.message || "");
+    if (sharesFiles && window.confirm(`${error.message}\n\nRemove "${job.title || label}" from your library anyway and keep every file on disk?`)) {
+      try {
+        await api(`/api/jobs/${job.id}/delete`, {
+          method: "POST",
+          body: JSON.stringify({ deleteFiles: false })
+        });
+        if (focusedJobId === job.id) setFocusedJob("");
+        visualManifestCache.clear();
+        codexPromptCache.clear();
+        chapterManifestCache.clear();
+        aiRequestCache.clear();
+        await loadJobs({ force: true });
+        return;
+      } catch (removeError) {
+        window.alert(`Could not remove the book from the library: ${removeError.message}`);
+      }
+    } else if (!sharesFiles) {
+      window.alert(`Could not complete deletion: ${error.message}`);
+    }
   } finally {
     if (button) {
       button.disabled = false;

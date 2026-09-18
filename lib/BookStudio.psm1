@@ -443,6 +443,22 @@ function Set-BookStudioJobLifecycle {
     return Get-BookStudioJob -DatabasePath $DatabasePath -JobId $JobId
 }
 
+function Test-BookStudioFileSystemLink {
+    # Deletion must never follow a link out of managed storage. Only a symbolic
+    # link, junction, or mount point redirects somewhere else, and those report
+    # a LinkType and Target. OneDrive Files On-Demand also sets the
+    # ReparsePoint attribute on ordinary files and folders, so testing that
+    # attribute alone refuses to delete any book stored inside OneDrive.
+    param([Parameter(Mandatory)][object]$Item)
+
+    $attributes = try { [System.IO.FileAttributes]$Item.Attributes } catch { [System.IO.FileAttributes]::Normal }
+    if (-not ($attributes -band [System.IO.FileAttributes]::ReparsePoint)) { return $false }
+    $linkType = try { [string]$Item.LinkType } catch { '' }
+    if (-not [string]::IsNullOrWhiteSpace($linkType)) { return $true }
+    $target = try { (@($Item.Target) | Where-Object { $_ }) -join '' } catch { '' }
+    return -not [string]::IsNullOrWhiteSpace($target)
+}
+
 function Test-BookStudioPathWithin {
     param(
         [AllowNull()][string]$Path,
@@ -499,12 +515,15 @@ function Remove-BookStudioJob {
                 $ancestor = $path
                 while ($ancestor) {
                     $item = Get-Item -LiteralPath $ancestor -Force -ErrorAction Stop
-                    if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Book deletion cannot follow linked folders or files.' }
+                    if (Test-BookStudioFileSystemLink -Item $item) {
+                        throw "Book deletion stopped because $ancestor is a linked folder (junction or symbolic link). Delete the book from its real location instead."
+                    }
                     if ($ancestor -eq $databaseRoot) { break }
                     $ancestor = Split-Path -Parent $ancestor
                 }
-                if (@(Get-ChildItem -LiteralPath $path -Recurse -Force -ErrorAction Stop | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }).Count) {
-                    throw 'Book deletion cannot follow linked folders or files.'
+                $linkedChild = @(Get-ChildItem -LiteralPath $path -Recurse -Force -ErrorAction Stop | Where-Object { Test-BookStudioFileSystemLink -Item $_ } | Select-Object -First 1)[0]
+                if ($linkedChild) {
+                    throw "Book deletion stopped because $($linkedChild.FullName) is a linked folder or file (junction or symbolic link). Remove that link, then delete the book."
                 }
                 foreach ($other in @($db.jobs | Where-Object id -ne $JobId)) {
                     foreach ($reference in @($other.outputRoot, $other.outputFolder, $other.specPath) + @($other.uploadedFiles | ForEach-Object { $_.path })) {
@@ -3720,6 +3739,31 @@ function Get-BookStudioAiRequests {
     return @(Get-BookStudioCurrentChatRequests $job -IncludeArchived:$IncludeArchived)
 }
 
+function Resolve-BookStudioNativeCodexExecutable {
+    # npm installs Codex as shell wrappers (codex, codex.cmd, codex.ps1) that
+    # launch node. Book Studio starts Codex directly, without a shell, so it
+    # needs the native binary npm vendored inside the package next to the
+    # wrapper. Returns $null when this is not an npm-style install.
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Path)
+
+    $baseDir = if (Test-Path -LiteralPath $Path -PathType Container) { $Path } else { Split-Path -Parent $Path }
+    if ([string]::IsNullOrWhiteSpace($baseDir)) { return $null }
+
+    $packageRoots = @(
+        (Join-Path $baseDir 'node_modules\@openai\codex'),
+        # A wrapper can also sit inside the package itself (.../@openai/codex/bin).
+        (Join-Path $baseDir '..')
+    )
+    foreach ($packageRoot in $packageRoots) {
+        if (-not (Test-Path -LiteralPath $packageRoot -PathType Container)) { continue }
+        $glob = Join-Path $packageRoot 'node_modules\@openai\codex-*\vendor\*\bin\codex.exe'
+        $match = @(Get-ChildItem -Path $glob -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1)[0]
+        if ($match) { return $match.FullName }
+    }
+    return $null
+}
+
 function Resolve-BookStudioCodexCommand {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$ProjectRoot)
@@ -3760,6 +3804,8 @@ function Resolve-BookStudioCodexCommand {
         (Join-Path $userProfile ".codex\bin\codex.exe"),
         (Join-Path $localAppData "Programs\Codex\codex.exe"),
         (Join-Path $localAppData "Programs\OpenAI\Codex\codex.exe"),
+        # The native binary inside a global npm install, before its wrappers.
+        (Join-Path $appData "npm\node_modules\@openai\codex\node_modules\@openai\codex-*\vendor\*\bin\codex.exe"),
         (Join-Path $appData "npm\codex.cmd"),
         (Join-Path $appData "npm\codex.ps1")
     )
@@ -3769,15 +3815,27 @@ function Resolve-BookStudioCodexCommand {
         }
     }
 
+    # Prefer a native executable. A shell wrapper is only returned when no
+    # native binary can be found for any candidate, so the connection test and
+    # every Codex run get something they can start directly.
+    $wrapperFallback = $null
     foreach ($candidate in @($candidates | Where-Object { $_ } | Select-Object -Unique)) {
         $expanded = [Environment]::ExpandEnvironmentVariables([string]$candidate).Trim().Trim('"')
-        if (Test-Path -LiteralPath $expanded -PathType Leaf) {
-            return [pscustomobject]@{
-                Source = (Resolve-Path -LiteralPath $expanded).ProviderPath
-                Discovery = if ($pathCommand -and $expanded -eq $pathCommand.Source) { "PATH" } else { "Configured/common location" }
-            }
+        if (-not (Test-Path -LiteralPath $expanded -PathType Leaf)) { continue }
+        $resolved = (Resolve-Path -LiteralPath $expanded).ProviderPath
+        $discovery = if ($pathCommand -and $expanded -eq $pathCommand.Source) { "PATH" } else { "Configured/common location" }
+        if ([System.IO.Path]::GetExtension($resolved) -eq ".exe") {
+            return [pscustomobject]@{ Source = $resolved; Discovery = $discovery }
+        }
+        $native = Resolve-BookStudioNativeCodexExecutable -Path $resolved
+        if ($native) {
+            return [pscustomobject]@{ Source = $native; Discovery = "$discovery (native Codex executable resolved from the npm wrapper $([System.IO.Path]::GetFileName($resolved)))" }
+        }
+        if (-not $wrapperFallback) {
+            $wrapperFallback = [pscustomobject]@{ Source = $resolved; Discovery = $discovery }
         }
     }
+    if ($wrapperFallback) { return $wrapperFallback }
 
     return $null
 }
@@ -5471,4 +5529,4 @@ function Start-BookStudioServer {
     }
 }
 
-Export-ModuleMember -Function Initialize-BookStudioDatabase, Read-BookStudioDatabase, Write-BookStudioDatabase, Get-BookStudioJob, Update-BookStudioJob, Set-BookStudioJobLifecycle, Remove-BookStudioJob, Add-BookStudioLogEntry, Set-BookStudioJobProgress, New-BookStudioJob, Start-BookStudioJob, Start-BookStudioServer, Get-BookStudioDatabasePath, Get-BookStudioVisualManifest, Get-BookStudioDistPackages, Import-BookStudioPackageJob, Import-BookStudioPackageArchiveJob, Refresh-BookStudioJobArtifacts, Invoke-BookStudioPackageRebuild, Set-BookStudioVisualReplacementAsset, Resolve-BookStudioCodexCommand, Set-BookStudioCodexPath, Get-BookStudioCodexStatus, Get-BookStudioCodexPromptManifest, Get-BookStudioVisualReviews, Set-BookStudioVisualReview, Export-BookStudioVisualReviewReport, Initialize-BookStudioChapterSources, Get-BookStudioChapterContent, Set-BookStudioChapterContent, New-BookStudioSmeReviewPackage, Publish-BookStudioSmeReviewToCloudflare, Get-BookStudioSmeReviewFeedbackFromCloudflare, Get-BookStudioAiRequests, New-BookStudioAiRequest, New-BookStudioFormatPreview, Get-BookStudioOutline, Set-BookStudioOutline, Set-BookStudioFormatReview
+Export-ModuleMember -Function Initialize-BookStudioDatabase, Read-BookStudioDatabase, Write-BookStudioDatabase, Get-BookStudioJob, Update-BookStudioJob, Set-BookStudioJobLifecycle, Remove-BookStudioJob, Add-BookStudioLogEntry, Set-BookStudioJobProgress, New-BookStudioJob, Start-BookStudioJob, Start-BookStudioServer, Get-BookStudioDatabasePath, Get-BookStudioVisualManifest, Get-BookStudioDistPackages, Import-BookStudioPackageJob, Import-BookStudioPackageArchiveJob, Refresh-BookStudioJobArtifacts, Invoke-BookStudioPackageRebuild, Set-BookStudioVisualReplacementAsset, Resolve-BookStudioCodexCommand, Set-BookStudioCodexPath, Get-BookStudioCodexStatus, Get-BookStudioCodexPromptManifest, Get-BookStudioVisualReviews, Set-BookStudioVisualReview, Export-BookStudioVisualReviewReport, Initialize-BookStudioChapterSources, Get-BookStudioChapterContent, Set-BookStudioChapterContent, New-BookStudioSmeReviewPackage, Publish-BookStudioSmeReviewToCloudflare, Get-BookStudioSmeReviewFeedbackFromCloudflare, Get-BookStudioAiRequests, New-BookStudioAiRequest, New-BookStudioFormatPreview, Get-BookStudioOutline, Set-BookStudioOutline, Set-BookStudioFormatReview, Get-BookStudioUpdateStatus, Start-BookStudioUpdate, Get-BookStudioUpdateProgress, Get-BookStudioInstallPathStatus, Resolve-BookStudioNativeCodexExecutable, Test-BookStudioFileSystemLink
