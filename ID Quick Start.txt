@@ -1,4 +1,4 @@
-Book Studio ID v2026.09.18.5
+Book Studio ID v2026.09.18.6
 
 1. Preferred: install with git so updates are one click. In PowerShell: git clone https://github.com/gduartevocate/book-studio
    If you received this as a ZIP instead, unzip it; ZIP installs are updated by replacing the folder.
@@ -10,7 +10,7 @@ Book Studio ID v2026.09.18.5
 Version check and updates:
 - The Book Studio header shows the installed Book Studio ID version and an Update available badge when a newer release exists.
 - Settings > Updates > Get latest updates downloads the release and restarts Book Studio. Books, uploads, and settings stay in place.
-- When troubleshooting, report this exact version: v2026.09.18.5.
+- When troubleshooting, report this exact version: v2026.09.18.6.
 - After updating a failed book with a saved manuscript, try Rebuild Package to normalize recoverable formatting/citation syntax and rebuild Word/HTML without rerunning AI generation. Review the remaining reports; rebuilding is not publication approval.
 
 Codex assistant and AI generation:
@@ -25,6 +25,7 @@ Codex assistant and AI generation:
 New-book workflow:
 - Upload readable DOCX/TXT/Markdown/HTML/JSON documents; convert PDFs/scans first.
 - Choose the authoritative blueprint explicitly. Duplicate filenames are preserved.
+- Weekly content documents can use standalone Week 1 / Week 2 headings or add a descriptive title on the same line. Keep numbered course objectives and their lesson objectives under the intended week. An objective can span weeks without being renumbered. Review all assignments in the outline before approving.
 - Required readings is the new-book UI default: links in the blueprint plus additional URLs you specify. Use Week 1:, Chapter 2:, or All chapters: to assign URLs. Review the extracted list after preview. The blueprint itself is not a scholarly source.
 - For uploaded-only mode, upload actual teaching readings separately from the blueprint. Required-reading mode uses only the assigned public URLs, not broad research discovery.
 - PDF URLs need Poppler pdftotext on PATH. A missing utility, blocked site, unreadable PDF, or book landing page is reported explicitly; supply an accessible article/chapter URL and check again. Do not mistake a URL for retrieved source evidence.
@@ -37,6 +38,7 @@ New-book workflow:
 
 Fix an existing book's readings or images:
 - Open Sources and image setting. Review extracted blueprint links, select Required readings, edit assignments, and Save settings.
+- Older jobs may retain objectives mistakenly extracted as readings. Remove those entries and supply real article/chapter URLs; updating the app does not silently rewrite a saved reading list. Objective-only documents now produce an empty reading list and explain what to add before generation.
 - Click Check required sources, then reopen the panel or Refresh source results when finished. Resolve every blocked reading before requesting manuscript edits.
 - Use Fix QA with Codex to revise teaching and numbered citations using the retrieved readings. Saving/checking sources alone does not rewrite the manuscript; Rebuild Package alone does not research or add citations.
 - After saving an image setting, Generate images for saved setting regenerates missing/changed artwork using AI usage, with backups. It preserves chapter text; current manuscript/source preflight still must pass.

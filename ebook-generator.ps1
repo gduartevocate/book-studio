@@ -565,7 +565,7 @@ $SpecPath = $resolvedSpec.path
 $parsedWeekCount = [int]$resolvedSpec.groupCount
 if ($parsedWeekCount -lt 2) {
     $specName = [System.IO.Path]::GetFileName($SpecPath)
-    throw "The selected course spec '$specName' parsed as only $parsedWeekCount chapter/module group(s). This usually means the wrong uploaded file was selected as the spec, or the spec sheet text could not be read. Upload the course spec/syllabus file, preferably named with the course code and 'Spec Sheet', and include any style guides or references as additional context files."
+    throw "Book Studio could not identify at least two chapter/week groups in '$specName' (recognized: $parsedWeekCount). The document layout may not be supported; this does not prove the wrong file was uploaded. Use clear Week 1, Week 2 headings with numbered objectives beneath them. Renaming the file alone will not repair its structure."
 }
 $resolvedBrandProfilePath = if (Test-Path -LiteralPath $BrandProfilePath) { (Resolve-Path $BrandProfilePath).ProviderPath } else { $BrandProfilePath }
 $resolvedWritingGuidePath = if (Test-Path -LiteralPath $WritingStyleGuidePath) { (Resolve-Path $WritingStyleGuidePath).ProviderPath } elseif (Test-Path -LiteralPath $BrandGuidePath) { (Resolve-Path $BrandGuidePath).ProviderPath } else { $WritingStyleGuidePath }
@@ -600,7 +600,7 @@ $plan | Add-Member -NotePropertyName sourceMode -NotePropertyValue $SourceMode -
 $sourceContext | Add-Member -NotePropertyName sourceMode -NotePropertyValue $SourceMode -Force
 $preferencesPath = Join-Path $SourceContextPath 'book-studio-production.json'
 $preferences = if (Test-Path -LiteralPath $preferencesPath) { Get-Content -LiteralPath $preferencesPath -Raw -Encoding UTF8 | ConvertFrom-Json } else { $null }
-$requiredReadings = if ($preferences) { @($preferences.requiredReadings) } elseif ($SourceMode -eq 'Assigned') { @(ConvertFrom-EbookReadingList -Text (Get-EbookBlueprintReadingText -Path $SpecPath) -Origin 'Blueprint') } else { @() }
+$requiredReadings = @(if ($preferences) { $preferences.requiredReadings | Where-Object { $_ } } elseif ($SourceMode -eq 'Assigned') { ConvertFrom-EbookReadingList -Text (Get-EbookBlueprintReadingText -Path $SpecPath) -Origin 'Blueprint' })
 $plan | Add-Member -NotePropertyName requiredReadings -NotePropertyValue $requiredReadings -Force
 $plan | Add-Member -NotePropertyName imageSettings -NotePropertyValue $(if($preferences){$preferences.imageSettings}else{[pscustomobject]@{context='Generic';instructions=''}}) -Force
 

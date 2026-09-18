@@ -35,6 +35,8 @@ $html=@'
   if(calls.length!==count) throw new Error('Cancelled generation still submitted');
   window.confirm=()=>true;await click('Generate images for saved setting');
   if(!calls.some(call=>call.path.endsWith('/generate-images'))) throw new Error('Image generation action not wired');
+  state.readings=[];state.requiredSources='';await click('Refresh source results');
+  if(!host.textContent.includes('No required readings found')) throw new Error('Missing readings are not explained');
   document.body.textContent='PASS: production controls, persistence, dirty-state guard, source failures, and explicit image generation';
 } catch(error) { document.body.textContent='FAIL: '+error.message; } })();
 </script>

@@ -37,6 +37,9 @@ function appendProductionPreferences(container, job) {
       const buttons = [];
       const renderReport = (preferences) => {
         report.textContent = "";
+        if (preferences.sourceMode === "Assigned" && !(preferences.readings || []).length) {
+          report.append(makeElement("p", "hint", "No required readings found. A course outline with objectives is not a reading list. Add the article/chapter URLs to use, save, and check required sources before generating."));
+        }
         const list = makeElement("ul", "");
         for (const reading of preferences.readings || []) {
           const evidence = preferences.sourceReport?.readings?.find((item) => item.id === reading.id && item.url === reading.url);

@@ -45,16 +45,28 @@ function Get-EbookBlueprintReadingText {
 
 function ConvertFrom-EbookReadingList {
     param([AllowEmptyString()][string]$Text, [string]$Origin = 'Designer')
-    $records = [Collections.Generic.List[object]]::new(); $byUrl = @{}; $week = 0; $inReadings = $false
+    $isBlueprint = $Origin -like 'Blueprint*'
+    $records = [Collections.Generic.List[object]]::new(); $byUrl = @{}; $week = 0; $inReadings = -not $isBlueprint
     foreach ($raw in ($Text -split '\r?\n')) {
         $line = $raw.Trim()
         if (-not $line) { continue }
-        if ($line -match '(?i)^#{0,6}\s*(?:Week|Chapter)\s*(\d+)\s*(?::\s*|$)') {
-            $week = [int]$Matches[1]; $inReadings = $true
-            $line = $line.Substring($Matches[0].Length).Trim()
+        if ($line -match '(?i)^#{0,6}\s*(?:Week|Chapter)\s*(\d+)(?=\s|:|$)(.*)$') {
+            $week = [int]$Matches[1]
+            $line = $Matches[2].Trim().TrimStart(':','-').Trim()
+            # A blueprint's week title/objectives are not assigned readings.
+            if ($isBlueprint -and $line -notmatch 'https?://') {
+                if ($line -match '(?i)^(?:(?:Required|Assigned|Scholarly)\s+)?(?:Readings?|Sources|References|Resources)\s*:?$') { $inReadings = $true }
+                continue
+            }
             if (-not $line) { continue }
         }
         if ($line -match '(?i)^(?:All chapters|General readings)\s*:?$') { $week=0; $inReadings=$true; continue }
+        if ($line -match '(?i)^#{0,6}\s*(?:(?:Required|Assigned|Scholarly)\s+)?(?:Readings?|Sources|References|Resources)\s*:?$') { $inReadings=$true; continue }
+        if ($isBlueprint -and ($line -match '(?i)^(?:(?:Course|Lesson|Learning|Weekly|Sub)[ -]?)?Objectives?\b|^(?:Course Description|Activities|Assignments|Assessments|Instructor Notes|Production Notes)\b' -or
+            $line -match '(?i)^(?:CO|LO)\s*\d|^\d+\.\d+\b|^\d+[.)]\s+(?:Describe|Identify|Compare|Explain|Analyze|Evaluate|Develop|Apply|Examine|Assess|Differentiate|Demonstrate|Define|Discuss|Use)\b')) {
+            $inReadings=$false
+            continue
+        }
         $linkPattern='\[(?<title>[^\]]+)\]\((?<url>https?://(?:[^()\s]|\([^()\s]*\))+)\)'
         $links = @([regex]::Matches($line, $linkPattern))
         $remaining = [regex]::Replace($line, $linkPattern, '')
@@ -78,6 +90,23 @@ function ConvertFrom-EbookReadingList {
         if (-not $links.Count -and $inReadings -and $line -notmatch '^(?i)(Required readings|Assigned readings|Sources|References)\s*:?$') {
             # A title is not evidence that its article was found or read.
             $records.Add([pscustomobject]@{id=(Get-EbookReadingId "$week|$line");url='';title=$line;chapters=@($week);origin=$Origin})
+        }
+    }
+    if ($records.Count -gt 60) { throw 'Use at most 60 required readings per book.' }
+    return $records.ToArray()
+}
+
+function Merge-EbookReadingLists {
+    param([object[]]$BlueprintReadings, [object[]]$DesignerReadings)
+    $records = [Collections.Generic.List[object]]::new(); $byId = @{}
+    foreach ($reading in (@($BlueprintReadings) + @($DesignerReadings))) {
+        if ($null -eq $reading) { continue }
+        if ($byId.ContainsKey($reading.id)) {
+            $record = $byId[$reading.id]
+            $record.chapters = @((@($record.chapters) + @($reading.chapters)) | Select-Object -Unique)
+        } else {
+            $record = [pscustomobject]@{id=$reading.id;url=$reading.url;title=$reading.title;chapters=@($reading.chapters);origin=$reading.origin}
+            $records.Add($record); $byId[$record.id]=$record
         }
     }
     if ($records.Count -gt 60) { throw 'Use at most 60 required readings per book.' }

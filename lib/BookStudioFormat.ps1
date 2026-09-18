@@ -36,6 +36,11 @@ function Assert-BookStudioGenerationReady {
             throw 'Review and approve the current format preview. A missing or outdated approval cannot start full generation.'
         }
     }
+    if ($Job.options.sourceMode -eq 'Assigned') {
+        $readings = @($Job.options.requiredReadings | Where-Object { $_ })
+        if (-not $readings.Count) { throw 'No required readings are assigned. Open Sources and image setting, add the article/chapter URLs to use, and save before generating. Course objectives are not scholarly sources.' }
+        if (@($readings | Where-Object { -not $_.url }).Count) { throw 'Some required readings have no URL. Review Sources and image setting: remove objectives incorrectly extracted by an older version, and add the exact article/chapter URLs for genuine readings before generating.' }
+    }
     $drafting = $null -eq $Job.options.useCodexDrafting -or [bool]$Job.options.useCodexDrafting
     if ($drafting -or $Job.options.useCodexImages) {
         $command = Resolve-BookStudioCodexCommand -ProjectRoot $ProjectRoot

@@ -1,5 +1,12 @@
 # Book Studio ID Changelog
 
+## v2026.09.18.6 (2026-09-18)
+
+- Accept standalone Week 1, Week1, and colon/Markdown week headings in content documents. Preserve numbered objectives and lesson assignments, including a course objective split across weeks. Missing course descriptions no longer invent a critical-thinking subject.
+- Separate blueprint source extraction from the designer's explicit reading list. Week headings and objectives are not readings; actual links and explicit reference sections remain supported. Merge repeated URLs without dropping chapter assignments.
+- Explain empty reading lists in the UI and reject missing/title-only required readings before launching full generation. Existing saved lists are preserved for review, not silently rewritten. Empty plan lists serialize as arrays rather than null.
+- Replace the misleading wrong-file/rename advice with an explanation of the unrecognized structure. Add regression coverage for bare headings, shared objective assignments, source extraction, and the real HTTP preview/approval workflow.
+
 ## v2026.09.18.5 (2026-09-18)
 
 - Required-reading mode extracts weekly links from the blueprint, including embedded Word hyperlinks, and accepts additional designer-specified URLs. The blueprint is not a scholarly source. Uploaded-only mode now requires separate teaching evidence.

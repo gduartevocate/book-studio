@@ -898,8 +898,9 @@ function New-BookStudioJob {
 
     Import-Module (Join-Path $PSScriptRoot 'EbookGenerator.psm1') -Scope Local
     $readingText = if ($validated.sourceMode -eq 'Assigned') { Get-EbookBlueprintReadingText -Path $specFile.path } else { '' }
-    if ($Request.requiredSources) { $readingText += "`nAll chapters:`n" + [string]$Request.requiredSources }
-    $requiredReadings = @(ConvertFrom-EbookReadingList -Text $readingText -Origin 'Blueprint/designer')
+    $blueprintReadings = @(ConvertFrom-EbookReadingList -Text $readingText -Origin 'Blueprint')
+    $designerReadings = @(ConvertFrom-EbookReadingList -Text ([string]$Request.requiredSources) -Origin 'Designer')
+    $requiredReadings = @(Merge-EbookReadingLists -BlueprintReadings $blueprintReadings -DesignerReadings $designerReadings)
     $production = [pscustomobject]@{sourceMode=$validated.sourceMode;requiredReadings=$requiredReadings;imageSettings=[pscustomobject]@{context=$(if($Request.imageContext){$Request.imageContext}else{'Generic'});instructions=[string]$Request.imageInstructions}}
     $production | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $uploadFolder 'book-studio-production.json') -Encoding UTF8
     $intakeContext=Import-SourceContext -Path $uploadFolder -CourseSpecPath $specFile.path -MaxFiles 52 -MaxTotalChars 1000000 -StrictCoverage -IncludedPaths @($uploadedFiles.path)

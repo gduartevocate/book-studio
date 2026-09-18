@@ -24,6 +24,14 @@ Check ($readings[1].url -eq 'https://example.org/two_(test)' -and $readings[1].t
 $roundtrip=@(ConvertFrom-EbookReadingList (ConvertTo-EbookReadingListText $readings))
 Check (($readings | ConvertTo-Json -Depth 10 -Compress) -eq ($roundtrip | ConvertTo-Json -Depth 10 -Compress)) 'Saving extracted readings changes the assignments.'
 Check (@(ConvertFrom-EbookReadingList "Week 1:`nOpenStax title only")[0].url -eq '') 'A title alone was treated as a retrieved URL.'
+Check (@(ConvertFrom-EbookReadingList 'OpenStax title only').Count -eq 1) 'An explicit designer title without a week label was dropped.'
+$objectiveText="Week 1`n1. Describe healthcare settings.`n1.1 Compare settings.`nWeek2`n2. Analyze workflow.`n2.1 Identify handoffs."
+Check (@(ConvertFrom-EbookReadingList $objectiveText -Origin Blueprint).Count -eq 0) 'Blueprint objectives became phantom readings.'
+$blueprintText=$objectiveText+"`nRequired readings:`nWeek 1`nA title awaiting its URL`nWeek 2`n[Assigned](https://example.org/assigned)`nWeek 3 Workforce design`n3. Develop a workforce plan.`n3.1 Identify roles."
+$blueprintReadings=@(ConvertFrom-EbookReadingList $blueprintText -Origin Blueprint)
+Check ($blueprintReadings.Count -eq 2 -and $blueprintReadings[0].chapters[0] -eq 1 -and $blueprintReadings[1].chapters[0] -eq 2) 'Explicit reference section lost its titles/URLs or swallowed later objectives.'
+$merged=@(Merge-EbookReadingLists $blueprintReadings @(ConvertFrom-EbookReadingList "Week 3:`n[Same source](https://example.org/assigned)`nDesigner title only"))
+Check ($merged.Count -eq 3 -and ($merged[1].chapters -join ',') -eq '2,3' -and $merged[2].origin -eq 'Designer') 'Merging designer and blueprint sources lost a title or chapter assignment.'
 Reject {ConvertFrom-EbookReadingList 'https://username:secret@example.org/path'} 'Invalid reading'
 foreach($url in @('file:///C:/secret','http://127.0.0.1','https://10.1.2.3','http://[::1]','http://192.168.1.1','https://example.org:8443/x')) {
     Reject { & $module {param($u) Assert-EbookPublicReadingUrl $u} $url } 'public HTTP|Local/private'
@@ -41,7 +49,7 @@ try {
     }
     foreach($name in $parts.Keys){$writer=[IO.StreamWriter]::new($zip.CreateEntry($name).Open());try{$writer.Write($parts[$name])}finally{$writer.Dispose()}}
 } finally {$zip.Dispose()}
-$extracted=@(ConvertFrom-EbookReadingList (Get-EbookBlueprintReadingText $docx))
+$extracted=@(ConvertFrom-EbookReadingList (Get-EbookBlueprintReadingText $docx) -Origin Blueprint)
 Check ($extracted.Count -eq 3 -and $extracted[0].url -eq 'https://example.org/one' -and $extracted[1].url -eq 'https://example.org/two' -and $extracted[2].chapters[0] -eq 2) 'Word hyperlinks/fields with identical labels lost their targets.'
 $plan=[pscustomobject]@{sourceMode='Assigned';requiredReadings=@(ConvertFrom-EbookReadingList "All chapters:`n[Required reading](https://example.org/article)");chapters=@([pscustomobject]@{number=1;title='Records';focus='records';learningTargets=@('Keep clear records.')})}
 SaveJson $plan 'ebook-plan.json'

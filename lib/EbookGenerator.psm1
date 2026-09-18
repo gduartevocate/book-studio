@@ -1001,13 +1001,25 @@ function Get-BetweenLabels {
     return (($Lines[$start..($end - 1)] | ForEach-Object { ConvertTo-CleanText $_ }) -join " ").Trim()
 }
 
+function ConvertTo-EbookWeekHeadingLine {
+    param([AllowEmptyString()][string]$Text)
+    # Bare week labels are valid structure, not evidence of an unreadable file.
+    # Normalize only headings; never renumber the objectives beneath them.
+    if ($Text -match '^#{0,6}\s*Week\s*(\d+)(?:\s*[:\-]\s*(.*)|\s+(.+))?$') {
+        $number = [int]$Matches[1]
+        $title = if ($Matches[2]) { $Matches[2] } elseif ($Matches[3]) { $Matches[3] } else { "Week $number" }
+        return "Week $number $title"
+    }
+    return $Text
+}
+
 function ConvertFrom-CourseSpecText {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Text)
 
     $lines = @(
         $Text -split "`r?`n" |
-            ForEach-Object { ConvertTo-CleanText $_ } |
+            ForEach-Object { ConvertTo-EbookWeekHeadingLine (ConvertTo-CleanText $_) } |
             Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
     )
 
@@ -1303,7 +1315,7 @@ function ConvertFrom-ObjectiveListText {
 
     $lines = @(
         $Text -split "`r?`n" |
-            ForEach-Object { ConvertTo-CleanText $_ } |
+            ForEach-Object { ConvertTo-EbookWeekHeadingLine (ConvertTo-CleanText $_) } |
             Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
     )
 
@@ -1360,7 +1372,7 @@ function ConvertFrom-ObjectiveListText {
         }
     }
     if ([string]::IsNullOrWhiteSpace($description)) {
-        $description = "This course develops reasoning, evidence evaluation, problem-solving, argumentation, and communication skills."
+        $description = "Course content is defined by the supplied weekly objectives."
     }
 
     $weeks = New-Object System.Collections.ArrayList
@@ -12841,5 +12853,5 @@ function Export-EbookPackage {
 
 Export-ModuleMember -Function Import-CourseSpec, Import-SourceContext, Import-BrandProfile, New-EbookPlan, Merge-EbookReviewedOutline, Resolve-EbookSources, New-EbookBlueprintPackage, Export-EbookBlueprintPackage, New-EbookPackage, Export-EbookPackage, Repair-EbookPackageOutputs, Get-ProhibitedKnowledgeCheckSignals, Remove-ProhibitedKnowledgeCheckSections, Get-ProhibitedLearnerSectionSignals, Remove-ProhibitedLearnerSections, Test-EbookObjectiveTraceability, Test-EbookReleaseArtifacts, Test-EbookAssignedSources, Test-EbookAssignedSourcePackage, Get-EbookTemplateInstructions, Get-EbookPublicationTemplate, Test-EbookPublicationTemplate
 Export-ModuleMember -Function Test-EbookManuscriptPreflight, Update-EbookManuscriptPreflight
-Export-ModuleMember -Function Get-EbookBlueprintReadingText, ConvertFrom-EbookReadingList, ConvertTo-EbookReadingListText, Update-EbookRequiredSourceEvidence, Get-EbookRequiredSourceReview, New-EbookRequiredSourceBrief, ConvertTo-SafePathPart
+Export-ModuleMember -Function Get-EbookBlueprintReadingText, ConvertFrom-EbookReadingList, Merge-EbookReadingLists, ConvertTo-EbookReadingListText, Update-EbookRequiredSourceEvidence, Get-EbookRequiredSourceReview, New-EbookRequiredSourceBrief, ConvertTo-SafePathPart
 

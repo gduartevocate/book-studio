@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param()
+param([string]$CourseSpecPath)
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
 $fixture=Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) ('BookStudioTests/api-'+[guid]::NewGuid().ToString('N'))
@@ -123,6 +123,25 @@ Week 2 Workflow Coordination
     Check ($job.status -notin @('Running','Queued') -and $settings.sourceReport.status -eq 'FAIL' -and $settings.sourceReport.readings[0].detail -match 'Local/private') "Source runner did not expose blocked retrieval: $($job.progress.detail)"
     Check ((Get-FileHash -LiteralPath $word.FullName).Hash -eq $beforeBook) 'Checking sources modified the manuscript export.'
     Check (@($job.qaSummary.findings | Where-Object category -eq 'Required sources').Count -gt 0) 'Source failures are missing from current QA.'
+    # Objective-only content must create a preview, not phantom assigned readings.
+    # Optionally exercise a supplied real Word document without publishing it.
+    $bareFile=if($CourseSpecPath){
+        @{name=[IO.Path]::GetFileName($CourseSpecPath);contentBase64=[Convert]::ToBase64String([IO.File]::ReadAllBytes($CourseSpecPath))}
+    }else{
+        @{name='QA1015 Content.txt';contentBase64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("Week 1`n1. Describe records.`n1.1 Identify records.`nWeek 2`n2. Analyze handoffs.`n2.1 Identify handoffs."))}
+    }
+    $bare=Post '/api/jobs' @{title='Bare week regression';files=@($bareFile);primaryFileIndex=0;sourceMode='Assigned';useCodexDrafting=$false;useCodexImages=$false}
+    Check (@($bare.options.requiredReadings).Count -eq 0) 'Objective-only intake created phantom required readings.'
+    $null=Post "/api/jobs/$($bare.id)/run" @{mode='Blueprint'}
+    $deadline=(Get-Date).AddSeconds(45)
+    do { Start-Sleep -Milliseconds 500; $bare=@((Invoke-RestMethod "$base/api/jobs").jobs | Where-Object id -eq $bare.id)[0] } while($bare.status -in @('Running','Queued') -and (Get-Date) -lt $deadline)
+    Check ($bare.status -eq 'Completed' -and $bare.formatState.fingerprint) "Bare week preview failed: $($bare.error)"
+    $barePlan=Get-Content -LiteralPath (Join-Path $bare.outputFolder 'ebook-plan.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    Check ($barePlan.chapters.Count -ge 2 -and @($barePlan.requiredReadings).Count -eq 0) 'Preview lost bare week chapters or reintroduced phantom sources.'
+    $rejected=$false
+    try { $null=Post "/api/jobs/$($bare.id)/format-review" @{action='approve';previewFingerprint=$bare.formatState.fingerprint;notesResolved=$true} }
+    catch { if($_.ErrorDetails.Message -notmatch 'No required readings are assigned'){throw};$rejected=$true }
+    Check $rejected 'Missing sources were not caught before full generation.'
     [pscustomobject]@{status='PASS';assertions=$script:checks;fixture=$fixture;scope='Real HTTP intake, blueprint, approval, local full scaffold and Word export; no AI drafting. Fixture correctly remains uncleared for review.'} | ConvertTo-Json
 }finally{
     # Stop only the isolated server process created by this test.
