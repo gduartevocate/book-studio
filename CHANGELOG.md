@@ -1,5 +1,11 @@
 # Book Studio ID Changelog
 
+## v2026.09.18.13 (2026-09-18)
+
+- Moving the Book Studio folder no longer strands its books: stored file locations are repointed at the new folder on startup, so previews, outlines and generation keep working after a move out of OneDrive.
+- Failed actions now show the reason beside the buttons instead of appearing to do nothing.
+- A book whose generation failed gets a Recreate format preview action, so a missing or outdated approval is recoverable.
+
 ## v2026.09.18.12 (2026-09-18)
 
 - Fixes generation failing with "Could not find file ... source-readings" right after a reading was skipped.

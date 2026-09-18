@@ -2657,3 +2657,7 @@ button:disabled {
 /* Sources and image setting: visible in the book list and the active book. */
 .production-panel { margin-top: 12px; }
 .production-panel:empty { display: none; }
+
+/* An action failure has to be visible where the buttons are. */
+.job-action-error { margin-top: 10px; border: 1px solid var(--danger); border-radius: 8px; padding: 10px 12px; background: #fff5f4; color: var(--danger); font-size: 13px; }
+.job-action-error[hidden] { display: none; }

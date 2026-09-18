@@ -191,10 +191,10 @@ function renderActiveBookHeader(job) {
     action.addEventListener("click", scrollToCurrentWork);
   } else if (job.status === "Queued") {
     action.textContent = "Continue generation";
-    action.addEventListener("click", () => runJob(job.id, getWorkflowRunMode(job)));
+    action.addEventListener("click", () => runJob(job.id, getWorkflowRunMode(job)).catch((error) => reportJobActionError(job, error.message)));
   } else if (job.status === "Failed") {
     action.textContent = "Retry step";
-    action.addEventListener("click", () => runJob(job.id, getWorkflowRunMode(job)));
+    action.addEventListener("click", () => runJob(job.id, getWorkflowRunMode(job)).catch((error) => reportJobActionError(job, error.message)));
   } else {
     action.textContent = "Continue review";
     action.addEventListener("click", scrollToCurrentWork);
@@ -2485,8 +2485,16 @@ function renderJobs(jobs, options = {}) {
       retry.type = "button";
       retry.className = "secondary";
       retry.textContent = "Retry";
-      retry.addEventListener("click", () => runJob(job.id, getWorkflowRunMode(job)));
+      retry.addEventListener("click", () => runJob(job.id, getWorkflowRunMode(job)).catch((error) => reportJobActionError(job, error.message)));
       actions.append(retry);
+      // A full run refuses to start without a current approved preview. Offer
+      // the way back instead of leaving the designer with a dead Retry.
+      if (job.outputFolder) {
+        const recreate = makeElement("button", "secondary", "Recreate format preview");
+        recreate.type = "button";
+        recreate.addEventListener("click", () => runJob(job.id, "Blueprint").catch((error) => reportJobActionError(job, error.message)));
+        actions.append(recreate);
+      }
       appendPackageRebuildAction(actions, job);
       if (job.artifacts?.some((artifact) => artifact.fileName?.endsWith(" - E-Book.md"))) {
         const fixQa = makeElement("button", "danger qa-repair-button", "Fix QA with Codex");
@@ -2499,13 +2507,13 @@ function renderJobs(jobs, options = {}) {
       recreate.type = "button";
       recreate.className = "secondary";
       recreate.textContent = "Recreate preview";
-      recreate.addEventListener("click", () => runJob(job.id, "Blueprint"));
+      recreate.addEventListener("click", () => runJob(job.id, "Blueprint").catch((error) => reportJobActionError(job, error.message)));
       actions.append(recreate);
     } else if (job.status === "Queued") {
       const run = document.createElement("button");
       run.type = "button";
       run.textContent = "Run";
-      run.addEventListener("click", () => runJob(job.id, getWorkflowRunMode(job)));
+      run.addEventListener("click", () => runJob(job.id, getWorkflowRunMode(job)).catch((error) => reportJobActionError(job, error.message)));
       actions.append(run);
     } else if (job.status === "Completed") {
       if (String(job.qaSummary?.status || "").toUpperCase() === "FAIL") {
@@ -2583,6 +2591,26 @@ function renderJobs(jobs, options = {}) {
 async function loadJobs(options = {}) {
   const data = await api("/api/jobs");
   renderJobs(data.jobs || [], options);
+}
+
+function reportJobActionError(job, message) {
+  // setStatus writes into the New book form, which the active-book screen
+  // hides, so an action failure there used to look like nothing happened.
+  const node = findRenderedJobNode(job.id);
+  const actions = node?.querySelector(".job-actions");
+  if (!actions) {
+    window.alert(message);
+    return;
+  }
+  let panel = node.querySelector(".job-action-error");
+  if (!panel) {
+    panel = makeElement("div", "job-action-error");
+    panel.setAttribute("role", "alert");
+    actions.after(panel);
+  }
+  panel.textContent = message;
+  panel.hidden = false;
+  setStatus(message);
 }
 
 async function runJob(jobId, mode = "Auto") {

@@ -101,6 +101,10 @@ function Initialize-BookStudioDatabase {
     Invoke-BookStudioDatabaseLock -DatabasePath $DatabasePath -ScriptBlock {
         if (-not (Test-Path -LiteralPath $DatabasePath)) { Write-BookStudioDatabase -DatabasePath $DatabasePath -Database (New-BookStudioDatabaseObject) }
     }
+    # Adopt books written before this folder was moved.
+    if (Repair-BookStudioMovedPaths -DatabasePath $DatabasePath) {
+        Write-Host "Book Studio moved since these books were created; their file locations were updated to this folder."
+    }
 
     return (Resolve-Path $DatabasePath).ProviderPath
 }
@@ -185,6 +189,70 @@ function Write-BookStudioDatabase {
             Start-Sleep -Milliseconds 50
         }
     }
+}
+
+function Get-BookStudioRebasedPath {
+    # Every book stores absolute paths. When the Book Studio folder moves, out
+    # of OneDrive or onto a shorter path, those still point at the old place, so
+    # previews 404, outlines fail, and generation refuses to start. Anything
+    # under a .bookstudio folder is app-managed data: rebase it onto this one.
+    param([AllowNull()][string]$Path, [Parameter(Mandatory)][string]$DatabaseRoot)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $Path }
+    $marker = [System.IO.Path]::DirectorySeparatorChar + (Split-Path -Leaf $DatabaseRoot) + [System.IO.Path]::DirectorySeparatorChar
+    $index = $Path.LastIndexOf($marker, [System.StringComparison]::OrdinalIgnoreCase)
+    if ($index -lt 0) { return $Path }
+    $rebased = Join-Path $DatabaseRoot $Path.Substring($index + $marker.Length)
+    if ($rebased -ceq $Path) { return $Path }
+    return $rebased
+}
+
+function Update-BookStudioStoredPaths {
+    param([object]$Node, [Parameter(Mandatory)][string]$DatabaseRoot, [int]$Depth = 0)
+
+    if ($null -eq $Node -or $Depth -gt 8) { return $false }
+    $changed = $false
+    if ($Node -is [System.Collections.IList]) {
+        for ($index = 0; $index -lt $Node.Count; $index++) {
+            $item = $Node[$index]
+            if ($item -is [string]) {
+                $rebased = Get-BookStudioRebasedPath -Path $item -DatabaseRoot $DatabaseRoot
+                if ($rebased -cne $item) { $Node[$index] = $rebased; $changed = $true }
+            }
+            elseif ($item -is [System.Management.Automation.PSCustomObject]) {
+                if (Update-BookStudioStoredPaths -Node $item -DatabaseRoot $DatabaseRoot -Depth ($Depth + 1)) { $changed = $true }
+            }
+        }
+        return $changed
+    }
+    if ($Node -isnot [System.Management.Automation.PSCustomObject]) { return $false }
+    foreach ($property in @($Node.PSObject.Properties)) {
+        $value = $property.Value
+        if ($value -is [string]) {
+            $rebased = Get-BookStudioRebasedPath -Path $value -DatabaseRoot $DatabaseRoot
+            if ($rebased -cne $value) { $property.Value = $rebased; $changed = $true }
+        }
+        elseif ($value -is [System.Collections.IList] -or $value -is [System.Management.Automation.PSCustomObject]) {
+            if (Update-BookStudioStoredPaths -Node $value -DatabaseRoot $DatabaseRoot -Depth ($Depth + 1)) { $changed = $true }
+        }
+    }
+    return $changed
+}
+
+function Repair-BookStudioMovedPaths {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$DatabasePath)
+
+    $databaseRoot = [System.IO.Path]::GetFullPath((Split-Path -Parent $DatabasePath)).TrimEnd([System.IO.Path]::DirectorySeparatorChar)
+    $repaired = @{ value = $false }
+    Invoke-BookStudioDatabaseLock -DatabasePath $DatabasePath -ScriptBlock {
+        $db = Read-BookStudioDatabase -DatabasePath $DatabasePath
+        foreach ($job in @($db.jobs)) {
+            if (Update-BookStudioStoredPaths -Node $job -DatabaseRoot $databaseRoot) { $repaired.value = $true }
+        }
+        if ($repaired.value) { Write-BookStudioDatabase -DatabasePath $DatabasePath -Database $db }
+    }
+    return [bool]$repaired.value
 }
 
 function Get-BookStudioJob {
@@ -5529,4 +5597,4 @@ function Start-BookStudioServer {
     }
 }
 
-Export-ModuleMember -Function Initialize-BookStudioDatabase, Read-BookStudioDatabase, Write-BookStudioDatabase, Get-BookStudioJob, Update-BookStudioJob, Set-BookStudioJobLifecycle, Remove-BookStudioJob, Add-BookStudioLogEntry, Set-BookStudioJobProgress, New-BookStudioJob, Start-BookStudioJob, Start-BookStudioServer, Get-BookStudioDatabasePath, Get-BookStudioVisualManifest, Get-BookStudioDistPackages, Import-BookStudioPackageJob, Import-BookStudioPackageArchiveJob, Refresh-BookStudioJobArtifacts, Invoke-BookStudioPackageRebuild, Set-BookStudioVisualReplacementAsset, Resolve-BookStudioCodexCommand, Set-BookStudioCodexPath, Get-BookStudioCodexStatus, Get-BookStudioCodexPromptManifest, Get-BookStudioVisualReviews, Set-BookStudioVisualReview, Export-BookStudioVisualReviewReport, Initialize-BookStudioChapterSources, Get-BookStudioChapterContent, Set-BookStudioChapterContent, New-BookStudioSmeReviewPackage, Publish-BookStudioSmeReviewToCloudflare, Get-BookStudioSmeReviewFeedbackFromCloudflare, Get-BookStudioAiRequests, New-BookStudioAiRequest, New-BookStudioFormatPreview, Get-BookStudioOutline, Set-BookStudioOutline, Set-BookStudioFormatReview, Get-BookStudioUpdateStatus, Start-BookStudioUpdate, Get-BookStudioUpdateProgress, Get-BookStudioInstallPathStatus, Resolve-BookStudioNativeCodexExecutable, Test-BookStudioFileSystemLink
+Export-ModuleMember -Function Initialize-BookStudioDatabase, Read-BookStudioDatabase, Write-BookStudioDatabase, Get-BookStudioJob, Update-BookStudioJob, Set-BookStudioJobLifecycle, Remove-BookStudioJob, Add-BookStudioLogEntry, Set-BookStudioJobProgress, New-BookStudioJob, Start-BookStudioJob, Start-BookStudioServer, Get-BookStudioDatabasePath, Get-BookStudioVisualManifest, Get-BookStudioDistPackages, Import-BookStudioPackageJob, Import-BookStudioPackageArchiveJob, Refresh-BookStudioJobArtifacts, Invoke-BookStudioPackageRebuild, Set-BookStudioVisualReplacementAsset, Resolve-BookStudioCodexCommand, Set-BookStudioCodexPath, Get-BookStudioCodexStatus, Get-BookStudioCodexPromptManifest, Get-BookStudioVisualReviews, Set-BookStudioVisualReview, Export-BookStudioVisualReviewReport, Initialize-BookStudioChapterSources, Get-BookStudioChapterContent, Set-BookStudioChapterContent, New-BookStudioSmeReviewPackage, Publish-BookStudioSmeReviewToCloudflare, Get-BookStudioSmeReviewFeedbackFromCloudflare, Get-BookStudioAiRequests, New-BookStudioAiRequest, New-BookStudioFormatPreview, Get-BookStudioOutline, Set-BookStudioOutline, Set-BookStudioFormatReview, Get-BookStudioUpdateStatus, Start-BookStudioUpdate, Get-BookStudioUpdateProgress, Get-BookStudioInstallPathStatus, Resolve-BookStudioNativeCodexExecutable, Test-BookStudioFileSystemLink, Repair-BookStudioMovedPaths, Get-BookStudioRebasedPath

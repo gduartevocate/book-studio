@@ -45,7 +45,7 @@
     },
     {
         "path":  "ID Quick Start.txt",
-        "sha256":  "331E65D24D9F56F7CE781E6FB11761F4531E1FB0582965F9143D771C5A6D11D8"
+        "sha256":  "42AE38A636226078A70235EE5D8D95C203FE7FC121E327B5055B9BB9F850A420"
     },
     {
         "path":  "Install Book Studio.cmd",
@@ -105,15 +105,15 @@
     },
     {
         "path":  "VERSION.txt",
-        "sha256":  "A13099489352C582CCBD85F996A9DCFF1735F8902D88C238D251E70BDC27DFE9"
+        "sha256":  "654AEB0F3E4E96760BA4102B3370B7FACB65FB46090534CD5BCE4133BED0000F"
     },
     {
         "path":  "book-studio/app.js",
-        "sha256":  "559378CBB94EC666ABA8A116A542F04ADED392C7213AD52ABD51D43C563E0F87"
+        "sha256":  "8A4BF0D0ADC242FBE8592EC68EF732FE4ABF2268258E8B5E8A566C8111EB9E83"
     },
     {
         "path":  "book-studio/index.html",
-        "sha256":  "305F788B79F84E5A4FB84AB418709C129BE0E85AB67E052B7BD65AF20DB75837"
+        "sha256":  "4794B1CBB868D7899E1F4D5A7233C29532B72404A29047711FB74A60B9451B1C"
     },
     {
         "path":  "book-studio/outcomes.js",
@@ -125,11 +125,11 @@
     },
     {
         "path":  "book-studio/styles.css",
-        "sha256":  "FBE175F23AE4FAD554EC6F35A6AFF1446EEE64EA5D8205F5821E6C4C61BC8951"
+        "sha256":  "8746F10EB92E058A6B80AFB83FB503DD9EF8DDE670E8A0C33F2F62753CE04517"
     },
     {
         "path":  "book-studio/version.json",
-        "sha256":  "536275CB7E6F3AB8C86C33D6A39A02E42D1BB85935FEC94FD6E3D9157D190E09"
+        "sha256":  "F72D6CB63C7512A7567FD4E80C203039CD3200A480BF9D661AA9FD1E1183D9C1"
     },
     {
         "path":  "cloudflare/ebook-generator-worker.js",
@@ -169,7 +169,7 @@
     },
     {
         "path":  "lib/BookStudio.psm1",
-        "sha256":  "14FB1512EED91A2E3C4E1280A9010982D7550FEA9ED0A410058284C9918B6666"
+        "sha256":  "D24F4DB7D32550259132CBC885EB976A50981D0495C699540715125CFAABC462"
     },
     {
         "path":  "lib/BookStudioChat.ps1",
@@ -277,7 +277,7 @@
     },
     {
         "path":  "tests/book-studio-path-regressions.ps1",
-        "sha256":  "9B1C5E77C86BB0A3E333C81CC4B8D122F0913CF9670F98E33C91C30B02D132D7"
+        "sha256":  "49ED1010D304F2C57ED1F0C59DB750006E0EE196994E627B26D77771B7F56667"
     },
     {
         "path":  "tests/book-studio-production-ui.ps1",

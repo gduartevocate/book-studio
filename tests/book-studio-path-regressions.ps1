@@ -36,4 +36,48 @@ Check ((Get-Content -LiteralPath (Join-Path $root 'lib/BookStudio.psm1') -Raw) -
 $index = Get-Content -LiteralPath (Join-Path $root 'book-studio/index.html') -Raw -Encoding UTF8
 foreach ($id in @('installStatus', 'installBadge', 'installHeading')) { Check ($index -match ('id="' + $id + '"')) "index.html defines $id." }
 
-Write-Output "PASS: $checks path-length assertions (capped names, install-location warnings, early failure with the fix)."
+
+# Moving the Book Studio folder (out of OneDrive, onto a shorter path) must not
+# strand its books: every stored path is absolute and has to follow the move.
+$oldRoot = Join-Path $env:LOCALAPPDATA ('BookStudioTests\moved-old-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+$newRoot = Join-Path $env:LOCALAPPDATA ('BookStudioTests\moved-new-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+$oldDb = Initialize-BookStudioDatabase -ProjectRoot $oldRoot
+$oldStorage = Split-Path $oldDb -Parent
+$job = [pscustomobject]@{
+    id = 'moved01'
+    status = 'Failed'
+    outputRoot = (Join-Path $oldStorage 'outputs\moved01')
+    outputFolder = (Join-Path $oldStorage 'outputs\moved01\GM1015-Book')
+    sourceContextPath = (Join-Path $oldStorage 'uploads\moved01')
+    specPath = (Join-Path $oldStorage 'uploads\moved01\spec.docx')
+    logPath = (Join-Path $oldStorage 'logs\moved01.log')
+    title = 'Moved book'
+    uploadedFiles = @([pscustomobject]@{ name = 'spec.docx'; path = (Join-Path $oldStorage 'uploads\moved01\spec.docx') })
+    artifacts = @([pscustomobject]@{ name = 'Word document'; path = (Join-Path $oldStorage 'outputs\moved01\GM1015-Book\Book.docx') })
+    aiRequests = @([pscustomobject]@{ id = 'r1'; status = 'Completed'; errorPath = (Join-Path $oldStorage 'outputs\moved01\GM1015-Book\codex-requests\r1\error.log') })
+    externalReference = 'C:\Users\someone\Documents\original-spec.docx'
+}
+$db = Read-BookStudioDatabase -DatabasePath $oldDb
+$db.jobs = @($job)
+Write-BookStudioDatabase -DatabasePath $oldDb -Database $db
+Move-Item -LiteralPath $oldRoot -Destination $newRoot
+$newDb = Initialize-BookStudioDatabase -ProjectRoot $newRoot
+$newStorage = Split-Path $newDb -Parent
+$moved = (Read-BookStudioDatabase -DatabasePath $newDb).jobs[0]
+foreach ($field in @('outputRoot', 'outputFolder', 'sourceContextPath', 'specPath', 'logPath')) {
+    Check ($moved.$field -like "$newStorage*") "$field still points at the old folder after the move: $($moved.$field)"
+}
+Check ($moved.outputFolder -eq (Join-Path $newStorage 'outputs\moved01\GM1015-Book')) "The moved output folder is wrong: $($moved.outputFolder)"
+Check ($moved.uploadedFiles[0].path -like "$newStorage*" -and $moved.artifacts[0].path -like "$newStorage*") 'Nested upload or artifact paths did not follow the move.'
+Check ($moved.aiRequests[0].errorPath -like "$newStorage*") 'Codex request paths did not follow the move.'
+Check ($moved.externalReference -eq 'C:\Users\someone\Documents\original-spec.docx') 'A path outside Book Studio storage was rewritten.'
+Check ($moved.title -eq 'Moved book' -and $moved.status -eq 'Failed') 'The move changed book data other than its paths.'
+Check (-not (Repair-BookStudioMovedPaths -DatabasePath $newDb)) 'A second startup reported another move.'
+Remove-Item -LiteralPath $newRoot -Recurse -Force -ErrorAction SilentlyContinue
+$index = Get-Content -LiteralPath (Join-Path $root 'book-studio/index.html') -Raw -Encoding UTF8
+$app = Get-Content -LiteralPath (Join-Path $root 'book-studio/app.js') -Raw -Encoding UTF8
+Check ($app -match 'function reportJobActionError') 'Job action failures have nowhere visible to report.'
+Check ($app -notmatch 'runJob\(job\.id, getWorkflowRunMode\(job\)\)\);') 'A run action still drops its error instead of showing it.'
+Check ($app -match 'Recreate format preview') 'A failed book cannot rebuild its format preview.'
+
+Write-Output "PASS: $checks path-length and relocation assertions."
