@@ -41,7 +41,8 @@ $busyFile = CreateFixtureFile 'outputs/busy/keep.txt'
 foreach ($state in @(@{status='Running'}, @{status='Queued'}, @{status='Completed';aiRequests=@(@{status='Running'})}, @{status='Failed';aiRequests=@(@{status='Queued'})})) {
     $state.id = 'busy'
     SaveJobs @($state)
-    RejectDelete 'busy' 'Wait for generation'
+    # Each refusal has to say how to get unstuck, not just to wait.
+    RejectDelete 'busy' 'still generating|Stop Codex request'
     Check ((Test-Path $busyFile) -and (Get-BookStudioJob $dbPath busy)) 'Busy book was changed'
 }
 RejectDelete '..' 'Invalid book ID'

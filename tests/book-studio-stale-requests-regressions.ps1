@@ -55,4 +55,44 @@ Copy-Item -LiteralPath (Join-Path $root 'lib') -Destination $fixture -Recurse -F
 & (Join-Path $root 'Repair-BookStudioUpdate.ps1') -InstallPath $fixture
 Check (@(Get-ChildItem -LiteralPath (Split-Path $dbPath -Parent) -Filter '*.before-update-recovery-*.bak').Count -eq 1) 'Standalone repair did not back up the database.'
 Check ((Request).status -eq 'Failed') 'Standalone repair left the stale request running.'
+
+# A Codex run that hangs must not hold its book hostage: the designer can stop
+# it, and a runner that already died is reconciled by the running app itself.
+$stuckRoot = Join-Path $env:LOCALAPPDATA ('BookStudioTests\stuck-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+$stuckDb = Initialize-BookStudioDatabase -ProjectRoot $stuckRoot
+$idle = Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep -Seconds 300') -WindowStyle Hidden -PassThru
+try {
+    $stuckJob = [pscustomobject]@{ id = 'stuck01'; status = 'Completed'; title = 'Stuck book'; log = @(); aiRequests = @([pscustomobject]@{
+                id = 'req1'; status = 'Running'; allowEdits = $true; processId = $idle.Id
+                processStartedAt = $idle.StartTime.ToUniversalTime().ToString('o')
+                createdAt = (Get-Date).ToString('s'); responsePath = ''; exitCodePath = ''; errorPath = ''
+            })
+    }
+    $stuckDatabase = Read-BookStudioDatabase -DatabasePath $stuckDb
+    $stuckDatabase.jobs = @($stuckJob)
+    Write-BookStudioDatabase -DatabasePath $stuckDb -Database $stuckDatabase
+    Check ((Repair-BookStudioStaleAiRequests -DatabasePath $stuckDb) -eq 0) 'Recovery cleared a Codex request whose runner is alive.'
+    $blocked = $false
+    try { Remove-BookStudioJob -DatabasePath $stuckDb -JobId 'stuck01' | Out-Null }
+    catch { $blocked = $true; Check ($_.Exception.Message -match 'Stop Codex request') 'The deletion refusal does not say how to get unstuck.' }
+    Check $blocked 'A book with a running Codex request was deleted anyway.'
+    $stopResult = Stop-BookStudioAiRequest -DatabasePath $stuckDb -JobId 'stuck01' -RequestId 'req1'
+    Check ($stopResult.stoppedProcess -and -not (Get-Process -Id $idle.Id -ErrorAction SilentlyContinue)) 'Stopping the request left its runner alive.'
+    $stoppedRequest = (Get-BookStudioJob -DatabasePath $stuckDb -JobId 'stuck01').aiRequests[0]
+    Check ($stoppedRequest.status -eq 'Failed' -and $stoppedRequest.failureKind -eq 'cancelled') 'The stopped request was not recorded as cancelled.'
+    $null = Remove-BookStudioJob -DatabasePath $stuckDb -JobId 'stuck01'
+    Check (-not (Get-BookStudioJob -DatabasePath $stuckDb -JobId 'stuck01')) 'The book could not be deleted after stopping Codex.'
+}
+finally { Stop-Process -Id $idle.Id -Force -ErrorAction SilentlyContinue }
+$deadJob = [pscustomobject]@{ id = 'dead01'; status = 'Completed'; title = 'Dead runner'; log = @(); aiRequests = @([pscustomobject]@{ id = 'req2'; status = 'Running'; allowEdits = $false; processId = 999999; createdAt = (Get-Date).ToString('s'); responsePath = ''; exitCodePath = ''; errorPath = '' }) }
+$stuckDatabase = Read-BookStudioDatabase -DatabasePath $stuckDb
+$stuckDatabase.jobs = @($deadJob)
+Write-BookStudioDatabase -DatabasePath $stuckDb -Database $stuckDatabase
+Check ((Repair-BookStudioStaleAiRequests -DatabasePath $stuckDb) -eq 1) 'A dead Codex runner was left Running.'
+$null = Remove-BookStudioJob -DatabasePath $stuckDb -JobId 'dead01'
+Check (-not (Get-BookStudioJob -DatabasePath $stuckDb -JobId 'dead01')) 'A book with a dead Codex runner still could not be deleted.'
+Remove-Item -LiteralPath $stuckRoot -Recurse -Force -ErrorAction SilentlyContinue
+$serverModule = Get-Content -LiteralPath (Join-Path $root 'lib/BookStudio.psm1') -Raw -Encoding UTF8
+Check (([regex]::Matches($serverModule, 'Repair-BookStudioStaleAiRequests -DatabasePath')).Count -ge 2) 'The running app does not reconcile stale Codex requests while serving books.'
+
 "PASS: $checks stale-request checks. Fixtures: $fixture"

@@ -559,8 +559,12 @@ function Remove-BookStudioJob {
         $db = Read-BookStudioDatabase -DatabasePath $DatabasePath
         $job = @($db.jobs | Where-Object id -eq $JobId | Select-Object -First 1)[0]
         if (-not $job) { throw "Book Studio job not found: $JobId" }
-        if ($job.status -in @('Queued','Running') -or @($job.aiRequests | Where-Object { $_.status -in @('Queued','Running') }).Count) {
-            throw 'Wait for generation or Codex work to finish before deleting this book.'
+        if ($job.status -in @('Queued','Running')) {
+            throw 'This book is still generating. Wait for it to finish, or stop it with Stop Book Studio, before deleting it.'
+        }
+        $busyRequest = @($job.aiRequests | Where-Object { $_.status -in @('Queued','Running') } | Select-Object -First 1)[0]
+        if ($busyRequest) {
+            throw "A Codex request for this book is still running. Use Stop Codex request beside it, then delete the book. If Codex is no longer running, refreshing the book list clears the request on its own."
         }
 
         $removedPaths = New-Object System.Collections.ArrayList
@@ -4987,6 +4991,10 @@ function Start-BookStudioServer {
 
             if ($request.HttpMethod -eq "GET" -and $path -eq "/api/jobs") {
                 Repair-BookStudioStaleRunnerJobs -DatabasePath $DatabasePath | Out-Null
+                # A Codex runner that died leaves its request Running, which blocks
+                # deletion and makes the book look busy forever. Reconcile it here;
+                # this never starts, kills, or rebuilds anything.
+                Repair-BookStudioStaleAiRequests -DatabasePath $DatabasePath | Out-Null
                 $db = Read-BookStudioDatabase -DatabasePath $DatabasePath
                 $jobs = foreach ($job in @($db.jobs)) {
                     Add-OrSet-BookStudioNoteProperty -InputObject $job -Name 'formatState' -Value (Get-BookStudioFormatState $job)
@@ -5166,6 +5174,17 @@ function Start-BookStudioServer {
                 try {
                     $job = Set-BookStudioJobLifecycle -DatabasePath $DatabasePath -JobId $Matches[1] -State ([string]$payload.state)
                     Send-BookStudioResponse -Context $context -Body (ConvertTo-BookStudioJson $job)
+                }
+                catch {
+                    Send-BookStudioResponse -Context $context -StatusCode 400 -ContentType "text/plain; charset=utf-8" -Body $_.Exception.Message
+                }
+                continue
+            }
+
+            if ($path -match "^/api/jobs/([^/]+)/ai-requests/([^/]+)/stop$" -and $request.HttpMethod -eq "POST") {
+                try {
+                    $result = Stop-BookStudioAiRequest -DatabasePath $DatabasePath -JobId $Matches[1] -RequestId $Matches[2]
+                    Send-BookStudioResponse -Context $context -Body (ConvertTo-BookStudioJson $result)
                 }
                 catch {
                     Send-BookStudioResponse -Context $context -StatusCode 400 -ContentType "text/plain; charset=utf-8" -Body $_.Exception.Message
@@ -5574,6 +5593,10 @@ function Start-BookStudioServer {
 
             if ($path -match "^/api/jobs/([^/]+)$" -and $request.HttpMethod -eq "GET") {
                 Repair-BookStudioStaleRunnerJobs -DatabasePath $DatabasePath | Out-Null
+                # A Codex runner that died leaves its request Running, which blocks
+                # deletion and makes the book look busy forever. Reconcile it here;
+                # this never starts, kills, or rebuilds anything.
+                Repair-BookStudioStaleAiRequests -DatabasePath $DatabasePath | Out-Null
                 $job = Get-BookStudioJob -DatabasePath $DatabasePath -JobId $Matches[1]
                 if (-not $job) {
                     Send-BookStudioResponse -Context $context -StatusCode 404 -ContentType "text/plain; charset=utf-8" -Body "Job not found"
@@ -5597,4 +5620,4 @@ function Start-BookStudioServer {
     }
 }
 
-Export-ModuleMember -Function Initialize-BookStudioDatabase, Read-BookStudioDatabase, Write-BookStudioDatabase, Get-BookStudioJob, Update-BookStudioJob, Set-BookStudioJobLifecycle, Remove-BookStudioJob, Add-BookStudioLogEntry, Set-BookStudioJobProgress, New-BookStudioJob, Start-BookStudioJob, Start-BookStudioServer, Get-BookStudioDatabasePath, Get-BookStudioVisualManifest, Get-BookStudioDistPackages, Import-BookStudioPackageJob, Import-BookStudioPackageArchiveJob, Refresh-BookStudioJobArtifacts, Invoke-BookStudioPackageRebuild, Set-BookStudioVisualReplacementAsset, Resolve-BookStudioCodexCommand, Set-BookStudioCodexPath, Get-BookStudioCodexStatus, Get-BookStudioCodexPromptManifest, Get-BookStudioVisualReviews, Set-BookStudioVisualReview, Export-BookStudioVisualReviewReport, Initialize-BookStudioChapterSources, Get-BookStudioChapterContent, Set-BookStudioChapterContent, New-BookStudioSmeReviewPackage, Publish-BookStudioSmeReviewToCloudflare, Get-BookStudioSmeReviewFeedbackFromCloudflare, Get-BookStudioAiRequests, New-BookStudioAiRequest, New-BookStudioFormatPreview, Get-BookStudioOutline, Set-BookStudioOutline, Set-BookStudioFormatReview, Get-BookStudioUpdateStatus, Start-BookStudioUpdate, Get-BookStudioUpdateProgress, Get-BookStudioInstallPathStatus, Resolve-BookStudioNativeCodexExecutable, Test-BookStudioFileSystemLink, Repair-BookStudioMovedPaths, Get-BookStudioRebasedPath
+Export-ModuleMember -Function Initialize-BookStudioDatabase, Read-BookStudioDatabase, Write-BookStudioDatabase, Get-BookStudioJob, Update-BookStudioJob, Set-BookStudioJobLifecycle, Remove-BookStudioJob, Add-BookStudioLogEntry, Set-BookStudioJobProgress, New-BookStudioJob, Start-BookStudioJob, Start-BookStudioServer, Get-BookStudioDatabasePath, Get-BookStudioVisualManifest, Get-BookStudioDistPackages, Import-BookStudioPackageJob, Import-BookStudioPackageArchiveJob, Refresh-BookStudioJobArtifacts, Invoke-BookStudioPackageRebuild, Set-BookStudioVisualReplacementAsset, Resolve-BookStudioCodexCommand, Set-BookStudioCodexPath, Get-BookStudioCodexStatus, Get-BookStudioCodexPromptManifest, Get-BookStudioVisualReviews, Set-BookStudioVisualReview, Export-BookStudioVisualReviewReport, Initialize-BookStudioChapterSources, Get-BookStudioChapterContent, Set-BookStudioChapterContent, New-BookStudioSmeReviewPackage, Publish-BookStudioSmeReviewToCloudflare, Get-BookStudioSmeReviewFeedbackFromCloudflare, Get-BookStudioAiRequests, New-BookStudioAiRequest, New-BookStudioFormatPreview, Get-BookStudioOutline, Set-BookStudioOutline, Set-BookStudioFormatReview, Get-BookStudioUpdateStatus, Start-BookStudioUpdate, Get-BookStudioUpdateProgress, Get-BookStudioInstallPathStatus, Resolve-BookStudioNativeCodexExecutable, Test-BookStudioFileSystemLink, Repair-BookStudioMovedPaths, Get-BookStudioRebasedPath, Stop-BookStudioAiRequest, Repair-BookStudioStaleAiRequests

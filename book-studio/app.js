@@ -827,6 +827,14 @@ function renderJobProgress(container, job) {
   if (chapters.length) {
     const chapterWrap = makeElement("div", "job-chapter-progress");
     chapterWrap.append(makeElement("div", "job-progress-subheading", "Chapter Progress"));
+    // These cards only move while a step runs chapter by chapter. A whole-book
+    // step such as Codex drafting leaves them on their last state, which reads
+    // as if the chapters were already finished.
+    const currentPhase = String(progress.phase || "");
+    const reportedPhases = new Set(chapters.map((entry) => String(entry.phase || "")));
+    if (isActive && currentPhase && !reportedPhases.has(currentPhase)) {
+      chapterWrap.append(makeElement("p", "hint", `Each card shows that chapter's last completed step. ${currentPhase} works across the whole book and does not report chapter by chapter, so these will not change until it finishes.`));
+    }
     const chapterGrid = makeElement("div", "job-chapter-grid");
     for (const chapter of chapters) {
       const statusKey = String(chapter.status || "Working").toLowerCase().replace(/\s+/g, "-");
@@ -2767,6 +2775,25 @@ function renderQaRepairStatus(job, node = findRenderedJobNode(job.id)) {
   panel.append(makeElement("p", "", state.message));
   if (state.request) {
     panel.append(makeElement("small", "", `Request ${state.request.id} | ${state.request.status || "Running"}`));
+    if (busy) {
+      // A hung Codex run otherwise blocks every action on this book, deletion included.
+      const stop = makeElement("button", "secondary", "Stop Codex request");
+      stop.type = "button";
+      stop.addEventListener("click", async () => {
+        if (!window.confirm("Stop this Codex request? Edits it already saved stay on disk, and no rebuild runs automatically.")) return;
+        stop.disabled = true;
+        try {
+          await api(`/api/jobs/${job.id}/ai-requests/${state.request.id}/stop`, { method: "POST", body: "{}" });
+          qaRepairStates.delete(job.id);
+          aiRequestCache.clear();
+          await loadJobs({ force: true, focusJobId: job.id });
+        } catch (error) {
+          stop.disabled = false;
+          reportJobActionError(job, error.message);
+        }
+      });
+      panel.append(stop);
+    }
     const conversation = makeElement("button", "secondary", "View repair conversation");
     conversation.type = "button";
     conversation.addEventListener("click", () => {

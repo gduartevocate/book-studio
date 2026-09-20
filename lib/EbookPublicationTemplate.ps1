@@ -134,8 +134,32 @@ function Test-EbookPublicationTemplate {
     $issues = New-Object Collections.Generic.List[string]
     if (Test-EbookDeprecatedCaseLabel $Markdown) { $issues.Add('Replace the deprecated Case and Face wording with Business Case.') }
     if ($Markdown -match '(?m)^#{1,6}\s+[^\r\n]*#{2,6}\s*\S') { $issues.Add('A heading contains an embedded Markdown heading marker; repair the merged or duplicated heading.') }
-    if ($Markdown -match '(?i)knowledge checks?|check your reasoning|reflection activit|workplace challenge|chapter summary|think about it|interactive.study') {
-        $issues.Add('The manuscript contains a prohibited learner section, label, or interactive-study reference.')
+    # The policy excludes prohibited learner SECTIONS and links to the local
+    # interactive study page. Matching the same words anywhere in the prose
+    # failed whole books for one ordinary sentence, and the old message named
+    # neither the text nor its chapter, so nobody could act on it.
+    $excluded = 'knowledge checks?|check your reasoning|reflection activit\w*|workplace challenge|chapter summary|think about it|interactive study(?: activity)?'
+    $chapterStarts = @([regex]::Matches([string]$Markdown, '(?m)^# Chapter (\d+):'))
+    $locate = {
+        param([int]$Index)
+        $number = ''
+        foreach ($start in $chapterStarts) { if ($start.Index -le $Index) { $number = $start.Groups[1].Value } }
+        if ($number) { "Chapter $number" } else { 'the front matter' }
+    }
+    $prohibited = New-Object Collections.Generic.List[string]
+    foreach ($match in [regex]::Matches([string]$Markdown, "(?im)^#{1,6}\s*(?:$excluded)\b[^\r\n]*$")) {
+        $prohibited.Add("$(& $locate $match.Index): heading '$($match.Value.Trim())'")
+    }
+    foreach ($match in [regex]::Matches([string]$Markdown, "(?im)^\s*\*\*(?:$excluded)\b[^*\r\n]*\*\*")) {
+        $prohibited.Add("$(& $locate $match.Index): label '$($match.Value.Trim())'")
+    }
+    foreach ($match in [regex]::Matches([string]$Markdown, '(?i)interactive-study\.html[^\s)"]*')) {
+        $prohibited.Add("$(& $locate $match.Index): link to $($match.Value)")
+    }
+    if ($prohibited.Count) {
+        $shown = @($prohibited | Select-Object -Unique | Select-Object -First 5)
+        $more = if ($prohibited.Count -gt $shown.Count) { " Plus $($prohibited.Count - $shown.Count) more." } else { '' }
+        $issues.Add("Remove these prohibited learner sections, labels, or interactive-study links: $($shown -join '; ').$more")
     }
     $chapters = @([regex]::Matches([string]$Markdown, '(?ms)^# Chapter (?<number>\d+):[^\r\n]+(?<body>.*?)(?=^# Chapter \d+:|\z)'))
     if ($chapters.Count -eq 0) { $issues.Add('No chapter structure was found for the publication template.') }

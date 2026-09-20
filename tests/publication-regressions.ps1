@@ -47,5 +47,24 @@ $module = Get-Module EbookGenerator
     $ns.AddNamespace('w','http://schemas.openxmlformats.org/wordprocessingml/2006/main')
     Check ($null -ne $notesXml.SelectSingleNode('//w:p[w:bookmarkStart/@w:name="chapter_1_note_1"]/w:pPr/w:keepNext',$ns)) 'Short bibliography notes can orphan across pages.'
     Check ($null -eq $notesXml.SelectSingleNode('//w:p[w:bookmarkStart/@w:name="chapter_1_note_2"]/w:pPr/w:keepNext',$ns)) 'The last bibliography note is incorrectly chained to the next chapter.'
+    # The publication policy excludes prohibited learner SECTIONS and links to
+    # the local study page. Matching those words anywhere in the prose failed a
+    # whole book for one ordinary sentence, and named neither text nor chapter.
+    $chapterShell = "# Chapter 1: Payer Systems`n`n## Introduction`n`nBODY`n"
+    function ProhibitedIssue([string]$Body) {
+        $result = Test-EbookPublicationTemplate -Markdown $chapterShell.Replace('BODY', $Body)
+        return @($result.issues | Where-Object { $_ -match 'prohibited learner sections' })
+    }
+    foreach ($prose in @('Students review the chapter summary before class.', 'This is an interactive study of payer operations.', 'Think about it carefully before deciding.')) {
+        Check ((ProhibitedIssue $prose).Count -eq 0) "Ordinary prose was rejected as a prohibited section: $prose"
+    }
+    foreach ($violation in @("## Knowledge Check`n`nAnswer these.", "### Reflection Activity`n`nWrite a paragraph.", "## Chapter Summary`n`nWe covered payers.")) {
+        Check ((ProhibitedIssue $violation).Count -eq 1) "A prohibited section heading was allowed: $violation"
+    }
+    Check ((ProhibitedIssue '**Knowledge Check:** name three payers.').Count -eq 1) 'A prohibited bold label was allowed.'
+    Check ((ProhibitedIssue 'See [the study page](interactive-study.html#chapter-1).').Count -eq 1) 'An interactive-study link was allowed.'
+    $named = @(ProhibitedIssue "## Knowledge Check`n`nAnswer these.")[0]
+    Check ($named -match "Chapter 1" -and $named -match "## Knowledge Check") "The refusal does not name the chapter and the offending text: $named"
+
     Write-Output "PASS: $script:checksRun publication regression assertions."
 }

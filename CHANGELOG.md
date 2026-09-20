@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.19.1 (2026-09-19)
+
+- The publication gate now flags only prohibited learner sections, bold labels, and interactive-study links, and names the chapter and the exact text. Ordinary prose that mentions a chapter summary or an interactive study no longer fails a whole book. A stuck Codex request is recovered when you open a job, can be stopped from the request card, and a blocked deletion now names the job holding the book. Chapter cards no longer read Complete while Codex is still drafting.
+
 ## v2026.09.18.14 (2026-09-18)
 
 - A reading assigned to all chapters is now treated as a shared resource: available to every chapter and required in none, so a general reading list no longer demands every source be cited in every chapter.

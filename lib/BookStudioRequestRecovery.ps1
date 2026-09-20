@@ -26,6 +26,45 @@ function Get-BookStudioAiRequestRunState {
     [pscustomobject]@{running=$false;hasExitCode=$false;exitCode=$null;reason='The Codex runner is no longer active and no valid exit code was recorded.'}
 }
 
+function Stop-BookStudioAiRequest {
+    # A Codex run that hangs holds its book hostage: the book cannot be deleted
+    # and every action reports Codex is still working. Let the designer end it.
+    # Only the process this request recorded is stopped, never anything else.
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$DatabasePath,
+        [Parameter(Mandatory)][string]$JobId,
+        [Parameter(Mandatory)][string]$RequestId
+    )
+
+    $stopped = @{ value = $false; found = $false }
+    Invoke-BookStudioDatabaseLock -DatabasePath $DatabasePath -ScriptBlock {
+        $db = Read-BookStudioDatabase -DatabasePath $DatabasePath
+        $job = @($db.jobs | Where-Object { $_.id -eq $JobId } | Select-Object -First 1)[0]
+        if (-not $job) { throw "Book Studio job not found: $JobId" }
+        $request = @($job.aiRequests | Where-Object { $_.id -eq $RequestId } | Select-Object -First 1)[0]
+        if (-not $request) { throw "Codex request not found: $RequestId" }
+        $stopped.found = $true
+        if ($request.status -ne 'Running') { return }
+        $state = Get-BookStudioAiRequestRunState $request
+        if ($state.running -and $request.processId) {
+            try { Stop-Process -Id ([int]$request.processId) -Force -ErrorAction Stop; $stopped.value = $true } catch { }
+        }
+        Add-OrSet-BookStudioNoteProperty $request 'status' 'Failed'
+        Add-OrSet-BookStudioNoteProperty $request 'completedAt' (Get-Date).ToString('s')
+        Add-OrSet-BookStudioNoteProperty $request 'statusDetail' 'Stopped by the instructional designer. Any edits Codex had already saved are still on disk; review them before retrying.'
+        Add-OrSet-BookStudioNoteProperty $request 'failureKind' 'cancelled'
+        if ($request.allowEdits -and -not $request.postProcessedAt) {
+            Add-OrSet-BookStudioNoteProperty $request 'postProcessStatus' 'Stopped before a package rebuild. Review any saved edits and use Rebuild Package.'
+            Add-OrSet-BookStudioNoteProperty $request 'postProcessedAt' (Get-Date).ToString('s')
+        }
+        Add-OrSet-BookStudioNoteProperty $job 'log' (@($job.log | Where-Object { $_ }) + [pscustomobject]@{ at = (Get-Date).ToString('s'); message = "Stopped Codex request $RequestId at the designer's request." })
+        Add-OrSet-BookStudioNoteProperty $job 'updatedAt' (Get-Date).ToString('s')
+        Write-BookStudioDatabase -DatabasePath $DatabasePath -Database $db
+    }
+    return [pscustomobject]@{ requestId = $RequestId; stoppedProcess = [bool]$stopped.value; found = [bool]$stopped.found }
+}
+
 function Repair-BookStudioStaleAiRequests {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$DatabasePath)
