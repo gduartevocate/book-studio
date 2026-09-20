@@ -66,5 +66,30 @@ $module = Get-Module EbookGenerator
     $named = @(ProhibitedIssue "## Knowledge Check`n`nAnswer these.")[0]
     Check ($named -match "Chapter 1" -and $named -match "## Knowledge Check") "The refusal does not name the chapter and the offending text: $named"
 
+    # Exporting gates the manuscript on the publication template and on the
+    # prohibited-section rules, but only the rebuild path normalized the
+    # manuscript first. Generation therefore judged text that had never been
+    # through the step the gates assume, so a book could fail at export and
+    # then pass an unchanged Rebuild Package. Both paths must normalize.
+    $generation = (Get-Command New-EbookPackage).Definition
+    foreach ($step in @('ConvertTo-EbookPublicationMarkdown', 'ConvertTo-EbookBusinessCaseLabel', 'Remove-ProhibitedKnowledgeCheckSections', 'Remove-ProhibitedLearnerSections')) {
+        Check ($generation -match [regex]::Escape($step)) "Generation does not apply $step, so export gates text the rebuild path would have cleaned."
+    }
+    $dirty = @(
+        '# Chapter 1: Payer Systems', '', '## Introduction', '',
+        'Payers coordinate benefits and claims for members.', '',
+        '## Knowledge Check', '', 'Name three payer types.', '',
+        '## Reflection Activity', '', 'Write about a claim you have filed.', '',
+        '## Chapter Summary', '', 'Payers connect members, providers, and plans.', ''
+    ) -join "`r`n"
+    $normalized = ConvertTo-EbookPublicationMarkdown -Markdown (ConvertTo-EbookBusinessCaseLabel -Markdown $dirty)
+    $normalized = [string](Remove-ProhibitedKnowledgeCheckSections -Markdown $normalized).markdown
+    $normalized = [string](Remove-ProhibitedLearnerSections -Markdown $normalized).markdown
+    Check ((Get-ProhibitedKnowledgeCheckSignals -Markdown $normalized).status -eq 'PASS') 'The normalized manuscript still trips the knowledge-check export gate.'
+    Check ((Get-ProhibitedLearnerSectionSignals -Markdown $normalized).status -eq 'PASS') 'The normalized manuscript still trips the learner-section export gate.'
+    $normalizedTemplate = @(Test-EbookPublicationTemplate -Markdown $normalized).issues | Where-Object { $_ -match 'prohibited learner sections' }
+    Check (@($normalizedTemplate).Count -eq 0) "The normalized manuscript still trips the publication template gate: $normalizedTemplate"
+    Check ($normalized -match 'Payers coordinate benefits') 'Normalization discarded ordinary chapter prose.'
+
     Write-Output "PASS: $script:checksRun publication regression assertions."
 }

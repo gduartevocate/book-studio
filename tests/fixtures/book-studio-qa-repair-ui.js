@@ -3,10 +3,15 @@
 const qaFixture = {
   posts: [], tests: 0, sequence: 0, requests: [], checks: 0, errors: [],
   connected: false, testPass: true, postError: "", chatError: false,
+  confirms: [], alerts: [], confirmAnswer: true, stopped: [],
   job: { id: "qa-fixture", courseCode: "QA1000", title: "QA repair fixture", status: "Completed",
     outputFolder: "fixture-only", workflowStage: "id-review", createdAt: "2026-09-17T12:00:00",
     qaSummary: { status: "FAIL", failedChapters: 5 }, chatSessionId: "fixture-session", artifacts: [], log: [] }
 };
+// A real confirm() blocks a headless browser forever, so a button that asks
+// before acting would hang this test instead of failing it.
+window.confirm = message => { qaFixture.confirms.push(String(message)); return qaFixture.confirmAnswer; };
+window.alert = message => { qaFixture.alerts.push(String(message)); };
 window.addEventListener("error", event => qaFixture.errors.push(event.message));
 window.addEventListener("unhandledrejection", event => qaFixture.errors.push(String(event.reason)));
 window.setInterval = () => 0; // Tests drive the actual polling functions deterministically.
@@ -40,6 +45,12 @@ window.fetch = async (path, options = {}) => {
     if (qaFixture.chatError) return reply("Network interrupted", false);
     return reply({ requests: qaFixture.requests, sessionId: "fixture-session" });
   }
+  if (path.endsWith("/stop") && options.method === "POST") {
+    const id = path.split("/").slice(-2)[0];
+    qaFixture.stopped.push(id);
+    qaFixture.requests = qaFixture.requests.map(entry => entry.id === id ? { ...entry, status: "Failed", error: "Stopped from Book Studio." } : entry);
+    return reply({ stopped: true, id });
+  }
   if (path.endsWith("/chapters")) return reply({ chapters: [] });
   if (path.endsWith("/codex-prompts")) return reply({ prompts: [] });
   if (path.endsWith("/visuals")) return reply({ visuals: [] });
@@ -51,6 +62,11 @@ window.addEventListener("DOMContentLoaded", async () => {
   const settle = async () => { for (let i = 0; i < 100; i++) await Promise.resolve(); };
   const button = () => document.querySelector(".qa-repair-button");
   const panel = () => document.querySelector(".qa-repair-status");
+  const panelButton = label => {
+    const match = Array.from(panel().querySelectorAll("button")).find(node => node.textContent.trim() === label);
+    if (!match) throw new Error(`The repair panel has no "${label}" button; it offers: ${Array.from(panel().querySelectorAll("button")).map(node => node.textContent.trim()).join(", ") || "none"}`);
+    return match;
+  };
   const reset = async () => {
     await settle();
     qaFixture.requests = []; qaFixture.posts = []; qaFixture.tests = 0;
@@ -83,7 +99,9 @@ window.addEventListener("DOMContentLoaded", async () => {
     check(!panel().textContent.includes("Current automated QA: PASS"), "Starting cannot be labeled a QA pass");
     await loadJobs({ force: true }); await settle();
     check(button().disabled && panel().textContent.includes("repair-1"), "Refresh must retain running state and request ID");
-    panel().querySelector("button").click(); await settle();
+    // Select by label. Picking the first button silently follows any change to
+    // the panel's button order into whichever action happens to come first.
+    panelButton("View repair conversation").click(); await settle();
     check(!bookChatPanel.hidden && bookChatThread.textContent.includes("Edits allowed"), "Conversation action must open the real request thread");
     qaFixture.chatError = true; await refreshChat();
     check(button().disabled && panel().textContent.includes("Cannot refresh repair progress"), "Polling errors must stay visible without enabling duplicate edits");
@@ -151,6 +169,22 @@ window.addEventListener("DOMContentLoaded", async () => {
     qaFixture.job.qaSummary.status = "PASS";
     await loadJobs({ force: true }); await settle();
     check(!button() && panel().textContent.includes("Current automated QA: PASS") && panel().textContent.includes("Human review"), "Passing gates must preserve the visible result and human-approval boundary");
+
+    // A Codex run that hangs otherwise blocks every action on the book,
+    // deletion included, so a running repair must be stoppable from here.
+    await reset(); await start();
+    check(!panelButton("Stop Codex request").disabled, "A running repair must offer a way to stop it");
+    // The fixture numbers requests across the whole run, so read the id rather
+    // than assuming this is the first repair.
+    const runningId = qaFixture.requests[0].id;
+    qaFixture.confirms = []; qaFixture.confirmAnswer = false;
+    panelButton("Stop Codex request").click(); await settle();
+    check(qaFixture.confirms.length === 1, "Stopping a Codex request must ask before acting");
+    check(qaFixture.stopped.length === 0 && !panelButton("Stop Codex request").disabled, "Declining the confirmation must leave the request running");
+    qaFixture.confirmAnswer = true;
+    panelButton("Stop Codex request").click(); await settle();
+    check(qaFixture.stopped.length === 1 && qaFixture.stopped[0] === runningId, `Confirming must stop the running request ${runningId}, but stopped: ${qaFixture.stopped.join(", ") || "nothing"}`);
+    check(!button().disabled, "A stopped repair must release the book for another attempt");
 
     // Finish with a realistic failure state for the saved visual review screenshot.
     await reset(); await start();

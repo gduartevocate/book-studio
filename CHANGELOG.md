@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.20.1 (2026-09-20)
+
+- Generating a book now applies the same publication normalization that Rebuild Package applies, so the export gates judge the manuscript that ships. A finished book no longer fails at export for a heading the rebuild would have cleaned. Stop Codex request is offered after View repair conversation and is covered by the browser tests.
+
 ## v2026.09.19.1 (2026-09-19)
 
 - The publication gate now flags only prohibited learner sections, bold labels, and interactive-study links, and names the chapter and the exact text. Ordinary prose that mentions a chapter summary or an interactive study no longer fails a whole book. A stuck Codex request is recovered when you open a job, can be stopped from the request card, and a blocked deletion now names the job holding the book. Chapter cards no longer read Complete while Codex is still drafting.

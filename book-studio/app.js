@@ -2775,6 +2775,16 @@ function renderQaRepairStatus(job, node = findRenderedJobNode(job.id)) {
   panel.append(makeElement("p", "", state.message));
   if (state.request) {
     panel.append(makeElement("small", "", `Request ${state.request.id} | ${state.request.status || "Running"}`));
+    const conversation = makeElement("button", "secondary", "View repair conversation");
+    conversation.type = "button";
+    conversation.addEventListener("click", () => {
+      selectedBookChatJobId = job.id;
+      bookChatPanel.hidden = false;
+      bookChatPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+      aiRequestCache.clear();
+      loadBookChat({ job, showLoading: true, forceScroll: true }).catch((error) => { bookChatStatus.textContent = error.message; });
+    });
+    panel.append(conversation);
     if (busy) {
       // A hung Codex run otherwise blocks every action on this book, deletion included.
       const stop = makeElement("button", "secondary", "Stop Codex request");
@@ -2794,16 +2804,6 @@ function renderQaRepairStatus(job, node = findRenderedJobNode(job.id)) {
       });
       panel.append(stop);
     }
-    const conversation = makeElement("button", "secondary", "View repair conversation");
-    conversation.type = "button";
-    conversation.addEventListener("click", () => {
-      selectedBookChatJobId = job.id;
-      bookChatPanel.hidden = false;
-      bookChatPanel.scrollIntoView({ behavior: "smooth", block: "start" });
-      aiRequestCache.clear();
-      loadBookChat({ job, showLoading: true, forceScroll: true }).catch((error) => { bookChatStatus.textContent = error.message; });
-    });
-    panel.append(conversation);
     if (state.request.errorUrl) {
       const log = makeElement("a", "", "Open repair log");
       log.href = state.request.errorUrl;

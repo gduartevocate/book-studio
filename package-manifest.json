@@ -45,7 +45,7 @@
     },
     {
         "path":  "ID Quick Start.txt",
-        "sha256":  "2023678A2173FA89E91DEF41C0E02AC62310A40E22DD2E6D8DB8EF0F7A695934"
+        "sha256":  "48EBCBA67A34E761A315D65FEEED95C6B68191403F9E9A4101DBAB6F505CF6AF"
     },
     {
         "path":  "Install Book Studio.cmd",
@@ -105,11 +105,11 @@
     },
     {
         "path":  "VERSION.txt",
-        "sha256":  "A5CAC9C82447818233C1EF58968A4ED6F87D531490D5331D5326E9A2236DE291"
+        "sha256":  "830064E7A9F81BB76EE31CA715C75B55584DAA443367D558643D06AA2327AE26"
     },
     {
         "path":  "book-studio/app.js",
-        "sha256":  "D04322C37D536CAB2147D905F04DC2A226B7FA0927B6C81FFD290EEDD20DE4D3"
+        "sha256":  "F227EE6498E9D2DF973C688BD389FB06FBFA61F6B8FF63CD78C24DEDD32BAF82"
     },
     {
         "path":  "book-studio/index.html",
@@ -129,7 +129,7 @@
     },
     {
         "path":  "book-studio/version.json",
-        "sha256":  "191C8A724E081EA5A1F925FE2F4B80B23CD34AC6F4669BF3B2E82BC41DE71B43"
+        "sha256":  "546348ED747B267F81774649B14FDC6CF4F89B4DDA2410B8BC5BBDAE85F8CB33"
     },
     {
         "path":  "cloudflare/ebook-generator-worker.js",
@@ -225,7 +225,7 @@
     },
     {
         "path":  "lib/EbookGenerator.psm1",
-        "sha256":  "C388213625697221473231990B77E3FBC8BF06A430926E6009B79A719A88FE46"
+        "sha256":  "A3C4D2421F08FD34C87C8205DE63526FE885721CAE95EE797E525917C1731D0D"
     },
     {
         "path":  "lib/EbookImages.ps1",
@@ -337,7 +337,7 @@
     },
     {
         "path":  "tests/publication-regressions.ps1",
-        "sha256":  "D43DD122453A8FFB96CFFE03CB669152D4F98BBF8509CDF8B631DA3716E8AC88"
+        "sha256":  "34E0B3EBA5213A383ADDF4DAD056D8CBDAF393673D728EA377A84401A7B70223"
     },
     {
         "path":  "tests/required-readings-regressions.ps1",
@@ -353,7 +353,7 @@
     },
     {
         "path":  "tests/fixtures/book-studio-qa-repair-ui.js",
-        "sha256":  "1A5B3AD10D479225A8054838117DAF2BFB001A3AEE21B0F98BB82A481CBACCC7"
+        "sha256":  "DE7A66629F20FC7663D0C401E1173DCC41F78A794F697D76E8FBB64635215C6B"
     },
     {
         "path":  "tests/fixtures/gm1025-pre-v6-editorial.md",

@@ -5027,6 +5027,16 @@ function New-EbookPackage {
     $markdown = ConvertTo-EbookMarkdown -Course $Course -Plan $draftPlan -Sources $Sources -SourceRegistry $sourceRegistry -EngagementPlan $engagementPlan -BrandProfile $BrandProfile
     Write-EbookGeneratorProgress -Phase "Applying plain language pass" -Detail "Checking wording, sentence length, and learner-facing tone."
     $markdown = ConvertTo-PlainLanguageMarkdown -Markdown $markdown -Course $Course
+    # Rebuilding a package normalizes the manuscript to the publication layout
+    # and strips prohibited learner sections, but generation did not, so the
+    # export gates judged a manuscript that had never been through the step
+    # they assume. A book could therefore fail at export and then pass an
+    # unchanged Rebuild Package. Normalize here, before the HTML, the quality
+    # report, and the reviews are derived, so both paths produce one manuscript.
+    Write-EbookGeneratorProgress -Phase "Applying publication layout" -Detail "Normalizing headings to the publication template and removing prohibited learner sections."
+    $markdown = ConvertTo-EbookPublicationMarkdown -Markdown (ConvertTo-EbookBusinessCaseLabel -Markdown $markdown)
+    $markdown = [string](Remove-ProhibitedKnowledgeCheckSections -Markdown $markdown).markdown
+    $markdown = [string](Remove-ProhibitedLearnerSections -Markdown $markdown).markdown
     Write-EbookGeneratorProgress -Phase "Building browser exports" -Detail "Creating the review HTML and local worker payload."
     $html = ConvertTo-SimpleHtmlFromMarkdown -Markdown $markdown -Title "$($Course.courseCode): $($Course.courseName)" -BrandProfile $BrandProfile
     $workerScript = ConvertTo-CloudflareWorkerScript -Html $html -RoutePath "/ebook"
@@ -9274,7 +9284,6 @@ function New-EbookQualityReport {
         # quick visual check, and at least one additional embedded image, the
         # visual study-aid requirement is satisfied.
         $hasVisualStudyAid = $chapterImages.Count -ge 3 -and ($chapterText -match "(?im)^#{2,4}\s+(Visual Model|Visual Models|Visual Study Aid|Embedded\s+Visual Study Aid)\b")
-        $hasInteractiveStudy = $chapterText -match "(?im)^##\s+Interactive Study( Activity)?\b|interactive-study\.html#chapter-$($chapter.number)|interactive study"
 
         [void]$checks.Add([pscustomobject]@{
             name = "learning_objectives"
