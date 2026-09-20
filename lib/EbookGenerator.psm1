@@ -8563,14 +8563,82 @@ function Get-ProhibitedKnowledgeCheckSignals {
     # These are learner-facing assessment/check labels. They are intentionally
     # checked as headings or bold labels so ordinary prose that uses the word
     # "test" is not rejected accidentally.
-    $pattern = "(?im)^\s*(?:#{1,6}\s+|\*\*)?(?:Knowledge Checks?|Check Your Reasoning|Check Your Understanding|Self-Assessment|Quiz|Test|Exam)\b"
-    $matches = @([regex]::Matches([string]$Markdown, $pattern) | ForEach-Object { $_.Value.Trim() })
+    $pattern = 'Knowledge Checks?\b|Check Your Reasoning\b|Check Your Understanding\b|Self-Assessment\b|Quiz\b|Test\b|Exam\b'
+    $matches = @(Get-EbookProhibitedLabelMatch -Markdown $Markdown -Pattern $pattern | ForEach-Object { $_.label })
     return [pscustomobject]@{
         count = $matches.Count
         matches = @($matches)
         status = if ($matches.Count -eq 0) { "PASS" } else { "FAIL" }
         detail = if ($matches.Count -eq 0) { "No prohibited Knowledge Check, Check Your Reasoning, Check Your Understanding, Self-Assessment, Quiz, Test, or Exam labels or sections found." } else { "Found $($matches.Count) prohibited learner-check label/reference(s): $($matches -join '; ')" }
     }
+}
+
+function Get-EbookProtectedObjectiveLines {
+    # The Learning Objectives list has to match the course document word for
+    # word, because objective traceability compares the two exactly. Nothing
+    # that rewrites or flags a prohibited label may touch it. A real course
+    # objective may name the assessment the course actually sets, for example
+    # "completing a structured knowledge check with 80% accuracy".
+    param([AllowEmptyCollection()][AllowEmptyString()][string[]]$Lines = @())
+
+    $protected = New-Object 'System.Collections.Generic.List[bool]'
+    $inObjectives = $false
+    foreach ($line in $Lines) {
+        $heading = [regex]::Match($line, '^(#{1,6})\s+(.+?)\s*$')
+        if ($heading.Success) {
+            $inObjectives = [bool]($heading.Groups[2].Value.Trim() -match '(?i)^learning objectives\b')
+        }
+        $protected.Add($inObjectives)
+    }
+    return ,([bool[]]$protected.ToArray())
+}
+
+function Get-EbookProhibitedLabelMatch {
+    # A prohibited label introduces a section, so it opens a line. Matching the
+    # words anywhere also caught ordinary prose and course objectives, and
+    # failed a whole book over one sentence it was never about.
+    param(
+        [AllowNull()][string]$Markdown,
+        [Parameter(Mandatory)][string]$Pattern
+    )
+
+    $lines = @([string]$Markdown -split "`r?`n")
+    $protected = Get-EbookProtectedObjectiveLines -Lines $lines
+    $opening = '^(?<pre>\s*(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+)?\*{0,2}\s*)'
+    $ignoreCase = [Text.RegularExpressions.RegexOptions]::IgnoreCase
+    $found = New-Object System.Collections.ArrayList
+    for ($index = 0; $index -lt $lines.Count; $index++) {
+        if ($protected[$index]) { continue }
+        foreach ($match in [regex]::Matches($lines[$index], ($opening + '(?<label>(?:' + $Pattern + '))'), $ignoreCase)) {
+            [void]$found.Add([pscustomobject]@{ line = $index; label = $match.Groups['label'].Value.Trim() })
+        }
+    }
+    return @($found)
+}
+
+function Edit-EbookProhibitedLabel {
+    param(
+        [AllowNull()][string]$Markdown,
+        [Parameter(Mandatory)][object[]]$Replacements
+    )
+
+    $lines = @([string]$Markdown -split "`r?`n")
+    $protected = Get-EbookProtectedObjectiveLines -Lines $lines
+    $opening = '^(?<pre>\s*(?:[-*+]\s+|\d+[.)]\s+)?\*{0,2}\s*)'
+    $ignoreCase = [Text.RegularExpressions.RegexOptions]::IgnoreCase
+    $count = 0
+    for ($index = 0; $index -lt $lines.Count; $index++) {
+        if ($protected[$index]) { continue }
+        if ($lines[$index] -match '^#{1,6}\s+') { continue }
+        foreach ($replacement in $Replacements) {
+            $pattern = $opening + '(?:' + $replacement.pattern + ')'
+            $matched = @([regex]::Matches($lines[$index], $pattern, $ignoreCase))
+            if ($matched.Count -eq 0) { continue }
+            $count += $matched.Count
+            $lines[$index] = [regex]::Replace($lines[$index], $pattern, ('${pre}' + $replacement.text), $ignoreCase)
+        }
+    }
+    return [pscustomobject]@{ markdown = ($lines -join "`r`n"); count = $count }
 }
 
 function Remove-ProhibitedKnowledgeCheckSections {
@@ -8600,25 +8668,26 @@ function Remove-ProhibitedKnowledgeCheckSections {
     }
 
     $cleanedMarkdown = ($kept -join "`r`n")
-    $labelPattern = "(?i)\bKnowledge Checks?\b|\bCheck Your Reasoning\b|\bCheck Your Understanding\b"
-    $labelMatches = @([regex]::Matches($cleanedMarkdown, $labelPattern))
-    $cleanedMarkdown = $cleanedMarkdown -replace "(?i)\bKnowledge Checks?\b", "review activities"
-    $cleanedMarkdown = $cleanedMarkdown -replace "(?i)\bCheck Your Reasoning\b", "guided reflection"
-    $cleanedMarkdown = $cleanedMarkdown -replace "(?i)\bCheck Your Understanding\b", "guided review"
+    $labelEdit = Edit-EbookProhibitedLabel -Markdown $cleanedMarkdown -Replacements @(
+        @{ pattern = 'Knowledge Checks?\b'; text = 'review activities' },
+        @{ pattern = 'Check Your Reasoning\b'; text = 'guided reflection' },
+        @{ pattern = 'Check Your Understanding\b'; text = 'guided review' }
+    )
+    $cleanedMarkdown = [string]$labelEdit.markdown
 
     return [pscustomobject]@{
         markdown = $cleanedMarkdown
         removedCount = $removedSections.Count
         removedSections = @($removedSections)
-        replacedLabelCount = $labelMatches.Count
+        replacedLabelCount = $labelEdit.count
     }
 }
 
 function Get-ProhibitedLearnerSectionSignals {
     param([AllowNull()][string]$Markdown)
 
-    $pattern = "(?i)\bReflection Activity\b|\bWorkplace Challenge\b|\bThis Week.?s Challenge\b|\bChapter Summary\b"
-    $matches = @([regex]::Matches([string]$Markdown, $pattern) | ForEach-Object { $_.Value.Trim() })
+    $pattern = 'Reflection Activity\b|Workplace Challenge\b|This Week.?s Challenge\b|Chapter Summary\b'
+    $matches = @(Get-EbookProhibitedLabelMatch -Markdown $Markdown -Pattern $pattern | ForEach-Object { $_.label })
     $reflectionCount = @($matches | Where-Object { $_ -match "(?i)Reflection Activity" }).Count
     $workplaceCount = @($matches | Where-Object { $_ -match "(?i)Workplace Challenge" }).Count
     $challengeCount = @($matches | Where-Object { $_ -match "(?i)This Week.?s Challenge" }).Count
@@ -8671,20 +8740,21 @@ function Remove-ProhibitedLearnerSections {
     }
 
     $cleanedMarkdown = ($kept -join "`r`n")
-    $labelPattern = "(?i)\bReflection Activity\b|\bWorkplace Challenge\b|\bThis Week.?s Challenge\b|\bWorkplace Application\b|\bChapter Summary\b"
-    $labelMatches = @([regex]::Matches($cleanedMarkdown, $labelPattern))
-    $cleanedMarkdown = $cleanedMarkdown -replace "(?i)\bReflection Activity\b", "guided reflection"
-    $cleanedMarkdown = $cleanedMarkdown -replace "(?i)\bWorkplace Challenge\b", "applied example"
-    $cleanedMarkdown = $cleanedMarkdown -replace "(?i)\bThis Week.?s Challenge\b", "chapter application"
-    $cleanedMarkdown = $cleanedMarkdown -replace "(?i)\bWorkplace Application\b", "applied example"
-    $cleanedMarkdown = $cleanedMarkdown -replace "(?i)\bChapter Summary\b", "Synthesis"
+    $labelEdit = Edit-EbookProhibitedLabel -Markdown $cleanedMarkdown -Replacements @(
+        @{ pattern = 'Reflection Activity\b'; text = 'guided reflection' },
+        @{ pattern = 'Workplace Challenge\b'; text = 'applied example' },
+        @{ pattern = 'This Week.?s Challenge\b'; text = 'chapter application' },
+        @{ pattern = 'Workplace Application\b'; text = 'applied example' },
+        @{ pattern = 'Chapter Summary\b'; text = 'Synthesis' }
+    )
+    $cleanedMarkdown = [string]$labelEdit.markdown
 
     return [pscustomobject]@{
         markdown = $cleanedMarkdown
         removedCount = $removedSections.Count
         removedSections = @($removedSections)
         replacedChapterSummaryCount = $replacedChapterSummaryCount
-        replacedLabelCount = $labelMatches.Count
+        replacedLabelCount = $labelEdit.count
     }
 }
 

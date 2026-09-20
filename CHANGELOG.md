@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.20.2 (2026-09-20)
+
+- Course learning objectives are kept word for word when prohibited learner sections are removed, so a book whose objective names a knowledge check no longer fails objective traceability. Prohibited labels are matched only where they open a line, so ordinary prose that mentions a chapter summary no longer fails a book.
+
 ## v2026.09.20.1 (2026-09-20)
 
 - Generating a book now applies the same publication normalization that Rebuild Package applies, so the export gates judge the manuscript that ships. A finished book no longer fails at export for a heading the rebuild would have cleaned. Stop Codex request is offered after View repair conversation and is covered by the browser tests.

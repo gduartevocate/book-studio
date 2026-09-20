@@ -91,5 +91,43 @@ $module = Get-Module EbookGenerator
     Check (@($normalizedTemplate).Count -eq 0) "The normalized manuscript still trips the publication template gate: $normalizedTemplate"
     Check ($normalized -match 'Payers coordinate benefits') 'Normalization discarded ordinary chapter prose.'
 
+    # A real MI1000 objective reads "completing a structured knowledge check
+    # with 80% accuracy". Rewriting the prohibited words wherever they appeared
+    # changed the rendered objective, and objective traceability then refused
+    # the book because it no longer matched the course document exactly.
+    $objective = 'Demonstrate correct use of payer terminology by completing a structured knowledge check with ' + [char]0x2265 + ' 80% accuracy.'
+    $withObjective = @(
+        '# Chapter 1: Health Insurance and Payer Ecosystem', '',
+        '### Learning Objectives', '',
+        '1. Identify major U.S. payer types and basic plan structures.',
+        "2. $objective", '',
+        '### Section 1.1 - Understanding the context', '',
+        'Members review the chapter summary before their annual enrollment meeting.', '',
+        '## Knowledge Check', '', 'Name three payer types.', '',
+        '**Reflection Activity:** write a paragraph.', ''
+    ) -join "`r`n"
+    $cleanedOnce = [string](Remove-ProhibitedKnowledgeCheckSections -Markdown $withObjective).markdown
+    $cleaned = [string](Remove-ProhibitedLearnerSections -Markdown $cleanedOnce).markdown
+    Check ($cleaned.Contains($objective)) 'Cleaning rewrote a course objective, which objective traceability compares word for word.'
+    Check ($cleaned -match 'review the chapter summary before their annual') 'Cleaning rewrote ordinary prose that merely names a chapter summary.'
+    Check (-not ($cleaned -match '(?im)^##\s+Knowledge Check')) 'A prohibited section heading survived cleaning.'
+    Check (-not ($cleaned -match '(?i)Reflection Activity')) 'A prohibited label that opens a line survived cleaning.'
+    Check ((Get-ProhibitedKnowledgeCheckSignals -Markdown $cleaned).status -eq 'PASS') 'The cleaned manuscript still trips the knowledge-check gate.'
+    Check ((Get-ProhibitedLearnerSectionSignals -Markdown $cleaned).status -eq 'PASS') 'The cleaned manuscript still trips the learner-section gate.'
+    # The gates must agree with the cleaners, or export refuses text the
+    # cleaners deliberately kept.
+    $objectiveOnly = @('### Learning Objectives', '', "1. $objective", '', '### Section 1.1 - Context', '', 'Members sit a short quiz test at the clinic.', '') -join "`r`n"
+    Check ((Get-ProhibitedKnowledgeCheckSignals -Markdown $objectiveOnly).status -eq 'PASS') 'The knowledge-check gate flagged a course objective or ordinary prose.'
+    Check ((Get-ProhibitedLearnerSectionSignals -Markdown "Members review the chapter summary each term.").status -eq 'PASS') 'The learner-section gate flagged ordinary prose.'
+    Check ((Get-ProhibitedLearnerSectionSignals -Markdown "## Chapter Summary").count -ge 1) 'The learner-section gate stopped seeing a prohibited heading.'
+    $records = @(
+        [pscustomobject]@{ objectiveId = '1'; objective = 'Identify major U.S. payer types and basic plan structures.' },
+        [pscustomobject]@{ objectiveId = '7'; objective = $objective }
+    )
+    $objectiveCourse = [pscustomobject]@{ courseName = 'Payer Systems'; weeks = @([pscustomobject]@{ number = 1; modules = $records }) }
+    $objectivePlan = [pscustomobject]@{ chapters = @([pscustomobject]@{ number = 1; learningTargetRecords = $records }) }
+    $trace = Test-EbookObjectiveTraceability $objectiveCourse $objectivePlan $cleaned
+    Check ($trace.status -eq 'PASS') "A cleaned manuscript must keep objective traceability: $(@($trace.issues) -join ' ')"
+
     Write-Output "PASS: $script:checksRun publication regression assertions."
 }
