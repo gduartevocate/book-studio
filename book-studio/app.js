@@ -354,6 +354,10 @@ function recentProgressEntries(job) {
 }
 
 function isJobProcessing(job) {
+  // A book waiting for its outcome review has no runner and never will until a
+  // person approves it. Reporting it as processing hides the review panel's
+  // action, disables the header button, and forces a re-render on every poll.
+  if (String(job?.workflowStage || "") === "outcomes-analysis" && !job?.runnerProcessId) return false;
   return activeStatuses.has(job.status);
 }
 

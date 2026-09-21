@@ -267,6 +267,28 @@ function Get-BookStudioJob {
     return @($db.jobs | Where-Object { $_.id -eq $JobId } | Select-Object -First 1)[0]
 }
 
+function Repair-BookStudioParkedJobs {
+    # Books created before the outcome review had its own status were stored as
+    # "Queued" while parked at that stage. Nothing ever dequeues them, so they
+    # report generation in progress and cannot be deleted. Normalize them when
+    # they are read, rather than migrating the database.
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$DatabasePath)
+
+    $repairedState = @{ value = $false }
+    Invoke-BookStudioDatabaseLock -DatabasePath $DatabasePath -ScriptBlock {
+        $db = Read-BookStudioDatabase -DatabasePath $DatabasePath
+        foreach ($job in @($db.jobs)) {
+            if ($job.workflowStage -ne 'outcomes-analysis' -or $job.status -ne 'Queued' -or $job.runnerProcessId) { continue }
+            $job.status = 'Review'
+            $job.updatedAt = (Get-Date).ToString('s')
+            $repairedState.value = $true
+        }
+        if ($repairedState.value) { Write-BookStudioDatabase -DatabasePath $DatabasePath -Database $db }
+    }
+    return [bool]$repairedState.value
+}
+
 function Repair-BookStudioStaleRunnerJobs {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$DatabasePath)
@@ -1028,7 +1050,11 @@ function New-BookStudioJob {
     $now = (Get-Date).ToString("s")
     $job = [pscustomobject]@{
         id = $jobId
-        status = "Queued"
+        # A book waiting for its outcome review is not queued for anything; it
+        # waits for a person. "Queued" made the app report generation in
+        # progress, refuse to delete the book, and rebuild the review panel on
+        # every poll, which wiped whatever the designer had typed into it.
+        status = $(if ($needsOutcomeAnalysis) { "Review" } else { "Queued" })
         courseDocumentKind = $validated.courseDocumentKind
         outcomeAnalysis = $outcomeAnalysis
         workflowStage = if ($needsOutcomeAnalysis) { "outcomes-analysis" } else { "format-review" }
@@ -5013,6 +5039,7 @@ function Start-BookStudioServer {
 
             if ($request.HttpMethod -eq "GET" -and $path -eq "/api/jobs") {
                 Repair-BookStudioStaleRunnerJobs -DatabasePath $DatabasePath | Out-Null
+                Repair-BookStudioParkedJobs -DatabasePath $DatabasePath | Out-Null
                 # A Codex runner that died leaves its request Running, which blocks
                 # deletion and makes the book look busy forever. Reconcile it here;
                 # this never starts, kills, or rebuilds anything.
@@ -5648,6 +5675,7 @@ function Start-BookStudioServer {
 
             if ($path -match "^/api/jobs/([^/]+)$" -and $request.HttpMethod -eq "GET") {
                 Repair-BookStudioStaleRunnerJobs -DatabasePath $DatabasePath | Out-Null
+                Repair-BookStudioParkedJobs -DatabasePath $DatabasePath | Out-Null
                 # A Codex runner that died leaves its request Running, which blocks
                 # deletion and makes the book look busy forever. Reconcile it here;
                 # this never starts, kills, or rebuilds anything.
@@ -5675,4 +5703,5 @@ function Start-BookStudioServer {
     }
 }
 
+Export-ModuleMember -Function Repair-BookStudioParkedJobs
 Export-ModuleMember -Function Initialize-BookStudioDatabase, Read-BookStudioDatabase, Write-BookStudioDatabase, Get-BookStudioJob, Update-BookStudioJob, Set-BookStudioJobLifecycle, Remove-BookStudioJob, Add-BookStudioLogEntry, Set-BookStudioJobProgress, New-BookStudioJob, Start-BookStudioJob, Start-BookStudioServer, Get-BookStudioDatabasePath, Get-BookStudioVisualManifest, Get-BookStudioDistPackages, Import-BookStudioPackageJob, Import-BookStudioPackageArchiveJob, Refresh-BookStudioJobArtifacts, Invoke-BookStudioPackageRebuild, Set-BookStudioVisualReplacementAsset, Resolve-BookStudioCodexCommand, Set-BookStudioCodexPath, Get-BookStudioCodexStatus, Get-BookStudioCodexPromptManifest, Get-BookStudioVisualReviews, Set-BookStudioVisualReview, Export-BookStudioVisualReviewReport, Initialize-BookStudioChapterSources, Get-BookStudioChapterContent, Set-BookStudioChapterContent, New-BookStudioSmeReviewPackage, Publish-BookStudioSmeReviewToCloudflare, Get-BookStudioSmeReviewFeedbackFromCloudflare, Get-BookStudioAiRequests, New-BookStudioAiRequest, New-BookStudioFormatPreview, Get-BookStudioOutline, Set-BookStudioOutline, Set-BookStudioFormatReview, Get-BookStudioUpdateStatus, Start-BookStudioUpdate, Get-BookStudioUpdateProgress, Get-BookStudioInstallPathStatus, Resolve-BookStudioNativeCodexExecutable, Test-BookStudioFileSystemLink, Repair-BookStudioMovedPaths, Get-BookStudioRebasedPath, Stop-BookStudioAiRequest, Repair-BookStudioStaleAiRequests, Get-BookStudioOutcomeAnalysis, Start-BookStudioOutcomeAnalysis, Get-BookStudioOutcomeAnalysisPreview, Set-BookStudioOutcomeAnalysis, Save-BookStudioCourseFacts, New-BookStudioOutcomeAnalysisState

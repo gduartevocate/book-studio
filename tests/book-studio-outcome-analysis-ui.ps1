@@ -5,11 +5,12 @@ if(-not $browser){throw 'Chrome or Edge is required.'}
 $fixture=Join-Path ([IO.Path]::GetTempPath()) ('bs-outcome-analysis-ui-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $fixture | Out-Null
 $encoded=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([IO.File]::ReadAllText((Join-Path $root 'book-studio/outcome-analysis.js'))))
+$appEncoded=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([IO.File]::ReadAllText((Join-Path $root 'book-studio/app.js'))))
 $html=@'
 <!doctype html><meta charset="utf-8"><body>RUNNING<script>
 (async () => { try {
   const decode=text=>new TextDecoder().decode(Uint8Array.from(atob(text), c=>c.charCodeAt(0)));
-  const source=decode('__SCRIPT__');
+  const source=decode('__SCRIPT__'), app=decode('__APP__');
   // A real dialog blocks headless Chrome forever, so the panel must never open one.
   for(const name of ['confirm','alert','prompt']) window[name]=()=>{throw new Error('The outcome review opened a blocking '+name+' dialog');};
   const makeElement=(tag,cls,text)=>{const e=document.createElement(tag);e.className=cls;if(text)e.textContent=text;return e;};
@@ -86,6 +87,34 @@ $html=@'
   draw({id:'fixture'},third,drifted);
   if(!third.textContent.includes('CO2 was reworded'))throw new Error('A reworded course objective was not reported to the designer');
 
+  // A book parked at its outcome review has no runner. Reported as processing,
+  // its review action disappears and the list re-renders on every poll.
+  const busyAt=app.indexOf('function isJobProcessing(job) {');
+  if(busyAt<0)throw new Error('isJobProcessing not found in app.js');
+  const busySource=[app.slice(busyAt, app.indexOf(String.fromCharCode(10)+'}', busyAt)+2)];
+  const isBusy=new Function('activeStatuses',busySource[0]+';return isJobProcessing;')(new Set(['Queued','Running']));
+  if(isBusy({workflowStage:'outcomes-analysis',status:'Queued'}))throw new Error('A book parked at its outcome review reports as generating');
+  if(isBusy({workflowStage:'outcomes-analysis',status:'Review'}))throw new Error('A parked book with its own status reports as generating');
+  if(!isBusy({workflowStage:'outcomes-analysis',status:'Running',runnerProcessId:42}))throw new Error('A book with a live runner must still report as busy');
+  if(!isBusy({workflowStage:'generating',status:'Running'}))throw new Error('A generating book must report as busy');
+
+  // Re-rendering must not discard a half-written review.
+  const refresh=new Function('makeElement','api','runJob','loadJobs',source+';return refreshOutcomeAnalysisPanel;')(makeElement,api,runJob,loadJobs);
+  const live=document.createElement('div');document.body.append(live);
+  await refresh({id:'fixture'},live);
+  const typed=live.querySelector('.outline-editor-panel textarea');
+  typed.value='CO1: half-written edit in progress';
+  const typedAssignment=[...live.querySelectorAll('.outline-editor-panel input')].filter(i=>i.type!=='checkbox')[0];
+  typedAssignment.value='LO1.1';
+  await refresh({id:'fixture'},live);
+  await refresh({id:'fixture'},live);
+  const after=live.querySelector('.outline-editor-panel textarea');
+  if(after.value!=='CO1: half-written edit in progress')throw new Error('A poll rebuilt the panel and discarded the designer edit');
+  if([...live.querySelectorAll('.outline-editor-panel input')].filter(i=>i.type!=='checkbox')[0].value!=='LO1.1')throw new Error('A poll discarded the chapter assignment being edited');
+  analysis.status='Failed';analysis.errorDetail='Analysis stopped.';
+  await refresh({id:'fixture'},live);
+  if(!live.textContent.includes('Analysis stopped.'))throw new Error('A changed analysis did not redraw the panel');
+
   // Once the book moves on, the approved outcomes and the reusable course
   // file must still be reachable.
   const render=new Function('makeElement','api','runJob','loadJobs','formatDate',source+';return renderOutcomeAnalysisPanel;')(makeElement,api,runJob,loadJobs,v=>v);
@@ -103,7 +132,7 @@ $html=@'
 </script>
 '@
 $page=Join-Path $fixture 'test.html'
-$html.Replace('__SCRIPT__',$encoded) | Set-Content -LiteralPath $page -Encoding UTF8
+$html.Replace('__SCRIPT__',$encoded).Replace('__APP__',$appEncoded) | Set-Content -LiteralPath $page -Encoding UTF8
 $stdout=Join-Path $fixture 'stdout.txt';$stderr=Join-Path $fixture 'stderr.txt'
 $args=@('--headless','--disable-gpu','--disable-extensions','--no-first-run','--no-default-browser-check','--virtual-time-budget=5000','--dump-dom',('--user-data-dir="'+(Join-Path $fixture 'profile')+'"'),('"'+([uri]$page).AbsoluteUri+'"'))
 $process=Start-Process -FilePath $browser -ArgumentList $args -PassThru -WindowStyle Hidden -RedirectStandardOutput $stdout -RedirectStandardError $stderr

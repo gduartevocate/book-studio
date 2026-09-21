@@ -72,6 +72,7 @@ function renderOutcomeAnalysisPanel(job, panel) {
     stopOutcomeAnalysisPolling(job.id);
     panel.textContent = "";
     delete panel.dataset.loaded;
+    delete panel.dataset.analysisFingerprint;
     if (String(job?.outcomeAnalysis?.status || "") !== "Approved") {
       panel.hidden = true;
       return;
@@ -92,10 +93,22 @@ function renderOutcomeAnalysisPanel(job, panel) {
   });
 }
 
+function outcomeAnalysisFingerprint(analysis) {
+  return [analysis.status, analysis.completedAt, analysis.approvedAt, analysis.errorDetail,
+    String(analysis.catalogText || "").length, (analysis.findings || []).length].join("|");
+}
+
 async function refreshOutcomeAnalysisPanel(job, panel) {
   const analysis = await api(`/api/jobs/${job.id}/outcome-analysis`);
+  // Redraw only when the analysis actually changed. This panel is re-rendered
+  // on every poll, and rebuilding it discards whatever the designer has typed
+  // into the outcome editor mid-review.
+  const fingerprint = outcomeAnalysisFingerprint(analysis);
+  if (panel.dataset.loaded !== "true" || panel.dataset.analysisFingerprint !== fingerprint) {
+    drawOutcomeAnalysisPanel(job, panel, analysis);
+    panel.dataset.analysisFingerprint = fingerprint;
+  }
   panel.dataset.loaded = "true";
-  drawOutcomeAnalysisPanel(job, panel, analysis);
   stopOutcomeAnalysisPolling(job.id);
   if (analysis.status === "Analyzing") {
     outcomeAnalysisPollTimers.set(job.id, window.setTimeout(() => {

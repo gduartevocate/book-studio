@@ -1,5 +1,11 @@
 # Book Studio ID Changelog
 
+## v2026.09.21.3 (2026-09-21)
+
+- Fix: a book waiting for its course-outcome review no longer reports "Generation in progress". It was created with a runner status, so the app claimed it was generating, hid the review action, refused to delete the book, and re-rendered the page on every poll. That re-render is what made the page blink, and it discarded anything typed into the outcome editor mid-review.
+- Books already stored in that state are repaired automatically when the book list is read.
+- The outcome review panel now redraws only when the analysis actually changes, so a background refresh cannot wipe a half-written review.
+
 ## v2026.09.21.2 (2026-09-21)
 
 - Fix: approving course outcomes now writes the Word version of the Course Outcomes document. In v2026.09.21.1 the Word export failed silently and only the Markdown files were produced; the approval itself was never at risk.

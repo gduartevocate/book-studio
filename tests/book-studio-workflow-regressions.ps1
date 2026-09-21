@@ -57,6 +57,14 @@ Check ($manyJob.intake.readFiles -eq 24) 'The old 20-file silent cap remains.'
 $draftJob=New-BookStudioJob -ProjectRoot $fixture -DatabasePath $db -Request ([pscustomobject]@{title='Office Workflow Draft';courseCode='QA1000';primaryFileIndex=0;courseDocumentKind='CurriculumDraft';files=@($first,$second)})
 Check ($draftJob.workflowStage -eq 'outcomes-analysis') "A curriculum draft waits for its outcome review (got '$($draftJob.workflowStage)')."
 Check ($draftJob.courseDocumentKind -eq 'CurriculumDraft' -and $draftJob.outcomeAnalysis.status -eq 'Not analyzed') 'The outcome-analysis state is recorded on the job.'
+# A parked book is not queued for a runner. Reported as Queued it claims to be
+# generating, and its own deletion refuses because the app thinks it is busy.
+Check ($draftJob.status -eq 'Review') "A book waiting for its outcome review must not report a runner status (got '$($draftJob.status)')."
+$stuck=Update-BookStudioJob -DatabasePath $db -JobId $draftJob.id -Update { param($j) $j.status='Queued' }
+Reject {Remove-BookStudioJob -DatabasePath $db -JobId $draftJob.id -DeleteFiles} 'still generating'
+Check (Repair-BookStudioParkedJobs -DatabasePath $db) 'A book left parked as Queued was not repaired.'
+Check ((Get-BookStudioJob -DatabasePath $db -JobId $draftJob.id).status -eq 'Review') 'The repair did not clear the runner status from a parked book.'
+Check (-not (Repair-BookStudioParkedJobs -DatabasePath $db)) 'The parked-book repair reported work when there was none.'
 $facts=Get-Content -LiteralPath (Join-Path $draftJob.sourceContextPath 'book-studio-course-facts.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 Check (@($facts.courseObjectives).Count -eq 2 -and $facts.courseObjectives[0].objectiveId -eq 'CO1') 'The draft course objectives are recorded at intake, before any amendment exists.'
 Check ($facts.courseObjectives[0].objective -eq 'Organize office records using clear naming rules.') 'The recorded course objective keeps the course document wording.'
@@ -84,7 +92,8 @@ Reject {Get-BookStudioOutcomeAnalysisPreview -Job (Get-BookStudioJob -DatabasePa
 Reject {Set-BookStudioOutcomeAnalysis -DatabasePath $db -JobId $draftJob.id -Request ([pscustomobject]@{text=$catalog;assignments=$assign;confirm=$false;reviewedBy='Fixture ID';reason='Reviewed'})} 'Confirm that you reviewed'
 Reject {Set-BookStudioOutcomeAnalysis -DatabasePath $db -JobId $draftJob.id -Request ([pscustomobject]@{text=$catalog;assignments=$assign;confirm=$true;reviewedBy='';reason='Reviewed'})} 'Enter your name'
 $approved=Set-BookStudioOutcomeAnalysis -DatabasePath $db -JobId $draftJob.id -Request ([pscustomobject]@{text=$catalog;assignments=$assign;confirm=$true;reviewedBy='Fixture ID';reason='Reviewed against the draft'})
-Check ($approved.status -eq 'Approved' -and $approved.workflowStage -eq 'format-review') "Approval releases the book to planning (got '$($approved.status)'/'$($approved.workflowStage)')."
+Check ($approved.status -eq 'Approved' -and $approved.workflowStage -eq 'format-review') "Approval releases the book to planning (got '$($approved.status)'/'$($approved.workflowStage)').
+Check ((Get-BookStudioJob -DatabasePath $db -JobId $draftJob.id).status -eq 'Queued') 'Approval did not hand the book back to the normal queued/run path.'"
 $revisionPath=Join-Path $draftJob.sourceContextPath 'book-studio-outcomes.json'
 Check (Test-Path -LiteralPath $revisionPath) 'The approved amendment was not written beside the upload.'
 $revised=Import-CourseSpec -Path $draftJob.specPath

@@ -410,6 +410,8 @@ function Set-BookStudioOutcomeAnalysis {
         Add-OrSet-BookStudioNoteProperty $state 'documents' @($documents.ToArray())
         Add-OrSet-BookStudioNoteProperty $current 'workflowStage' 'format-review'
         Add-OrSet-BookStudioNoteProperty $current 'workflowStatus' 'Preparing format preview'
+        # Back on the normal path: the format preview is queued from here.
+        Add-OrSet-BookStudioNoteProperty $current 'status' 'Queued'
         $current.log = @($current.log) + [pscustomobject]@{
             at = (Get-Date).ToString('s')
             message = "$reviewedBy approved $($preview.uniqueOutcomes) course/learning outcome(s) across $(@($preview.chapters).Count) chapter(s). Course objectives were reproduced word for word. No manuscript was generated."
