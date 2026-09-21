@@ -4,6 +4,8 @@ Dependency-light PowerShell generator for education-based ebooks. It reads a cou
 
 The generator also loads the UMA brand implementation profile in `config/uma-brand-profile.json`, derived from `2023_UMA_Full_Brand_Guide_V3.pdf`, so content tone, typography, colors, visual prompts, HTML styling, Word styling, and engagement assets follow UMA brand direction.
 
+Before changing any code, read `AGENTS.md`. It holds the contributor rules for this repository, including the private development repository versus public distribution repository split, how the gates and manuscript cleaners must agree, how to run the regression suites, and the Windows and PowerShell traps that have broken real books. It applies to everyone working on this project, human or AI.
+
 ## Quick Start
 
 ```powershell
@@ -56,6 +58,17 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\book-studio.ps1
 Designers install Book Studio from the distribution repository (`git clone https://github.com/gduartevocate/book-studio`) and update it from **Settings > Updates**, which fast-forwards the clone and restarts the server. Publish a release from this repository with `.\Publish-BookStudioRelease.ps1 -Version YYYY.MM.DD.N -Notes "..."`; it builds the package, mirrors only the staged files into the sibling `book-studio` folder, commits, tags, and pushes. This repository stays private. See `tests/book-studio-update-regressions.ps1`.
 
 Open `http://localhost:8790/` and use **My books** as the starting point. Select a book to continue its current stage, choose **New book** to move through the guided course-details, source-document, and production-preference steps, or import an existing package. Book Studio first creates a blueprint-only format preview. Review and approve that preview before the full manuscript is generated. The active book workspace then exposes chapter review, artifacts, QA evidence, SME handoff, and delivery actions as they become relevant.
+
+Step 2 of **New book** asks what kind of document the authoritative course file is, and the answer decides whether the book gets an outcome review first.
+
+- **Ebook-ready course file** — the document already states the final course and learning objectives per week (the RB1000-style spec sheet). Book Studio goes straight to the format preview, exactly as before.
+- **Curriculum draft** — the document is what the academic team hands over, with course objectives that are approved and weekly learning objectives written for course delivery. The book stops at a new **Course objectives and learning objectives** review before anything is planned.
+
+In that review, **Analyze with Codex** reads the draft and proposes a reworked outcome set: every course objective reproduced character for character, two to four measurable `LO<n>.<m>` learning objectives beneath each one, a chapter assignment for every outcome, and notes on what was wrong with the draft. Nothing is applied. The designer edits the proposal, assigns outcomes to chapters, enters their name and reason, and approves; only then does the format preview run. Codex is optional here: with no connection the editor still opens, prefilled with the course objectives as the draft states them, and the designer can write the learning objectives by hand.
+
+Course objectives are the academic team's words, so approval is refused while any of them is reworded, dropped, or invented. The refusal names the objective and quotes both the document's wording and the suggestion. Whitespace differences from a Word table cell are not a rewrite; casing and punctuation are. Chapters stay as the draft's weeks: the analysis renumbers objectives, never chapters.
+
+Approval writes the same `book-studio-outcomes.json` amendment the post-preview outcome replacement writes, so one code path reads outcomes whichever review produced them. It also writes two documents into the job's upload folder: a `<CODE> - Course Outcomes.md/.docx` record of what was approved and why, and a `<CODE> - Ebook Course File.md` in the ebook-ready layout, which can be uploaded as the authoritative document for a later book to skip the analysis. `tests/outcome-analysis-regressions.ps1` proves that file reads back as the same chapters and objectives; `tests/book-studio-outcome-analysis-ui.ps1` covers the review panel.
 
 Two course-document layouts are accepted as the spec: the line-based spec sheet (titled `Week N` headings with objective tables, as in the GM1000 spec sheet) and the week-per-column Course Blueprint grid (a `Week 1`..`Week N` header row with Weekly Topics, Course Objectives, and Learning Objectives rows, as in the RB1010 curriculum draft). Blueprint weeks become chapters titled from Weekly Topics, with `LO#` identifiers kept for traceability; a week without learning objectives falls back to its mapped `CO#` objectives. `tests/course-blueprint-regressions.ps1` covers both layouts.
 

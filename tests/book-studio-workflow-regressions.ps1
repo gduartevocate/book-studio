@@ -32,7 +32,7 @@ foreach($bad in @((Upload 'scan.pdf' 'pdf'),(Upload 'empty.txt' ''),[pscustomobj
     Reject {& $studio {param($r) Test-BookStudioUploadRequest $r} ([pscustomobject]@{files=@($bad)})} 'Unsupported|nonempty|Invalid upload'
 }
 $db=Initialize-BookStudioDatabase -ProjectRoot $fixture
-$job=New-BookStudioJob -ProjectRoot $fixture -DatabasePath $db -Request ([pscustomobject]@{title='Office Workflow Fixture';courseCode='QA1000';primaryFileIndex=0;files=@($first,$second);specialInstructions='Use plain language and preserve all objectives.';useCodexDrafting=$false;useCodexImages=$false})
+$job=New-BookStudioJob -ProjectRoot $fixture -DatabasePath $db -Request ([pscustomobject]@{title='Office Workflow Fixture';courseCode='QA1000';primaryFileIndex=0;courseDocumentKind='EbookReady';files=@($first,$second);specialInstructions='Use plain language and preserve all objectives.';useCodexDrafting=$false;useCodexImages=$false})
 Check ($job.options.sourceMode -eq 'UploadedOnly' -and $job.options.skipResearch -and $job.options.skipOpenStaxFetch) 'New jobs did not default to uploaded-only mode.'
 Check (($job.uploadedFiles.path | Select-Object -Unique).Count -eq 3) 'Duplicate filenames overwrote each other.'
 Check ((Get-Content -LiteralPath $job.uploadedFiles[0].path -Raw -Encoding UTF8) -eq $spec) 'The blueprint was overwritten.'
@@ -47,9 +47,56 @@ Reject {Import-SourceContext -Path $job.sourceContextPath -StrictCoverage -Inclu
 $empty=Join-Path $fixture 'blank.txt';'   ' | Set-Content -LiteralPath $empty
 Reject {Import-SourceContext -Path $fixture -StrictCoverage -IncludedPaths @($empty)} 'readable'
 $many=@(1..24 | ForEach-Object {Upload "reading$_.txt" "Office workflow reading $_ contains distinct evidence about task ownership and records."})
-$manyJob=New-BookStudioJob -ProjectRoot $fixture -DatabasePath $db -Request ([pscustomobject]@{files=$many;primaryFileIndex=0})
+$manyJob=New-BookStudioJob -ProjectRoot $fixture -DatabasePath $db -Request ([pscustomobject]@{files=$many;primaryFileIndex=0;courseDocumentKind='EbookReady'})
 Check $manyJob.options.useCodexImages 'Server-side job creation did not default real image generation on.'
 Check ($manyJob.intake.readFiles -eq 24) 'The old 20-file silent cap remains.'
+
+# A curriculum draft is not planned until its learning objectives have been
+# reviewed. Planning first builds a whole preview against the draft's delivery
+# objectives, which then has to be thrown away and rebuilt.
+$draftJob=New-BookStudioJob -ProjectRoot $fixture -DatabasePath $db -Request ([pscustomobject]@{title='Office Workflow Draft';courseCode='QA1000';primaryFileIndex=0;courseDocumentKind='CurriculumDraft';files=@($first,$second)})
+Check ($draftJob.workflowStage -eq 'outcomes-analysis') "A curriculum draft waits for its outcome review (got '$($draftJob.workflowStage)')."
+Check ($draftJob.courseDocumentKind -eq 'CurriculumDraft' -and $draftJob.outcomeAnalysis.status -eq 'Not analyzed') 'The outcome-analysis state is recorded on the job.'
+$facts=Get-Content -LiteralPath (Join-Path $draftJob.sourceContextPath 'book-studio-course-facts.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+Check (@($facts.courseObjectives).Count -eq 2 -and $facts.courseObjectives[0].objectiveId -eq 'CO1') 'The draft course objectives are recorded at intake, before any amendment exists.'
+Check ($facts.courseObjectives[0].objective -eq 'Organize office records using clear naming rules.') 'The recorded course objective keeps the course document wording.'
+Check ($job.workflowStage -eq 'format-review' -and $job.courseDocumentKind -eq 'EbookReady') 'An ebook-ready course file still goes straight to the format preview.'
+Set-Content -LiteralPath (Join-Path $fixture 'book-studio-runner.ps1') -Value '# fixture runner' -Encoding UTF8
+Reject {Start-BookStudioJob -DatabasePath $db -JobId $draftJob.id -ProjectRoot $fixture -RunMode 'Blueprint'} 'approve this course'
+Reject {& $studio {param($d,$i) Start-BookStudioOutcomeAnalysis -DatabasePath $d -JobId $i -ProjectRoot 'X:\missing'} $db $job.id} 'ebook-ready course file'
+
+# Approving the reviewed outcomes, with no Codex anywhere in the path. The
+# designer can always write the outcomes by hand, so the stage must complete
+# without one.
+$catalog=@'
+CO1: Organize office records using clear naming rules.
+LO1.1: Identify the record types an office keeps.
+LO1.2: Name a record using the office naming convention.
+CO2: Coordinate office workflow using task ownership.
+LO2.1: Assign an owner to each workflow step.
+'@
+$assign=@([pscustomobject]@{number=1;ids='CO1'},[pscustomobject]@{number=2;ids='CO2'})
+$preview=Get-BookStudioOutcomeAnalysisPreview -Job (Get-BookStudioJob -DatabasePath $db -JobId $draftJob.id) -Request ([pscustomobject]@{text=$catalog;assignments=$assign})
+Check (@($preview.chapters).Count -eq 2 -and @($preview.chapters[0].records).Count -eq 2) 'The preview resolves each chapter from the reviewed outcomes.'
+Check (@($preview.chapters[0].previous | ForEach-Object {$_.objective}) -join '|' -match 'Office records') 'The preview shows what the curriculum draft said for comparison.'
+$reworded=$catalog -replace 'Organize office records using clear naming rules\.','Organize office records using clear file naming rules.'
+Reject {Get-BookStudioOutcomeAnalysisPreview -Job (Get-BookStudioJob -DatabasePath $db -JobId $draftJob.id) -Request ([pscustomobject]@{text=$reworded;assignments=$assign})} 'CO1 was reworded'
+Reject {Set-BookStudioOutcomeAnalysis -DatabasePath $db -JobId $draftJob.id -Request ([pscustomobject]@{text=$catalog;assignments=$assign;confirm=$false;reviewedBy='Fixture ID';reason='Reviewed'})} 'Confirm that you reviewed'
+Reject {Set-BookStudioOutcomeAnalysis -DatabasePath $db -JobId $draftJob.id -Request ([pscustomobject]@{text=$catalog;assignments=$assign;confirm=$true;reviewedBy='';reason='Reviewed'})} 'Enter your name'
+$approved=Set-BookStudioOutcomeAnalysis -DatabasePath $db -JobId $draftJob.id -Request ([pscustomobject]@{text=$catalog;assignments=$assign;confirm=$true;reviewedBy='Fixture ID';reason='Reviewed against the draft'})
+Check ($approved.status -eq 'Approved' -and $approved.workflowStage -eq 'format-review') "Approval releases the book to planning (got '$($approved.status)'/'$($approved.workflowStage)')."
+$revisionPath=Join-Path $draftJob.sourceContextPath 'book-studio-outcomes.json'
+Check (Test-Path -LiteralPath $revisionPath) 'The approved amendment was not written beside the upload.'
+$revised=Import-CourseSpec -Path $draftJob.specPath
+Check (@($revised.weeks[0].modules | ForEach-Object {$_.objectiveId}) -join ',' -eq 'LO1.1,LO1.2') "The generator reads the approved outcomes back for chapter 1 (got '$(@($revised.weeks[0].modules | ForEach-Object {$_.objectiveId}) -join ',')')."
+Check ($revised.outcomeRevision.reviewedBy -eq 'Fixture ID' -and $revised.outcomeRevision.origin -eq 'curriculum-draft-analysis') 'The amendment records who approved it and which review produced it.'
+$outcomeFolder=Join-Path $draftJob.sourceContextPath 'outcome-analysis'
+Check (Test-Path -LiteralPath (Join-Path $outcomeFolder 'QA1000 - Course Outcomes.md')) 'The approved review record was not written.'
+$reusable=Join-Path $outcomeFolder 'QA1000 - Ebook Course File.md'
+Check (Test-Path -LiteralPath $reusable) 'The reusable ebook-ready course file was not written.'
+$reused=Import-CourseSpec -Path $reusable
+Check (@($reused.weeks).Count -eq 2 -and $reused.weeks[1].modules[0].subObjectives -contains 'Assign an owner to each workflow step.') 'The generated course file does not read back as the approved outcomes.'
+Reject {Set-BookStudioOutcomeAnalysis -DatabasePath $db -JobId $draftJob.id -Request ([pscustomobject]@{text=$catalog;assignments=$assign;confirm=$true;reviewedBy='Fixture ID';reason='Again'})} 'runs once, before the book is planned'
 $chapter1=[pscustomobject]@{number=1;title='Office Records';focus='Office records naming';learningTargets=@('Organize office records using clear naming rules.');learningTargetRecords=@([pscustomobject]@{objectiveId='';objective='Organize office records using clear naming rules.'})}
 $plan=[pscustomobject]@{sourceMode='UploadedOnly';chapters=@($chapter1)}
 # Any source-discovery or web call is a test failure, not a stubbed success.

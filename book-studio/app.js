@@ -124,6 +124,7 @@ function bookLabel(job) {
 
 function workflowStageLabel(job) {
   const stage = getWorkflowStage(job);
+  if (stage === "outcomes-analysis") return "Outcome review";
   if (stage === "format-review") return "Format review";
   if (stage === "generating" || isJobProcessing(job)) return "Generating book";
   if (stage === "sme-review") return "SME handoff";
@@ -186,6 +187,9 @@ function renderActiveBookHeader(job) {
   if (isJobProcessing(job)) {
     action.textContent = "Generation in progress";
     action.disabled = true;
+  } else if (getWorkflowStage(job) === "outcomes-analysis") {
+    action.textContent = "Review course outcomes";
+    action.addEventListener("click", scrollToCurrentWork);
   } else if (getWorkflowStage(job) === "format-review") {
     action.textContent = "Review format preview";
     action.addEventListener("click", scrollToCurrentWork);
@@ -365,6 +369,7 @@ function getWorkflowStage(job) {
 function getWorkflowStatus(job) {
   if (job?.workflowStatus) return String(job.workflowStatus);
   const stage = getWorkflowStage(job);
+  if (stage === "outcomes-analysis") return "Course outcomes need review before planning";
   if (stage === "format-review") return "Format preview required before generation";
   if (stage === "id-review") return "Book ready for instructional-designer review";
   if (stage === "delivery") return "Book marked official and ready for delivery";
@@ -372,7 +377,8 @@ function getWorkflowStatus(job) {
 }
 
 function getWorkflowRunMode(job) {
-  return getWorkflowStage(job) === "format-review" ? "Blueprint" : "Full";
+  const stage = getWorkflowStage(job);
+  return stage === "format-review" || stage === "outcomes-analysis" ? "Blueprint" : "Full";
 }
 
 // Live outline editors by job, so a Codex suggestion can be loaded into the fields.
@@ -2360,6 +2366,7 @@ function getJobRenderSignature(job) {
   return JSON.stringify({
     id: job.id,
     status: job.status,
+    outcomeAnalysis: job.outcomeAnalysis ? `${job.outcomeAnalysis.status}:${job.outcomeAnalysis.completedAt || ""}:${job.outcomeAnalysis.approvedAt || ""}` : "",
     workflowStage: getWorkflowStage(job),
     workflowStatus: getWorkflowStatus(job),
     formatReview: job.formatReview || null,
@@ -2456,6 +2463,7 @@ function renderJobs(jobs, options = {}) {
     const productionPanel = node.querySelector(".production-panel");
     const log = node.querySelector(".job-log");
     const artifacts = node.querySelector(".artifact-list");
+    const outcomeAnalysisPanel = node.querySelector(".outcome-analysis-panel");
     const formatReviewPanel = node.querySelector(".format-review-panel");
     const chapterPanel = node.querySelector(".chapter-panel");
     const codexPromptPanel = node.querySelector(".codex-prompt-panel");
@@ -2510,6 +2518,13 @@ function renderJobs(jobs, options = {}) {
         fixQa.addEventListener("click", () => startQaRepair(job));
         actions.append(fixQa);
       }
+    } else if (getWorkflowStage(job) === "outcomes-analysis") {
+      // A queued curriculum draft has no book to run yet. Offering Run here
+      // would be a button whose only outcome is the server refusing it.
+      const review = makeElement("button", "secondary", "Review course outcomes");
+      review.type = "button";
+      review.addEventListener("click", scrollToCurrentWork);
+      actions.append(review);
     } else if (getWorkflowStage(job) === "format-review") {
       const recreate = document.createElement("button");
       recreate.type = "button";
@@ -2588,6 +2603,7 @@ function renderJobs(jobs, options = {}) {
     loadJobChapters(job, chapterPanel).catch(() => {});
     loadJobCodexPrompts(job, codexPromptPanel).catch(() => {});
     renderVisualPanelShell(job, visualPanel);
+    renderOutcomeAnalysisPanel(job, outcomeAnalysisPanel);
     renderFormatReviewPanel(job, formatReviewPanel);
   }
 
@@ -3343,6 +3359,8 @@ function validateWizardStep() {
     const primary = form.elements.primaryFileIndex;
     if (!files.files?.length) { files.focus(); setStatus("Upload at least one course document to continue."); return false; }
     if (!primary.value) { primary.focus(); setStatus("Choose the authoritative blueprint or objectives file to continue."); return false; }
+    const kind = form.elements.courseDocumentKind;
+    if (!kind.value) { kind.focus(); setStatus("Say whether that document is a curriculum draft or an ebook-ready course file to continue."); return false; }
   }
   setStatus("");
   return true;
@@ -3412,6 +3430,7 @@ form.addEventListener("submit", async (event) => {
       specialInstructions: formData.get("specialInstructions"),
       primaryFileIndex: Number(formData.get("primaryFileIndex")),
       sourceMode: formData.get("sourceMode") || "Assigned",
+      courseDocumentKind: formData.get("courseDocumentKind") || "",
       requiredSources: formData.get("requiredSources") || "",
       imageContext: formData.get("imageContext") || "Generic",
       imageInstructions: formData.get("imageInstructions") || "",
@@ -3427,15 +3446,26 @@ form.addEventListener("submit", async (event) => {
     const job = await api("/api/jobs", { method: "POST", body: JSON.stringify(payload) });
     showView("active-book");
     setFocusedJob(job.id);
-    setStatus("Creating format preview...");
-    await runJob(job.id, "Blueprint");
+    // A curriculum draft is planned only from outcomes the designer approved,
+    // so the format preview waits for that review instead of being built on
+    // the draft's delivery objectives and then rebuilt.
+    const needsOutcomeReview = payload.courseDocumentKind === "CurriculumDraft";
+    if (needsOutcomeReview) {
+      setStatus("Reviewing course objectives...");
+      await loadJobs({ force: true, focusJobId: job.id });
+    } else {
+      setStatus("Creating format preview...");
+      await runJob(job.id, "Blueprint");
+    }
     form.reset();
     form.elements.maxResearchPerChapter.value = 3;
     form.elements.useCodexDrafting.checked = true;
     form.elements.useCodexImages.checked = true;
     refreshSourceChoices();
     setWizardStep(1);
-    setStatus("Format preview generation started. Review it below when it is ready before generating the book.");
+    setStatus(needsOutcomeReview
+      ? "Review the course objectives and learning objectives below. The book is planned from what you approve."
+      : "Format preview generation started. Review it below when it is ready before generating the book.");
   } catch (error) {
     setStatus(error.message);
   } finally {

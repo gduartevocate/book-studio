@@ -25,6 +25,41 @@ function ConvertFrom-EbookOutcomeCatalog {
     return $records.ToArray()
 }
 
+function Resolve-EbookOutcomeAssignments {
+    # One rule for turning a CO/LO catalog plus per-chapter ID lists into the
+    # records each chapter teaches. Two callers share it: the analysis of a
+    # curriculum draft before the book is planned, and the outcome replacement
+    # after the format preview exists. They must agree, or a book approved in
+    # one place is refused in the other.
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Catalog,
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Chapters,
+        [AllowEmptyCollection()][AllowNull()][object[]]$Assignments
+    )
+    $byId=@{}; foreach($record in $Catalog){$byId[([string]$record.objectiveId).ToUpperInvariant()]=$record}
+    # COs with child LOs are grouping labels, not duplicate learner outcomes.
+    $targets=@(foreach($record in $Catalog){ if($record.objectiveId -like 'LO*' -or -not @($Catalog | Where-Object objectiveId -like ($record.objectiveId.Replace('CO','LO')+'.*')).Count){$record} })
+    if (@($Assignments).Count -ne @($Chapters).Count) { throw "Provide an outcome assignment for every chapter. This book has $(@($Chapters).Count) chapter(s) and $(@($Assignments).Count) assignment(s) were supplied." }
+    $used=@{}
+    $resolved=@(foreach($chapter in $Chapters){
+        # Not named $assignments: PowerShell variable names are case-insensitive,
+        # so that would overwrite the $Assignments parameter after chapter one.
+        $forChapter=@($Assignments | Where-Object number -eq $chapter.number)
+        if($forChapter.Count -ne 1){throw "Missing or duplicate Chapter $($chapter.number)."}
+        $selected=[Collections.Generic.List[object]]::new();$seen=@{}
+        foreach($id in (([string]$forChapter[0].ids).ToUpperInvariant() -split '[,;\s]+' | Where-Object {$_})) {
+            if(-not $byId.ContainsKey($id)){throw "Unknown outcome $id in Chapter $($chapter.number)."}
+            $expanded=@($targets | Where-Object { $_.objectiveId -eq $id -or ($id -like 'CO*' -and $_.objectiveId -like ($id.Replace('CO','LO')+'.*')) })
+            foreach($record in $expanded){if(-not $seen.ContainsKey($record.objectiveId)){$selected.Add($record);$seen[$record.objectiveId]=$true;$used[$record.objectiveId]=$true}}
+        }
+        if(-not $selected.Count){throw "Assign outcomes to Chapter $($chapter.number). Use CO1 for its lessons, or specific IDs such as LO1.1."}
+        [pscustomobject]@{number=[int]$chapter.number;title=[string]$chapter.title;records=$selected.ToArray()}
+    })
+    $missing=@($targets | Where-Object {-not $used.ContainsKey($_.objectiveId)})
+    if($missing.Count){throw "Assign every outcome before applying. Unassigned: $($missing.objectiveId -join ', ')."}
+    return [pscustomobject]@{chapters=@($resolved);targets=@($targets);uniqueOutcomes=@($targets).Count;newCount=@($resolved | ForEach-Object {$_.records}).Count}
+}
+
 function Set-EbookCourseOutcomeRevision {
     param([object]$Course,[object]$Revision)
     if ($Revision.schemaVersion -ne 1 -or -not $Revision.reviewedBy -or -not $Revision.confirmedAt -or

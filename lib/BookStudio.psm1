@@ -8,6 +8,7 @@
 . (Join-Path $PSScriptRoot 'BookStudioProduction.ps1')
 . (Join-Path $PSScriptRoot 'BookStudioQa.ps1')
 . (Join-Path $PSScriptRoot 'BookStudioOutline.ps1')
+. (Join-Path $PSScriptRoot 'BookStudioOutcomeAnalysis.ps1')
 
 function Get-BookStudioInstallPathStatus {
     # Windows PowerShell cannot write paths longer than 259 characters, and a
@@ -1011,12 +1012,27 @@ function New-BookStudioJob {
     $intake=[pscustomobject]@{status='PASS';generatedAt=(Get-Date).ToString('o');sourceMode=$validated.sourceMode;primarySource=$specFile.name;uploadedFiles=$uploadedFiles.Count;readFiles=$intakeContext.files.Count;charactersRead=$intakeContext.totalCharactersUsed;files=@($intakeContext.files);notes='Every accepted file was extracted without truncation. Reading a file does not establish academic coverage.'}
     $intake | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath (Join-Path $uploadFolder 'intake-report.json') -Encoding UTF8
 
+    # A curriculum draft still carries the academic team's delivery objectives,
+    # so its learning objectives are analyzed and approved before anything is
+    # planned. An ebook-ready course file already states final outcomes and
+    # goes straight to the format preview. Reading the draft here fails at
+    # intake, with a message about the document, instead of after the designer
+    # has waited for a preview built on objectives it never stated.
+    $needsOutcomeAnalysis = $validated.courseDocumentKind -eq 'CurriculumDraft'
+    $outcomeAnalysis = $null
+    if ($needsOutcomeAnalysis) {
+        $null = Save-BookStudioCourseFacts -UploadFolder $uploadFolder -SpecPath $specFile.path
+        $outcomeAnalysis = New-BookStudioOutcomeAnalysisState -FactsPath (Join-Path $uploadFolder 'book-studio-course-facts.json')
+    }
+
     $now = (Get-Date).ToString("s")
     $job = [pscustomobject]@{
         id = $jobId
         status = "Queued"
-        workflowStage = "format-review"
-        workflowStatus = "Preparing format preview"
+        courseDocumentKind = $validated.courseDocumentKind
+        outcomeAnalysis = $outcomeAnalysis
+        workflowStage = if ($needsOutcomeAnalysis) { "outcomes-analysis" } else { "format-review" }
+        workflowStatus = if ($needsOutcomeAnalysis) { "Course outcomes need review before planning" } else { "Preparing format preview" }
         createdAt = $now
         updatedAt = $now
         title = if ($Request.title) { [string]$Request.title } else { "Untitled Book" }
@@ -4447,6 +4463,12 @@ function Start-BookStudioJob {
     if (-not $currentJob) {
         throw "Book Studio job not found: $JobId"
     }
+    # Planning a book from a curriculum draft whose learning objectives have
+    # not been reviewed produces a whole preview against the wrong outcomes,
+    # which then has to be rebuilt. Refuse here instead.
+    if ($currentJob.workflowStage -eq 'outcomes-analysis') {
+        throw 'Review and approve this course''s objectives before the book is planned. Open the book and finish "Course objectives and learning objectives".'
+    }
     if ($RunMode -eq "Auto") {
         $isNewFormatWorkflow = $currentJob.workflowStage -eq "format-review"
         $RunMode = if ($isNewFormatWorkflow) { "Blueprint" } else { "Full" }
@@ -4983,7 +5005,7 @@ function Start-BookStudioServer {
                 continue
             }
 
-            if ($request.HttpMethod -eq "GET" -and ($path -eq "/styles.css" -or $path -eq "/app.js" -or $path -eq '/production.js' -or $path -eq '/outcomes.js' -or $path -eq "/version.json")) {
+            if ($request.HttpMethod -eq "GET" -and ($path -eq "/styles.css" -or $path -eq "/app.js" -or $path -eq '/production.js' -or $path -eq '/outcomes.js' -or $path -eq '/outcome-analysis.js' -or $path -eq "/version.json")) {
                 $filePath = Join-Path $webRoot ($path.TrimStart("/"))
                 Send-BookStudioFileResponse -Context $context -Path $filePath -ContentType (Get-BookStudioContentType -Path $filePath)
                 continue
@@ -5165,6 +5187,39 @@ function Start-BookStudioServer {
                     $payload=Get-BookStudioRequestJson -Request $request
                     $result=if($action -eq 'preview'){Get-BookStudioOutcomeReplacement (Get-BookStudioJob -DatabasePath $DatabasePath -JobId $jobId) $payload}else{Set-BookStudioOutcomeReplacement -DatabasePath $DatabasePath -JobId $jobId -Request $payload}
                     Send-BookStudioResponse -Context $context -Body (ConvertTo-BookStudioJson $result)
+                } catch { Send-BookStudioResponse -Context $context -StatusCode 400 -ContentType 'text/plain; charset=utf-8' -Body $_.Exception.Message }
+                continue
+            }
+
+            if ($path -match '^/api/jobs/([^/]+)/outcome-analysis$' -and $request.HttpMethod -eq 'GET') {
+                try {
+                    $result = Get-BookStudioOutcomeAnalysis -DatabasePath $DatabasePath -JobId $Matches[1]
+                    Send-BookStudioResponse -Context $context -Body (ConvertTo-BookStudioJson $result)
+                } catch { Send-BookStudioResponse -Context $context -StatusCode 400 -ContentType 'text/plain; charset=utf-8' -Body $_.Exception.Message }
+                continue
+            }
+
+            if ($path -match '^/api/jobs/([^/]+)/outcome-analysis/(run|preview|apply)$' -and $request.HttpMethod -eq 'POST') {
+                $jobId = $Matches[1]; $action = $Matches[2]
+                try {
+                    $payload = Get-BookStudioRequestJson -Request $request
+                    $result = switch ($action) {
+                        'run' { Start-BookStudioOutcomeAnalysis -DatabasePath $DatabasePath -JobId $jobId -Notes ([string]$payload.notes) -ProjectRoot $ProjectRoot }
+                        'preview' { Get-BookStudioOutcomeAnalysisPreview -Job (Get-BookStudioJob -DatabasePath $DatabasePath -JobId $jobId) -Request $payload }
+                        default { Set-BookStudioOutcomeAnalysis -DatabasePath $DatabasePath -JobId $jobId -Request $payload }
+                    }
+                    Send-BookStudioResponse -Context $context -Body (ConvertTo-BookStudioJson $result)
+                } catch { Send-BookStudioResponse -Context $context -StatusCode 400 -ContentType 'text/plain; charset=utf-8' -Body $_.Exception.Message }
+                continue
+            }
+
+            if ($path -match '^/api/jobs/([^/]+)/outcome-analysis/file$' -and $request.HttpMethod -eq 'GET') {
+                $jobId = $Matches[1]
+                try {
+                    $job = Get-BookStudioJob -DatabasePath $DatabasePath -JobId $jobId
+                    if (-not $job) { throw "Book Studio job not found: $jobId" }
+                    $filePath = Get-BookStudioOutcomeAnalysisFilePath -Job $job -Name ([string]$request.QueryString['name'])
+                    Send-BookStudioFileResponse -Context $context -Path $filePath -ContentType (Get-BookStudioContentType -Path $filePath) -Download
                 } catch { Send-BookStudioResponse -Context $context -StatusCode 400 -ContentType 'text/plain; charset=utf-8' -Body $_.Exception.Message }
                 continue
             }
@@ -5620,4 +5675,4 @@ function Start-BookStudioServer {
     }
 }
 
-Export-ModuleMember -Function Initialize-BookStudioDatabase, Read-BookStudioDatabase, Write-BookStudioDatabase, Get-BookStudioJob, Update-BookStudioJob, Set-BookStudioJobLifecycle, Remove-BookStudioJob, Add-BookStudioLogEntry, Set-BookStudioJobProgress, New-BookStudioJob, Start-BookStudioJob, Start-BookStudioServer, Get-BookStudioDatabasePath, Get-BookStudioVisualManifest, Get-BookStudioDistPackages, Import-BookStudioPackageJob, Import-BookStudioPackageArchiveJob, Refresh-BookStudioJobArtifacts, Invoke-BookStudioPackageRebuild, Set-BookStudioVisualReplacementAsset, Resolve-BookStudioCodexCommand, Set-BookStudioCodexPath, Get-BookStudioCodexStatus, Get-BookStudioCodexPromptManifest, Get-BookStudioVisualReviews, Set-BookStudioVisualReview, Export-BookStudioVisualReviewReport, Initialize-BookStudioChapterSources, Get-BookStudioChapterContent, Set-BookStudioChapterContent, New-BookStudioSmeReviewPackage, Publish-BookStudioSmeReviewToCloudflare, Get-BookStudioSmeReviewFeedbackFromCloudflare, Get-BookStudioAiRequests, New-BookStudioAiRequest, New-BookStudioFormatPreview, Get-BookStudioOutline, Set-BookStudioOutline, Set-BookStudioFormatReview, Get-BookStudioUpdateStatus, Start-BookStudioUpdate, Get-BookStudioUpdateProgress, Get-BookStudioInstallPathStatus, Resolve-BookStudioNativeCodexExecutable, Test-BookStudioFileSystemLink, Repair-BookStudioMovedPaths, Get-BookStudioRebasedPath, Stop-BookStudioAiRequest, Repair-BookStudioStaleAiRequests
+Export-ModuleMember -Function Initialize-BookStudioDatabase, Read-BookStudioDatabase, Write-BookStudioDatabase, Get-BookStudioJob, Update-BookStudioJob, Set-BookStudioJobLifecycle, Remove-BookStudioJob, Add-BookStudioLogEntry, Set-BookStudioJobProgress, New-BookStudioJob, Start-BookStudioJob, Start-BookStudioServer, Get-BookStudioDatabasePath, Get-BookStudioVisualManifest, Get-BookStudioDistPackages, Import-BookStudioPackageJob, Import-BookStudioPackageArchiveJob, Refresh-BookStudioJobArtifacts, Invoke-BookStudioPackageRebuild, Set-BookStudioVisualReplacementAsset, Resolve-BookStudioCodexCommand, Set-BookStudioCodexPath, Get-BookStudioCodexStatus, Get-BookStudioCodexPromptManifest, Get-BookStudioVisualReviews, Set-BookStudioVisualReview, Export-BookStudioVisualReviewReport, Initialize-BookStudioChapterSources, Get-BookStudioChapterContent, Set-BookStudioChapterContent, New-BookStudioSmeReviewPackage, Publish-BookStudioSmeReviewToCloudflare, Get-BookStudioSmeReviewFeedbackFromCloudflare, Get-BookStudioAiRequests, New-BookStudioAiRequest, New-BookStudioFormatPreview, Get-BookStudioOutline, Set-BookStudioOutline, Set-BookStudioFormatReview, Get-BookStudioUpdateStatus, Start-BookStudioUpdate, Get-BookStudioUpdateProgress, Get-BookStudioInstallPathStatus, Resolve-BookStudioNativeCodexExecutable, Test-BookStudioFileSystemLink, Repair-BookStudioMovedPaths, Get-BookStudioRebasedPath, Stop-BookStudioAiRequest, Repair-BookStudioStaleAiRequests, Get-BookStudioOutcomeAnalysis, Start-BookStudioOutcomeAnalysis, Get-BookStudioOutcomeAnalysisPreview, Set-BookStudioOutcomeAnalysis, Save-BookStudioCourseFacts, New-BookStudioOutcomeAnalysisState

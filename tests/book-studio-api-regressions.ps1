@@ -41,10 +41,33 @@ Week 2 Workflow Coordination
 '@
     $file=@{name='QA1000 Blueprint.txt';contentBase64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($spec))}
     $reading=@{name='Office reading.txt';contentBase64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('Office records use clear naming rules. Workflow coordination defines task ownership and handoffs.'))}
-    $job=Post '/api/jobs' @{title='Office Workflow Fixture';courseCode='QA1000';files=@($file,$reading);primaryFileIndex=0;sourceMode='UploadedOnly';useCodexDrafting=$false;useCodexImages=$false}
+    $job=Post '/api/jobs' @{title='Office Workflow Fixture';courseCode='QA1000';files=@($file,$reading);primaryFileIndex=0;courseDocumentKind='EbookReady';sourceMode='UploadedOnly';useCodexDrafting=$false;useCodexImages=$false}
     Check ($job.intake.readFiles -eq 2 -and $job.options.sourceMode -eq 'UploadedOnly') 'API intake contract missing.'
     $productionScript=Invoke-WebRequest -UseBasicParsing -Uri "$base/production.js"
     Check ($productionScript.Content -match 'appendProductionPreferences') 'Production preferences script is not served.'
+    $analysisScript=Invoke-WebRequest -UseBasicParsing -Uri "$base/outcome-analysis.js"
+    Check ($analysisScript.Content -match 'drawOutcomeAnalysisPanel') 'The outcome analysis script is not served.'
+    Check ($page.Content -match 'courseDocumentKind') 'The course-document-kind control is missing from the served UI.'
+
+    # The curriculum-draft route, over real HTTP, with no Codex anywhere.
+    $draft=Post '/api/jobs' @{title='Office Workflow Draft';courseCode='QA1000';files=@($file,$reading);primaryFileIndex=0;courseDocumentKind='CurriculumDraft';sourceMode='UploadedOnly';useCodexDrafting=$false;useCodexImages=$false}
+    Check ($draft.workflowStage -eq 'outcomes-analysis') "A curriculum draft stops for its outcome review (got '$($draft.workflowStage)')."
+    Reject {Post "/api/jobs/$($draft.id)/run" @{mode='Blueprint'}} 400
+    $analysis=Invoke-RestMethod "$base/api/jobs/$($draft.id)/outcome-analysis"
+    Check (@($analysis.courseObjectives).Count -eq 2 -and @($analysis.chapters).Count -eq 2) 'The outcome review did not return the course objectives and chapters.'
+    Check ($analysis.status -eq 'Not analyzed' -and -not $analysis.catalogText) 'A new book must start with no suggested outcomes.'
+    Reject {Invoke-RestMethod "$base/api/jobs/$($job.id)/outcome-analysis"} 400
+    $catalog="CO1: Organize office records using clear naming rules.`nLO1.1: Identify the record types an office keeps.`nCO2: Coordinate office workflow using task ownership.`nLO2.1: Assign an owner to each workflow step."
+    $assign=@(@{number=1;ids='CO1'},@{number=2;ids='CO2'})
+    Reject {Post "/api/jobs/$($draft.id)/outcome-analysis/preview" @{text=($catalog -replace 'clear naming','clear file naming');assignments=$assign}} 400
+    Reject {Post "/api/jobs/$($draft.id)/outcome-analysis/preview" @{text=$catalog;assignments=@(@{number=1;ids='CO1'},@{number=2;ids='LO1.1'})}} 400
+    $checked=Post "/api/jobs/$($draft.id)/outcome-analysis/preview" @{text=$catalog;assignments=$assign}
+    Check (@($checked.chapters).Count -eq 2 -and $checked.uniqueOutcomes -eq 2) 'The outcome preview did not resolve both chapters.'
+    Reject {Invoke-RestMethod "$base/api/jobs/$($draft.id)/outcome-analysis/file?name=../book-studio-db.json"} 400
+    $approved=Post "/api/jobs/$($draft.id)/outcome-analysis/apply" @{text=$catalog;assignments=$assign;confirm=$true;reviewedBy='Fixture ID';reason='Reviewed against the draft'}
+    Check ($approved.status -eq 'Approved' -and $approved.workflowStage -eq 'format-review') 'Approval did not release the book to planning.'
+    $reusable=Invoke-WebRequest -UseBasicParsing -Uri "$base/api/jobs/$($draft.id)/outcome-analysis/file?name=QA1000%20-%20Ebook%20Course%20File.md"
+    Check ([string]$reusable.Content -match '1\.1 Identify the record types an office keeps\.') 'The reusable ebook-ready course file was not served.'
     Reject {Post "/api/jobs/$($job.id)/run" @{mode='Full'}} 400
     $null=Post "/api/jobs/$($job.id)/run" @{mode='Blueprint'}
     $deadline=(Get-Date).AddSeconds(45)
@@ -170,7 +193,7 @@ Week 2 Workflow Coordination
     }else{
         @{name='QA1015 Content.txt';contentBase64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("Week 1`n1. Describe records.`n1.1 Identify records.`nWeek 2`n2. Analyze handoffs.`n2.1 Identify handoffs."))}
     }
-    $bare=Post '/api/jobs' @{title='Bare week regression';files=@($bareFile);primaryFileIndex=0;sourceMode='Assigned';useCodexDrafting=$false;useCodexImages=$false}
+    $bare=Post '/api/jobs' @{title='Bare week regression';files=@($bareFile);primaryFileIndex=0;courseDocumentKind='EbookReady';sourceMode='Assigned';useCodexDrafting=$false;useCodexImages=$false}
     Check (@($bare.options.requiredReadings).Count -eq 0) 'Objective-only intake created phantom required readings.'
     $null=Post "/api/jobs/$($bare.id)/run" @{mode='Blueprint'}
     $deadline=(Get-Date).AddSeconds(45)

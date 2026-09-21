@@ -72,6 +72,8 @@
               <label><span>Course documents (DOCX, TXT, Markdown, HTML, JSON)</span><input name="files" type="file" accept=".docx,.txt,.md,.html,.htm,.json" multiple required></label>
               <p class="hint">Up to 50 documents, each smaller than 5 MB; 40 MB total. Convert PDFs and scans to readable DOCX or TXT first.</p>
               <label><span>Authoritative course blueprint / objectives</span><select name="primaryFileIndex" id="primarySourceSelect" required><option value="">Choose files first</option></select></label>
+              <label><span>What kind of document is that?</span><select name="courseDocumentKind" id="courseDocumentKind" required><option value="">Choose one</option><option value="CurriculumDraft">Curriculum draft — learning objectives still need review</option><option value="EbookReady">Ebook-ready course file — outcomes are already final</option></select></label>
+              <p class="hint">A curriculum draft comes from the academic team with delivery-shaped weekly objectives. Book Studio analyzes it first: course objectives are kept word for word, the learning objectives are reworked, and you edit and approve them before the book is planned. Choose ebook-ready when the document already states the final course and learning objectives per week.</p>
               <label><span>Sources to use</span><select name="sourceMode" id="sourceMode"><option value="Assigned">Required readings from blueprint and links below</option><option value="UploadedOnly">Uploaded teaching documents only</option><option value="Discovery">Discover additional sources (advanced)</option></select></label>
               <label><span>Additional required readings</span><textarea name="requiredSources" maxlength="40000" placeholder="Week 1:&#10;https://example.org/article&#10;Week 2:&#10;[Reading title](https://example.org/chapter)&#10;All chapters:&#10;https://example.org/shared-reading"></textarea></label>
               <p class="hint">Required-reading mode extracts links from the blueprint, including embedded Word links, and adds these URLs. Use Week/Chapter headings to assign readings, or All chapters. The blueprint supplies objectives, not scholarly evidence. Review the extracted list after preview. Blocked links need an accessible full-text URL; PDFs require Poppler pdftotext.</p>
@@ -125,9 +127,10 @@
     </section>
   </main>
 
-  <template id="jobTemplate"><article class="job-row"><div class="job-main"><div class="job-title"></div><div class="job-meta"></div></div><div class="job-status"></div><div class="job-actions"></div><div class="workflow-panel"></div><div class="production-panel"></div><div class="job-log"></div><div class="artifact-list"></div><div class="format-review-panel" hidden></div><div class="chapter-panel" hidden></div><div class="codex-prompt-panel" hidden></div><div class="visual-panel" hidden></div></article></template>
+  <template id="jobTemplate"><article class="job-row"><div class="job-main"><div class="job-title"></div><div class="job-meta"></div></div><div class="job-status"></div><div class="job-actions"></div><div class="workflow-panel"></div><div class="production-panel"></div><div class="job-log"></div><div class="artifact-list"></div><div class="outcome-analysis-panel" hidden></div><div class="format-review-panel" hidden></div><div class="chapter-panel" hidden></div><div class="codex-prompt-panel" hidden></div><div class="visual-panel" hidden></div></article></template>
   <script src="/production.js?v=20260918-10"></script>
   <script src="/outcomes.js?v=20260918-outline"></script>
-  <script src="/app.js?v=20260919-1"></script>
+  <script src="/outcome-analysis.js?v=20260921-1"></script>
+  <script src="/app.js?v=20260921-1"></script>
 </body>
 </html>

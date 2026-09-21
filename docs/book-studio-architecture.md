@@ -8,14 +8,15 @@ Book Studio is the first local interface layer for the ebook generator. It is de
 2. The user enters a course code, title, production notes, and uploads source files.
 3. The local PowerShell server stores the job in `.bookstudio/book-studio-db.json`.
 4. Uploaded source files are copied into `.bookstudio/uploads/<job-id>/`.
-5. The runner first starts `ebook-generator.ps1 -BlueprintOnly` in a background PowerShell process.
-6. The runner writes a `book-format-preview.html` format contract showing the proposed cover, chapter hierarchy, objectives treatment, visual treatment, and course structure.
-7. The instructional designer reviews the preview and either records requested changes or approves the format. Full generation cannot start until approval is recorded.
-8. After approval, the runner starts the full generator and writes outputs into `.bookstudio/outputs/<job-id>/`.
-9. The UI refreshes job status and exposes links to the Word, HTML, Markdown, reports, and source registry artifacts.
-10. Completed packages can be split into chapter-level source files under `chapters/`.
-11. The instructional designer can edit chapter Markdown/JSON locally, use Ask Codex for scoped review/revision, then rebuild the package exports.
-12. Book Studio can prepare a no-install SME review package under `sme-review/` plus `sme-review-package.zip`.
+5. When the designer declared the authoritative document a curriculum draft, the book stops at the course-outcome review first: Codex proposes reworked learning objectives and chapter assignments, the designer edits and approves them, and `book-studio-outcomes.json` is written beside the upload. An ebook-ready course file skips this step.
+6. The runner then starts `ebook-generator.ps1 -BlueprintOnly` in a background PowerShell process.
+7. The runner writes a `book-format-preview.html` format contract showing the proposed cover, chapter hierarchy, objectives treatment, visual treatment, and course structure.
+8. The instructional designer reviews the preview and either records requested changes or approves the format. Full generation cannot start until approval is recorded.
+9. After approval, the runner starts the full generator and writes outputs into `.bookstudio/outputs/<job-id>/`.
+10. The UI refreshes job status and exposes links to the Word, HTML, Markdown, reports, and source registry artifacts.
+11. Completed packages can be split into chapter-level source files under `chapters/`.
+12. The instructional designer can edit chapter Markdown/JSON locally, use Ask Codex for scoped review/revision, then rebuild the package exports.
+13. Book Studio can prepare a no-install SME review package under `sme-review/` plus `sme-review-package.zip`.
 
 ## Database
 
@@ -26,7 +27,9 @@ The first implementation uses a dependency-free local JSON database because this
 - `options`: generator options
 - `artifacts`: generated files exposed to the UI
 - `log`: status events and runner messages
-- `workflowStage`: `format-review`, `generating`, `id-review`, or `sme-review`
+- `workflowStage`: `outcomes-analysis`, `format-review`, `generating`, `id-review`, or `sme-review`
+- `courseDocumentKind`: `CurriculumDraft` or `EbookReady`, stated by the designer at intake
+- `outcomeAnalysis`: status, findings, suggested outcomes, chapter assignments, and the approval record for the course-outcome review
 - `formatReview`: approval status, notes, reviewer, and timestamp for the format gate
 
 This can later be migrated to SQLite or Cloudflare D1 without changing the job model.

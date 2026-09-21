@@ -19,5 +19,11 @@ function Test-BookStudioUploadRequest {
         if($total -gt 40000000){throw 'This upload exceeds 40 MB. Split or reduce the source documents.'}
         [void]$decoded.Add([pscustomobject]@{originalName=[string]$file.name;bytes=$bytes})
     }
-    [pscustomobject]@{primaryFileIndex=$primary;files=@($decoded);sourceMode=$(if($Request.sourceMode){$Request.sourceMode}else{'UploadedOnly'})}
+    # Whether the authoritative document still needs the designer's outcome
+    # analysis is the designer's call, not a guess from the layout. Getting it
+    # wrong either skips the analysis a curriculum draft needs or demands one
+    # for outcomes that are already final.
+    if([string]::IsNullOrWhiteSpace([string]$Request.courseDocumentKind)){throw 'Say whether the authoritative course document is a curriculum draft that still needs its learning objectives analyzed, or an ebook-ready course file whose outcomes are final.'}
+    if($Request.courseDocumentKind -notin @('CurriculumDraft','EbookReady')){throw 'Unknown course document kind.'}
+    [pscustomobject]@{primaryFileIndex=$primary;files=@($decoded);sourceMode=$(if($Request.sourceMode){$Request.sourceMode}else{'UploadedOnly'});courseDocumentKind=[string]$Request.courseDocumentKind}
 }

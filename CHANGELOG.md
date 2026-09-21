@@ -1,5 +1,14 @@
 # Book Studio ID Changelog
 
+## v2026.09.21.1 (2026-09-21)
+
+- Curriculum drafts now get a course-objective and learning-objective review before the book is planned.
+- New book step 2 asks whether the authoritative document is a curriculum draft or an ebook-ready course file. Ebook-ready files behave exactly as before.
+- A curriculum draft stops at Step 1: Course objectives and learning objectives. Analyze with Codex proposes reworked LO1.1-style learning objectives under each course objective, plus a chapter assignment for every outcome. Nothing is applied until you approve it.
+- Course objectives are reproduced word for word. Approval is refused if one is reworded, dropped, or invented, and the refusal quotes both the document wording and the suggestion.
+- Codex is optional: with no connection the editor still opens, prefilled with the course objectives as the draft states them, and you can write the learning objectives yourself.
+- Approving writes a Course Outcomes record (Markdown and Word) and a reusable ebook-ready course file you can upload for a later book to skip the review.
+
 ## v2026.09.20.2 (2026-09-20)
 
 - Course learning objectives are kept word for word when prohibited learner sections are removed, so a book whose objective names a knowledge check no longer fails objective traceability. Prohibited labels are matched only where they open a line, so ordinary prose that mentions a chapter summary no longer fails a book.

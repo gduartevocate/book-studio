@@ -7,25 +7,12 @@ function Get-BookStudioOutcomeReplacement {
     $planPath=Join-Path $Job.outputFolder 'ebook-plan.json'
     $plan=Get-Content -LiteralPath $planPath -Raw -Encoding UTF8 | ConvertFrom-Json
     $catalog=@(ConvertFrom-EbookOutcomeCatalog ([string]$Request.text))
-    $byId=@{}; foreach($record in $catalog){$byId[$record.objectiveId]=$record}
-    # COs with child LOs are grouping labels, not duplicate learner outcomes.
-    $targets=@(foreach($record in $catalog){ if($record.objectiveId -like 'LO*' -or -not @($catalog | Where-Object objectiveId -like ($record.objectiveId.Replace('CO','LO')+'.*')).Count){$record} })
-    if (@($Request.assignments).Count -ne @($plan.chapters).Count) { throw 'Provide an outcome assignment for every chapter.' }
-    $used=@{}; $chapters=@(foreach($chapter in $plan.chapters){
-        $assignments=@($Request.assignments | Where-Object number -eq $chapter.number)
-        if($assignments.Count -ne 1){throw "Missing or duplicate Chapter $($chapter.number)."}
-        $selected=[Collections.Generic.List[object]]::new();$seen=@{}
-        foreach($id in (([string]$assignments[0].ids).ToUpperInvariant() -split '[,;\s]+' | Where-Object {$_})) {
-            if(-not $byId.ContainsKey($id)){throw "Unknown outcome $id in Chapter $($chapter.number)."}
-            $expanded=@($targets | Where-Object { $_.objectiveId -eq $id -or ($id -like 'CO*' -and $_.objectiveId -like ($id.Replace('CO','LO')+'.*')) })
-            foreach($record in $expanded){if(-not $seen.ContainsKey($record.objectiveId)){$selected.Add($record);$seen[$record.objectiveId]=$true;$used[$record.objectiveId]=$true}}
-        }
-        if(-not $selected.Count){throw "Assign outcomes to Chapter $($chapter.number). Use CO1 for its lessons, or specific IDs such as LO1.1."}
-        [pscustomobject]@{number=[int]$chapter.number;title=$chapter.title;previous=@($chapter.learningTargetRecords);records=$selected.ToArray()}
+    $resolution=Resolve-EbookOutcomeAssignments -Catalog $catalog -Chapters @($plan.chapters) -Assignments @($Request.assignments)
+    $chapters=@(foreach($chapter in $resolution.chapters){
+        $planned=@($plan.chapters | Where-Object number -eq $chapter.number)
+        [pscustomobject]@{number=$chapter.number;title=$chapter.title;previous=@(if($planned.Count){$planned[0].learningTargetRecords}else{@()});records=$chapter.records}
     })
-    $missing=@($targets | Where-Object {-not $used.ContainsKey($_.objectiveId)})
-    if($missing.Count){throw "Assign every outcome before applying. Unassigned: $($missing.objectiveId -join ', ')."}
-    [pscustomobject]@{planHash=(Get-FileHash -LiteralPath $planPath).Hash;catalog=$catalog;chapters=$chapters;previousCount=@($plan.chapters | ForEach-Object {$_.learningTargetRecords}).Count;newCount=@($chapters | ForEach-Object {$_.records}).Count;uniqueOutcomes=$targets.Count}
+    [pscustomobject]@{planHash=(Get-FileHash -LiteralPath $planPath).Hash;catalog=$catalog;chapters=$chapters;previousCount=@($plan.chapters | ForEach-Object {$_.learningTargetRecords}).Count;newCount=$resolution.newCount;uniqueOutcomes=$resolution.uniqueOutcomes}
 }
 
 function Save-BookStudioOutlineArtifacts {
