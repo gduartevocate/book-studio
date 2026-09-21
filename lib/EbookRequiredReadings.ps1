@@ -6,6 +6,32 @@ function Get-EbookReadingId {
     finally { $sha.Dispose() }
 }
 
+# Designers have no administrator rights, so "install Poppler" is not a step
+# they can take. Git for Windows ships pdftotext in its mingw64 bin folder and
+# every designer already has Git, because that is how Book Studio is cloned and
+# updated. Look there before refusing a PDF.
+function Get-EbookPdfTextConverter {
+    $onPath = Get-Command pdftotext.exe, pdftotext -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($onPath) { return $onPath.Source }
+    $candidates = New-Object System.Collections.ArrayList
+    $git = Get-Command git.exe, git -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($git) {
+        $gitRoot = Split-Path (Split-Path $git.Source -Parent) -Parent
+        [void]$candidates.Add((Join-Path $gitRoot 'mingw64/bin/pdftotext.exe'))
+        [void]$candidates.Add((Join-Path $gitRoot 'mingw32/bin/pdftotext.exe'))
+        [void]$candidates.Add((Join-Path $gitRoot 'usr/bin/pdftotext.exe'))
+    }
+    foreach ($root in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:LOCALAPPDATA)) {
+        if (-not $root) { continue }
+        [void]$candidates.Add((Join-Path $root 'Git/mingw64/bin/pdftotext.exe'))
+        [void]$candidates.Add((Join-Path $root 'Poppler/bin/pdftotext.exe'))
+    }
+    foreach ($candidate in $candidates) {
+        if ($candidate -and (Test-Path -LiteralPath $candidate -PathType Leaf)) { return (Resolve-Path -LiteralPath $candidate).ProviderPath }
+    }
+    return ''
+}
+
 function Get-EbookBlueprintReadingText {
     param([string]$Path)
     if ([IO.Path]::GetExtension($Path) -ne '.docx') { return Get-SourceTextFromFile $Path }
@@ -234,12 +260,12 @@ function Read-EbookRequiredSourceUrl {
             } finally { $memory.Dispose(); $stream.Dispose() }
             $contentType=[string]$response.ContentType
             if ($contentType -match 'pdf' -or ($bytes.Length -ge 5 -and [Text.Encoding]::ASCII.GetString($bytes,0,5) -eq '%PDF-')) {
-                $converter=Get-Command pdftotext.exe,pdftotext -ErrorAction SilentlyContinue | Select-Object -First 1
-                if (-not $converter) { throw 'This reading is a PDF. Install the Poppler pdftotext utility, then check sources again. No PDF content has been read.' }
+                $converterPath=Get-EbookPdfTextConverter
+                if (-not $converterPath) { throw 'This reading is a PDF and no pdftotext utility was found. Book Studio looks on PATH and inside the Git for Windows installation. Reinstall Git for Windows, or put pdftotext.exe on PATH, then check sources again. No PDF content has been read.' }
                 $pdf=Join-Path $WorkFolder ((Get-EbookReadingId $Url)+'.pdf')
                 [IO.File]::WriteAllBytes($pdf,$bytes)
                 $extracted=$pdf+'.txt'; $diagnostic=$pdf+'.log'
-                $process=Start-Process -FilePath $converter.Source -ArgumentList @('-enc','UTF-8','-layout',('"'+$pdf+'"'),('"'+$extracted+'"')) -WindowStyle Hidden -PassThru -RedirectStandardError $diagnostic
+                $process=Start-Process -FilePath $converterPath -ArgumentList @('-enc','UTF-8','-layout',('"'+$pdf+'"'),('"'+$extracted+'"')) -WindowStyle Hidden -PassThru -RedirectStandardError $diagnostic
                 $null=$process.Handle
                 if (-not $process.WaitForExit(20000)) { $process.Kill(); throw 'PDF text extraction timed out. Supply a readable chapter/text version.' }
                 if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $extracted)) { throw 'PDF text extraction failed. Supply an accessible text version of this reading.' }

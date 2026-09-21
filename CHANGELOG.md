@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.21.9 (2026-09-21)
+
+- Fix: PDF readings are now readable without installing anything. Checking sources refused every PDF with "Install the Poppler pdftotext utility", which a designer without administrator rights cannot do. Book Studio now finds pdftotext inside the Git for Windows installation you already have, so CMS and AHIMA PDFs are retrieved as teaching text.
+
 ## v2026.09.21.8 (2026-09-21)
 
 - Fix: a curriculum draft that assigns readings per week in its grid now has them read per week. The reading list lives in one grid row with a cell per week; reading it in document order flattened that row and assigned every reading in the course to the last week seen. RB1010 went from 40 readings all in chapter 5 to 40 spread across its five weeks.

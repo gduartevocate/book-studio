@@ -218,4 +218,19 @@ foreach ($pair in @(@{ url = 'https://example.org/one'; week = 1 }, @{ url = 'ht
 # Activity rows cite the same readings; their prose is not a reading of its own.
 Check (@($gridReadings | Where-Object { -not $_.url }).Count -eq 0) "An activity description must not become a title-only reading (got $((@($gridReadings | Where-Object { -not $_.url }) | ForEach-Object { $_.title }) -join ' | '))."
 
+# Designers have no administrator rights, so "install Poppler" was not a step
+# any of them could take, and 13 of RB1010's 40 assigned readings were CMS and
+# AHIMA PDFs refused for want of it. Git for Windows ships pdftotext, and every
+# designer has Git because that is how Book Studio is cloned and updated.
+$converter = & $module { Get-EbookPdfTextConverter }
+if ($converter) {
+    Check (Test-Path -LiteralPath $converter -PathType Leaf) "The resolved pdftotext path must exist (got '$converter')."
+}
+if (Get-Command git.exe, git -ErrorAction SilentlyContinue) {
+    Check ([bool]$converter) 'Git for Windows is installed, so pdftotext must be found without asking the designer to install anything.'
+}
+$readingsSource = Get-Content -LiteralPath (Join-Path $root 'lib/EbookRequiredReadings.ps1') -Raw -Encoding UTF8
+Check ($readingsSource -notmatch 'Install the Poppler pdftotext utility') 'The refusal must not tell a designer without administrator rights to install Poppler.'
+Check ($readingsSource -match 'mingw64') 'The converter lookup must check the Git for Windows installation.'
+
 "PASS: $script:checks required-source and QA regression checks. Fixtures: $fixture"

@@ -45,7 +45,7 @@
     },
     {
         "path":  "ID Quick Start.txt",
-        "sha256":  "738982A178A577433B4990B1FEE9D0877C5FAED38D6ED9AC034E6092E8D4B937"
+        "sha256":  "93557BCE4CC976FD3D839976021CCFCE2317D2E3E7A92EBC843241CC103BB570"
     },
     {
         "path":  "Install Book Studio.cmd",
@@ -105,7 +105,7 @@
     },
     {
         "path":  "VERSION.txt",
-        "sha256":  "5AC2D5017B3047BE439104ECF06A961BC21E3094FE9A0DA86ED4CB863186257D"
+        "sha256":  "F841F2E6E19AA383CDAA93D188EFB200D41A05001726DBE347C5A389A73E9CDB"
     },
     {
         "path":  "book-studio/app.js",
@@ -133,7 +133,7 @@
     },
     {
         "path":  "book-studio/version.json",
-        "sha256":  "B85DAA8B4DB5C1E406FC519037A19568DE9D7255B571691309E5550EBEBD5AE3"
+        "sha256":  "2660FAA6ACAC1976AB00E82364A3F88513060A5C0C51016091673D6DEC4DBD99"
     },
     {
         "path":  "cloudflare/ebook-generator-worker.js",
@@ -257,7 +257,7 @@
     },
     {
         "path":  "lib/EbookRequiredReadings.ps1",
-        "sha256":  "04578BF4E944CE95F55BBDC669636081D628D0A4AEEFCEA933DE6DE4ABF74C3B"
+        "sha256":  "1009EEC75DC04423FD1FB64603B3CA3E5F49971CFC22313CE11AE25A2F62E62C"
     },
     {
         "path":  "lib/EbookUploadedSources.ps1",
@@ -369,7 +369,7 @@
     },
     {
         "path":  "tests/required-readings-regressions.ps1",
-        "sha256":  "56C75607158C3D1B2C197FDF151210A0F8874C50261BA265C5ED344793CB658A"
+        "sha256":  "F695466603827B395CF2D27F0AAC0F582F4740E77179B873F88DFE08B9B067AC"
     },
     {
         "path":  "tests/standalone-week-regressions.ps1",
