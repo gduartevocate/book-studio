@@ -354,10 +354,12 @@ function recentProgressEntries(job) {
 }
 
 function isJobProcessing(job) {
-  // A book waiting for its outcome review has no runner and never will until a
-  // person approves it. Reporting it as processing hides the review panel's
-  // action, disables the header button, and forces a re-render on every poll.
-  if (String(job?.workflowStage || "") === "outcomes-analysis" && !job?.runnerProcessId) return false;
+  // A book sitting at a review stage with no runner process is not generating
+  // anything, whatever its stored status says. It is waiting for a person.
+  // Calling it busy hides the very button that would move it on, disables the
+  // header action, and forces a re-render on every poll.
+  const reviewStages = ["outcomes-analysis", "format-review"];
+  if (reviewStages.includes(String(job?.workflowStage || "")) && !job?.runnerProcessId) return false;
   return activeStatuses.has(job.status);
 }
 
@@ -2532,8 +2534,10 @@ function renderJobs(jobs, options = {}) {
     } else if (getWorkflowStage(job) === "format-review") {
       const recreate = document.createElement("button");
       recreate.type = "button";
-      recreate.className = "secondary";
-      recreate.textContent = "Recreate preview";
+      // Before the first run there is no preview to recreate, and "Recreate"
+      // reads as though one already exists somewhere.
+      recreate.className = job.outputFolder ? "secondary" : "";
+      recreate.textContent = job.outputFolder ? "Recreate preview" : "Create format preview";
       recreate.addEventListener("click", () => runJob(job.id, "Blueprint").catch((error) => reportJobActionError(job, error.message)));
       actions.append(recreate);
     } else if (job.status === "Queued") {

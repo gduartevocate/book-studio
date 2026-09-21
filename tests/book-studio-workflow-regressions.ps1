@@ -92,8 +92,22 @@ Reject {Get-BookStudioOutcomeAnalysisPreview -Job (Get-BookStudioJob -DatabasePa
 Reject {Set-BookStudioOutcomeAnalysis -DatabasePath $db -JobId $draftJob.id -Request ([pscustomobject]@{text=$catalog;assignments=$assign;confirm=$false;reviewedBy='Fixture ID';reason='Reviewed'})} 'Confirm that you reviewed'
 Reject {Set-BookStudioOutcomeAnalysis -DatabasePath $db -JobId $draftJob.id -Request ([pscustomobject]@{text=$catalog;assignments=$assign;confirm=$true;reviewedBy='';reason='Reviewed'})} 'Enter your name'
 $approved=Set-BookStudioOutcomeAnalysis -DatabasePath $db -JobId $draftJob.id -Request ([pscustomobject]@{text=$catalog;assignments=$assign;confirm=$true;reviewedBy='Fixture ID';reason='Reviewed against the draft'})
-Check ($approved.status -eq 'Approved' -and $approved.workflowStage -eq 'format-review') "Approval releases the book to planning (got '$($approved.status)'/'$($approved.workflowStage)').
-Check ((Get-BookStudioJob -DatabasePath $db -JobId $draftJob.id).status -eq 'Queued') 'Approval did not hand the book back to the normal queued/run path.'"
+Check ($approved.status -eq 'Approved' -and $approved.workflowStage -eq 'format-review') "Approval releases the book to planning (got '$($approved.status)'/'$($approved.workflowStage)')."
+Check ((Get-BookStudioJob -DatabasePath $db -JobId $draftJob.id).status -eq 'Ready') 'Approval must leave the book ready to run, not claim a runner is queued.'
+# A book whose runner never started is stranded: it reports generation in
+# progress, so the client hides the button that would start it.
+$null=Update-BookStudioJob -DatabasePath $db -JobId $draftJob.id -Update { param($j) $j.status='Queued' }
+# Update-BookStudioJob always stamps updatedAt, so the record is aged directly.
+$aged=Read-BookStudioDatabase -DatabasePath $db
+(@($aged.jobs | Where-Object id -eq $draftJob.id)[0]).updatedAt=(Get-Date).AddMinutes(-5).ToString('s')
+Write-BookStudioDatabase -DatabasePath $db -Database $aged
+Check (Repair-BookStudioParkedJobs -DatabasePath $db) 'A book stranded as Queued with no runner was not repaired.'
+Check ((Get-BookStudioJob -DatabasePath $db -JobId $draftJob.id).status -eq 'Ready') 'The repair did not clear the runner status from a stranded book.'
+# A book that was queued a moment ago is still starting; leave it alone.
+$null=Update-BookStudioJob -DatabasePath $db -JobId $draftJob.id -Update { param($j) $j.status='Queued'; $j.updatedAt=(Get-Date).ToString('s') }
+Check (-not (Repair-BookStudioParkedJobs -DatabasePath $db)) 'The repair raced a book that had only just been queued.'
+Check ((Get-BookStudioJob -DatabasePath $db -JobId $draftJob.id).status -eq 'Queued') 'A book that was just queued must keep its status while its runner starts.'
+$null=Update-BookStudioJob -DatabasePath $db -JobId $draftJob.id -Update { param($j) $j.status='Ready' }
 $revisionPath=Join-Path $draftJob.sourceContextPath 'book-studio-outcomes.json'
 Check (Test-Path -LiteralPath $revisionPath) 'The approved amendment was not written beside the upload.'
 $revised=Import-CourseSpec -Path $draftJob.specPath

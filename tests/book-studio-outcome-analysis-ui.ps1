@@ -97,6 +97,8 @@ $html=@'
   if(isBusy({workflowStage:'outcomes-analysis',status:'Review'}))throw new Error('A parked book with its own status reports as generating');
   if(!isBusy({workflowStage:'outcomes-analysis',status:'Running',runnerProcessId:42}))throw new Error('A book with a live runner must still report as busy');
   if(!isBusy({workflowStage:'generating',status:'Running'}))throw new Error('A generating book must report as busy');
+  if(isBusy({workflowStage:'format-review',status:'Queued'}))throw new Error('A book awaiting its format preview reports as generating');
+  if(!isBusy({workflowStage:'format-review',status:'Running',runnerProcessId:7}))throw new Error('A running format preview must report as busy');
 
   // Re-rendering must not discard a half-written review.
   const refresh=new Function('makeElement','api','runJob','loadJobs',source+';return refreshOutcomeAnalysisPanel;')(makeElement,api,runJob,loadJobs);

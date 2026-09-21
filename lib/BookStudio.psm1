@@ -279,8 +279,17 @@ function Repair-BookStudioParkedJobs {
     Invoke-BookStudioDatabaseLock -DatabasePath $DatabasePath -ScriptBlock {
         $db = Read-BookStudioDatabase -DatabasePath $DatabasePath
         foreach ($job in @($db.jobs)) {
-            if ($job.workflowStage -ne 'outcomes-analysis' -or $job.status -ne 'Queued' -or $job.runnerProcessId) { continue }
-            $job.status = 'Review'
+            if ($job.status -ne 'Queued' -or $job.runnerProcessId) { continue }
+            # A book waiting for a person, or one whose runner never started.
+            # Start-BookStudioJob records its runner within a second, so an
+            # older Queued job with none is not starting and never will.
+            $parked = $job.workflowStage -eq 'outcomes-analysis'
+            if (-not $parked) {
+                if ($job.workflowStage -ne 'format-review' -or $job.outputFolder) { continue }
+                $updatedAt = try { [datetime]$job.updatedAt } catch { (Get-Date).AddMinutes(-10) }
+                if (((Get-Date) - $updatedAt).TotalSeconds -lt 120) { continue }
+            }
+            $job.status = if ($parked) { 'Review' } else { 'Ready' }
             $job.updatedAt = (Get-Date).ToString('s')
             $repairedState.value = $true
         }

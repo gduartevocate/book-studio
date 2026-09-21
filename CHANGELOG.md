@@ -1,5 +1,11 @@
 # Book Studio ID Changelog
 
+## v2026.09.21.5 (2026-09-21)
+
+- Fix: a book whose runner never started no longer reports "Generation in progress" with no way to continue. The status is now checked against an actual running process, so the button that starts the format preview stays available.
+- Books already stuck in that state are repaired automatically when the book list is read.
+- Before the first run, the button now reads "Create format preview" instead of "Recreate preview".
+
 ## v2026.09.21.4 (2026-09-21)
 
 - The course-outcome analysis now writes learning objectives in the instructional-designer pattern: exactly two per course objective, forming an enabling objective (Identify, Describe, Differentiate) followed by a terminal objective that performs the course objective itself.
