@@ -12985,6 +12985,7 @@ function Export-EbookPackage {
 Export-ModuleMember -Function Import-CourseSpec, Import-SourceContext, Import-BrandProfile, New-EbookPlan, Merge-EbookReviewedOutline, Resolve-EbookSources, New-EbookBlueprintPackage, Export-EbookBlueprintPackage, New-EbookPackage, Export-EbookPackage, Repair-EbookPackageOutputs, Get-ProhibitedKnowledgeCheckSignals, Remove-ProhibitedKnowledgeCheckSections, Get-ProhibitedLearnerSectionSignals, Remove-ProhibitedLearnerSections, Test-EbookObjectiveTraceability, Test-EbookReleaseArtifacts, Test-EbookAssignedSources, Test-EbookAssignedSourcePackage, Get-EbookTemplateInstructions, Get-EbookPublicationTemplate, Test-EbookPublicationTemplate
 Export-ModuleMember -Function Test-EbookManuscriptPreflight, Update-EbookManuscriptPreflight
 Export-ModuleMember -Function ConvertFrom-EbookOutcomeCatalog, Set-EbookCourseOutcomeRevision
+Export-ModuleMember -Function Export-MarkdownToDocx
 Export-ModuleMember -Function Resolve-EbookOutcomeAssignments, Get-EbookOutcomeComparableText, Get-EbookOutcomeAnalysisFacts, New-EbookOutcomeAnalysisPrompt, ConvertFrom-EbookOutcomeAnalysisResponse, Test-EbookCourseObjectiveFidelity, ConvertTo-EbookOutcomeSpecSheetMarkdown, ConvertTo-EbookOutcomeAnalysisMarkdown
 Export-ModuleMember -Function Get-EbookBlueprintReadingText, ConvertFrom-EbookReadingList, Merge-EbookReadingLists, ConvertTo-EbookReadingListText, Update-EbookRequiredSourceEvidence, Get-EbookRequiredSourceReview, New-EbookRequiredSourceBrief, ConvertTo-SafePathPart
 

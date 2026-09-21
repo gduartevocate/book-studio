@@ -92,6 +92,12 @@ Check (@($revised.weeks[0].modules | ForEach-Object {$_.objectiveId}) -join ',' 
 Check ($revised.outcomeRevision.reviewedBy -eq 'Fixture ID' -and $revised.outcomeRevision.origin -eq 'curriculum-draft-analysis') 'The amendment records who approved it and which review produced it.'
 $outcomeFolder=Join-Path $draftJob.sourceContextPath 'outcome-analysis'
 Check (Test-Path -LiteralPath (Join-Path $outcomeFolder 'QA1000 - Course Outcomes.md')) 'The approved review record was not written.'
+# The Word export is a documented deliverable, and its failure path is a
+# fallback that records the error rather than losing the approval. Assert the
+# file itself, or a missing Export-MarkdownToDocx passes as a graceful note.
+$outcomeDocx=Join-Path $outcomeFolder 'QA1000 - Course Outcomes.docx'
+Check (Test-Path -LiteralPath $outcomeDocx) "The approved review record was not exported to Word. Recorded documents: $(@($approved.documents | ForEach-Object {$_.name}) -join ' | ')"
+Check ((Get-Item -LiteralPath $outcomeDocx).Length -gt 0 -and -not @($approved.documents | Where-Object {$_.name -like 'Word export unavailable*'}).Count) 'The Word export reported a failure instead of producing the document.'
 $reusable=Join-Path $outcomeFolder 'QA1000 - Ebook Course File.md'
 Check (Test-Path -LiteralPath $reusable) 'The reusable ebook-ready course file was not written.'
 $reused=Import-CourseSpec -Path $reusable

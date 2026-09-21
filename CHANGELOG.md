@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.21.2 (2026-09-21)
+
+- Fix: approving course outcomes now writes the Word version of the Course Outcomes document. In v2026.09.21.1 the Word export failed silently and only the Markdown files were produced; the approval itself was never at risk.
+
 ## v2026.09.21.1 (2026-09-21)
 
 - Curriculum drafts now get a course-objective and learning-objective review before the book is planned.
