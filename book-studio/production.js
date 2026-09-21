@@ -21,6 +21,17 @@ function appendProductionPreferences(container, job) {
       const mode = addField("Sources to use", document.createElement("select"));
       for (const [value, label] of [["Assigned", "Required readings below"], ["UploadedOnly", "Uploaded teaching documents only"], ["Discovery", "Discover additional sources"]]) mode.append(new Option(label, value));
       mode.value = saved.sourceMode || "UploadedOnly";
+      // Assigned readings stay locked, taught and cited; this permits sources
+      // on top of them, so it is only meaningful for that policy.
+      const research = addField("Also research additional sources beyond the required readings", document.createElement("input"));
+      research.type = "checkbox";
+      research.checked = Boolean(saved.allowAdditionalResearch);
+      const syncResearch = () => {
+        research.disabled = mode.value !== "Assigned";
+        if (research.disabled) research.checked = false;
+      };
+      mode.addEventListener("change", syncResearch);
+      syncResearch();
       const readings = addField("Required reading list (review links extracted from the blueprint)", document.createElement("textarea"));
       readings.rows = 10; readings.maxLength = 40000; readings.value = saved.requiredSources || "";
       readings.placeholder = "Week 1:\n[Title](https://example.org/article)\n[Orientation video](https://example.org/video) (reference only)\nAll chapters:\nhttps://example.org/shared-reading";
@@ -63,7 +74,7 @@ function appendProductionPreferences(container, job) {
       };
       for (const field of [mode, readings, context, instructions]) field.addEventListener("input", () => { dirty = true; status.textContent = "Unsaved settings. Save before checking sources or generating images."; });
       addAction("Save settings", async () => {
-        const updated = await api(`/api/jobs/${job.id}/production-settings`, { method: "POST", body: JSON.stringify({ sourceMode: mode.value, requiredSources: readings.value, imageContext: context.value, imageInstructions: instructions.value }) });
+        const updated = await api(`/api/jobs/${job.id}/production-settings`, { method: "POST", body: JSON.stringify({ sourceMode: mode.value, allowAdditionalResearch: research.checked, requiredSources: readings.value, imageContext: context.value, imageInstructions: instructions.value }) });
         dirty = false; renderReport(updated); status.textContent = "Saved. Existing manuscript and images are unchanged. Check sources before requesting a revision.";
       });
       addAction("Remove entries with no URL", async () => {

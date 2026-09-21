@@ -7,6 +7,10 @@ function Test-BookStudioUploadRequest {
     if($null -ne $Request.primaryFileIndex -and (-not [int]::TryParse([string]$Request.primaryFileIndex,[ref]$primary) -or $primary -lt 0 -or $primary -ge $files.Count)){throw 'The selected course blueprint is not in this upload.'}
     if($Request.sourceMode -and $Request.sourceMode -notin @('UploadedOnly','Discovery','Assigned')){throw 'Unknown source mode.'}
     if($Request.imageContext -and $Request.imageContext -notin @('Generic','Healthcare','Business','Custom')){throw 'Unknown image setting.'}
+    # Assigned readings stay assigned: locked, taught, and required to be cited.
+    # This only adds permission to research beyond them, so the reading list and
+    # every gate on it keep working exactly as before.
+    if($Request.allowAdditionalResearch -and $Request.sourceMode -ne 'Assigned'){throw 'Additional research alongside required readings applies only to the required-readings source policy.'}
     if(([string]$Request.requiredSources).Length -gt 40000 -or ([string]$Request.imageInstructions).Length -gt 4000){throw 'Required sources or image instructions exceed the input limit.'}
     if($Request.imageContext -eq 'Custom' -and [string]::IsNullOrWhiteSpace([string]$Request.imageInstructions)){throw 'Describe the custom image setting.'}
     $total=0L;$decoded=New-Object Collections.ArrayList
@@ -25,5 +29,5 @@ function Test-BookStudioUploadRequest {
     # for outcomes that are already final.
     if([string]::IsNullOrWhiteSpace([string]$Request.courseDocumentKind)){throw 'Say whether the authoritative course document is a curriculum draft that still needs its learning objectives analyzed, or an ebook-ready course file whose outcomes are final.'}
     if($Request.courseDocumentKind -notin @('CurriculumDraft','EbookReady')){throw 'Unknown course document kind.'}
-    [pscustomobject]@{primaryFileIndex=$primary;files=@($decoded);sourceMode=$(if($Request.sourceMode){$Request.sourceMode}else{'UploadedOnly'});courseDocumentKind=[string]$Request.courseDocumentKind}
+    [pscustomobject]@{primaryFileIndex=$primary;files=@($decoded);sourceMode=$(if($Request.sourceMode){$Request.sourceMode}else{'UploadedOnly'});courseDocumentKind=[string]$Request.courseDocumentKind;allowAdditionalResearch=[bool]$Request.allowAdditionalResearch}
 }

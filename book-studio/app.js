@@ -3438,6 +3438,7 @@ form.addEventListener("submit", async (event) => {
       specialInstructions: formData.get("specialInstructions"),
       primaryFileIndex: Number(formData.get("primaryFileIndex")),
       sourceMode: formData.get("sourceMode") || "Assigned",
+      allowAdditionalResearch: formData.get("allowAdditionalResearch") === "on",
       courseDocumentKind: formData.get("courseDocumentKind") || "",
       requiredSources: formData.get("requiredSources") || "",
       imageContext: formData.get("imageContext") || "Generic",

@@ -1,5 +1,11 @@
 # Book Studio ID Changelog
 
+## v2026.09.21.11 (2026-09-21)
+
+- New: a book can now use its required readings and research additional sources as well. Previously these were mutually exclusive, so a course document's reading list ruled out any wider evidence.
+- Tick "Also research additional sources beyond the required readings" in step 2 of New book, or in Sources and image setting on an existing book. It applies only to the required-readings policy.
+- Required readings stay locked: every one must still be taught and cited. Researched sources are added on top of them, each cited by its own URL and marked as research rather than an assigned reading.
+
 ## v2026.09.21.10 (2026-09-21)
 
 - Fix: generation no longer fails before drafting starts. With required readings assigned, the release gate ran on the scaffold and demanded a numbered source note for every reading, which is what the Codex drafting pass writes. Generation aborted in under a minute with dozens of "required reading needs one numbered source note" errors and Codex never ran.

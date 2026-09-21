@@ -126,6 +126,39 @@ Check (Test-Path -LiteralPath $reusable) 'The reusable ebook-ready course file w
 $reused=Import-CourseSpec -Path $reusable
 Check (@($reused.weeks).Count -eq 2 -and $reused.weeks[1].modules[0].subObjectives -contains 'Assign an owner to each workflow step.') 'The generated course file does not read back as the approved outcomes.'
 Reject {Set-BookStudioOutcomeAnalysis -DatabasePath $db -JobId $draftJob.id -Request ([pscustomobject]@{text=$catalog;assignments=$assign;confirm=$true;reviewedBy='Fixture ID';reason='Again'})} 'runs once, before the book is planned'
+
+# Required readings and system research were mutually exclusive: a book could
+# have the document's assigned readings, locked and cited, or the generator's
+# own research, never both. Permitting research does not loosen the reading
+# list; every gate on it still binds.
+$upload=@{files=@(@{name='draft.docx';contentBase64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('fixture'))});courseDocumentKind='EbookReady'}
+$upload.sourceMode='Assigned'; $upload.allowAdditionalResearch=$true
+$validated=& $studio {param($r) Test-BookStudioUploadRequest $r} ([pscustomobject]$upload)
+Check ($validated.allowAdditionalResearch) 'Research permission must survive intake validation.'
+foreach($mode in @('UploadedOnly','Discovery')){
+    $upload.sourceMode=$mode
+    try { & $studio {param($r) Test-BookStudioUploadRequest $r} ([pscustomobject]$upload) | Out-Null; throw "FAIL: $mode must not accept research permission." }
+    catch { Check ($_.Exception.Message -match 'required-readings source policy') "Research permission is refused for $mode." }
+}
+$upload.sourceMode='Assigned'; $upload.allowAdditionalResearch=$false
+Check (-not (& $studio {param($r) Test-BookStudioUploadRequest $r} ([pscustomobject]$upload)).allowAdditionalResearch) 'Required readings alone remain the default.'
+
+# The runner reads these two, so permitting research must clear them or the
+# setting is saved and ignored.
+$researchJob=New-BookStudioJob -ProjectRoot $fixture -DatabasePath $db -Request ([pscustomobject]@{title='Research Fixture';courseCode='QA1000';primaryFileIndex=0;courseDocumentKind='EbookReady';sourceMode='Assigned';allowAdditionalResearch=$true;skipResearch=$true;skipOpenStaxFetch=$true;requiredSources="All chapters:`nhttps://example.org/reading";files=@($first,$second)})
+Check ($researchJob.options.allowAdditionalResearch) 'The job must record that research is permitted.'
+Check ((-not $researchJob.options.skipResearch) -and (-not $researchJob.options.skipOpenStaxFetch)) 'Permitting research must override the skip flags the client sends for non-discovery policies.'
+$plainJob=New-BookStudioJob -ProjectRoot $fixture -DatabasePath $db -Request ([pscustomobject]@{title='Uploaded Fixture';courseCode='QA1000';primaryFileIndex=0;courseDocumentKind='EbookReady';sourceMode='UploadedOnly';files=@($first,$second)})
+Check ($plainJob.options.skipResearch -and $plainJob.options.skipOpenStaxFetch) 'Uploaded-only books must still skip research.'
+
+# The drafter is told both halves: cite every assigned reading, and anything
+# researched is added on top rather than in place of them.
+$studioSource=Get-Content -LiteralPath (Join-Path $root 'lib/BookStudio.psm1') -Raw -Encoding UTF8
+Check ($studioSource -match 'ADDITIONAL RESEARCH:') 'The drafting prompt must state the additional-research boundary.'
+Check ($studioSource -match 'never in place of them') 'The boundary must keep assigned readings mandatory.'
+Check ($studioSource -match '\$allowResearch=\[bool\]\$job\.options\.allowAdditionalResearch') 'Network access must follow the research permission.'
+Check ($studioSource -match 'if\(\(-not \$allowResearch\) -and \$job\.options\.sourceMode -in @\(.UploadedOnly.,.Assigned.\)\)') 'A book permitted to research must not be network-blocked.'
+
 $chapter1=[pscustomobject]@{number=1;title='Office Records';focus='Office records naming';learningTargets=@('Organize office records using clear naming rules.');learningTargetRecords=@([pscustomobject]@{objectiveId='';objective='Organize office records using clear naming rules.'})}
 $plan=[pscustomobject]@{sourceMode='UploadedOnly';chapters=@($chapter1)}
 # Any source-discovery or web call is a test failure, not a stubbed success.

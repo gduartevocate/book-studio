@@ -82,7 +82,7 @@ function Get-BookStudioProductionPreferences {
     if ($Job.outputFolder -and (Test-Path -LiteralPath (Join-Path $Job.outputFolder 'required-source-report.json'))) {
         $report=Get-Content -LiteralPath (Join-Path $Job.outputFolder 'required-source-report.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     }
-    [pscustomobject]@{sourceMode=$Job.options.sourceMode;requiredSources=(ConvertTo-EbookReadingListText $readings);readings=$readings;sourceReport=$report;imageSettings=$(if($Job.options.imageSettings){$Job.options.imageSettings}else{[pscustomobject]@{context='Generic';instructions=''}})}
+    [pscustomobject]@{sourceMode=$Job.options.sourceMode;allowAdditionalResearch=[bool]$Job.options.allowAdditionalResearch;requiredSources=(ConvertTo-EbookReadingListText $readings);readings=$readings;sourceReport=$report;imageSettings=$(if($Job.options.imageSettings){$Job.options.imageSettings}else{[pscustomobject]@{context='Generic';instructions=''}})}
 }
 
 function Set-BookStudioProductionPreferences {
@@ -96,8 +96,12 @@ function Set-BookStudioProductionPreferences {
     Import-Module (Join-Path $PSScriptRoot 'EbookGenerator.psm1') -Scope Local
     $readings=@(ConvertFrom-EbookReadingList -Text ([string]$Request.requiredSources))
     if ($Request.sourceMode -eq 'Assigned' -and -not $readings.Count) { throw 'Add at least one required reading URL.' }
+    # Assigned readings stay locked, taught and cited; this only permits sources
+    # on top of them, so it is meaningless without an assigned list.
+    $allowAdditionalResearch = [bool]$Request.allowAdditionalResearch
+    if ($allowAdditionalResearch -and $Request.sourceMode -ne 'Assigned') { throw 'Additional research alongside required readings applies only to the required-readings source policy.' }
     $settings=[pscustomobject]@{context=$Request.imageContext;instructions=([string]$Request.imageInstructions).Trim()}
-    $production=[pscustomobject]@{sourceMode=$Request.sourceMode;requiredReadings=$readings;imageSettings=$settings}
+    $production=[pscustomobject]@{sourceMode=$Request.sourceMode;requiredReadings=$readings;imageSettings=$settings;allowAdditionalResearch=$allowAdditionalResearch}
     if (-not $job.sourceContextPath -or -not (Test-Path -LiteralPath $job.sourceContextPath)) { throw 'Original course uploads are not available for this book.' }
     $planPath=if($job.outputFolder){Join-Path $job.outputFolder 'ebook-plan.json'}else{''}
     $plan=if($planPath -and (Test-Path -LiteralPath $planPath)){Get-Content -LiteralPath $planPath -Raw -Encoding UTF8 | ConvertFrom-Json}else{$null}
@@ -105,7 +109,7 @@ function Set-BookStudioProductionPreferences {
         foreach ($reading in $readings) {
             if (@($reading.chapters | Where-Object { $_ -ne 0 -and $_ -notin @($plan.chapters.number) }).Count) { throw 'A required reading refers to a chapter outside this outline.' }
         }
-        foreach ($key in @('sourceMode','requiredReadings','imageSettings')) { $plan | Add-Member -NotePropertyName $key -NotePropertyValue $production.$key -Force }
+        foreach ($key in @('sourceMode','requiredReadings','imageSettings','allowAdditionalResearch')) { $plan | Add-Member -NotePropertyName $key -NotePropertyValue $production.$key -Force }
         $backup=Join-Path $job.outputFolder 'production-backups'
         New-Item -ItemType Directory -Path $backup -Force | Out-Null
         Copy-Item -LiteralPath $planPath -Destination (Join-Path $backup ((Get-Date -Format 'yyyyMMddHHmmssfff')+'-plan.json'))
@@ -114,7 +118,17 @@ function Set-BookStudioProductionPreferences {
     $production | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $job.sourceContextPath 'book-studio-production.json') -Encoding UTF8
     Update-BookStudioJob -DatabasePath $DatabasePath -JobId $JobId -Update {
         param($current)
-        foreach ($key in @('sourceMode','requiredReadings','imageSettings')) { $current.options | Add-Member -NotePropertyName $key -NotePropertyValue $production.$key -Force }
+        foreach ($key in @('sourceMode','requiredReadings','imageSettings','allowAdditionalResearch')) { $current.options | Add-Member -NotePropertyName $key -NotePropertyValue $production.$key -Force }
+        # The runner reads skipResearch and skipOpenStaxFetch from the job, so
+        # permitting research here has no effect unless these follow it.
+        if ($allowAdditionalResearch) {
+            $current.options | Add-Member -NotePropertyName skipResearch -NotePropertyValue $false -Force
+            $current.options | Add-Member -NotePropertyName skipOpenStaxFetch -NotePropertyValue $false -Force
+        }
+        elseif ($production.sourceMode -eq 'UploadedOnly') {
+            $current.options | Add-Member -NotePropertyName skipResearch -NotePropertyValue $true -Force
+            $current.options | Add-Member -NotePropertyName skipOpenStaxFetch -NotePropertyValue $true -Force
+        }
     }
     Add-BookStudioLogEntry -DatabasePath $DatabasePath -JobId $JobId -Message 'Source list and image setting saved. Existing citations and image contents are unchanged; check sources, then revise the manuscript or regenerate images as needed.'
     Get-BookStudioProductionPreferences (Get-BookStudioJob -DatabasePath $DatabasePath -JobId $JobId)

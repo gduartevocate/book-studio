@@ -75,6 +75,7 @@
               <label><span>What kind of document is that?</span><select name="courseDocumentKind" id="courseDocumentKind" required><option value="">Choose one</option><option value="CurriculumDraft">Curriculum draft — learning objectives still need review</option><option value="EbookReady">Ebook-ready course file — outcomes are already final</option></select></label>
               <p class="hint">A curriculum draft comes from the academic team with delivery-shaped weekly objectives. Book Studio analyzes it first: course objectives are kept word for word, the learning objectives are reworked, and you edit and approve them before the book is planned. Choose ebook-ready when the document already states the final course and learning objectives per week.</p>
               <label><span>Sources to use</span><select name="sourceMode" id="sourceMode"><option value="Assigned">Required readings from blueprint and links below</option><option value="UploadedOnly">Uploaded teaching documents only</option><option value="Discovery">Discover additional sources (advanced)</option></select></label>
+              <label class="check-field"><input name="allowAdditionalResearch" type="checkbox"><span>Also research additional sources beyond the required readings</span></label><p class="hint">Required readings stay locked: each one must still be taught and cited. This lets the drafter add peer-reviewed, open-education, government, and standards-body sources on top of them, each cited by its own URL. It applies only to the required-readings policy.</p>
               <label><span>Additional required readings</span><textarea name="requiredSources" maxlength="40000" placeholder="Week 1:&#10;https://example.org/article&#10;Week 2:&#10;[Reading title](https://example.org/chapter)&#10;All chapters:&#10;https://example.org/shared-reading"></textarea></label>
               <p class="hint">Required-reading mode extracts links from the blueprint, including embedded Word links, and adds these URLs. Use Week/Chapter headings to assign readings, or All chapters. The blueprint supplies objectives, not scholarly evidence. Review the extracted list after preview. Blocked links need an accessible full-text URL; PDFs require Poppler pdftotext.</p>
             </div>
@@ -128,9 +129,9 @@
   </main>
 
   <template id="jobTemplate"><article class="job-row"><div class="job-main"><div class="job-title"></div><div class="job-meta"></div></div><div class="job-status"></div><div class="job-actions"></div><div class="workflow-panel"></div><div class="production-panel"></div><div class="job-log"></div><div class="artifact-list"></div><div class="outcome-analysis-panel" hidden></div><div class="format-review-panel" hidden></div><div class="chapter-panel" hidden></div><div class="codex-prompt-panel" hidden></div><div class="visual-panel" hidden></div></article></template>
-  <script src="/production.js?v=20260918-10"></script>
+  <script src="/production.js?v=20260921-1"></script>
   <script src="/outcomes.js?v=20260918-outline"></script>
   <script src="/outcome-analysis.js?v=20260921-2"></script>
-  <script src="/app.js?v=20260921-3"></script>
+  <script src="/app.js?v=20260921-4"></script>
 </body>
 </html>
