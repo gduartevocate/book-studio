@@ -126,11 +126,17 @@ $notesBlock
 
 ## What To Produce
 
-1. Give every course objective two to four learning objectives, numbered ``LO<course objective number>.<sequence>`` so ``LO3.2`` is the second learning objective under ``CO3``. Every learning objective must sit under exactly one course objective.
-2. Each learning objective states one observable, assessable performance, uses a measurable verb, and is written at or below the cognitive level of its course objective. Split a draft objective that bundles two performances. Rewrite one that says "understand", "learn about", or "be familiar with".
-3. Cover the whole of each course objective across its learning objectives. Do not introduce content the course objective does not claim.
-4. Assign outcomes to chapters. Start from the course objectives the draft maps to each week and change that mapping only when the draft is internally inconsistent; say so in the analysis when you do. Every chapter must receive at least one outcome, and every outcome must appear in at least one chapter. An outcome may appear in more than one chapter.
-5. In the analysis, say what was wrong with the draft's learning objectives and what you changed. Name the draft objective and the replacement. Flag any course objective the draft leaves uncovered, any week whose mapping does not match its stated objectives, and any course objective whose own wording is unmeasurable.
+1. Give every course objective exactly two learning objectives, numbered ``LO<course objective number>.<sequence>`` so ``LO3.2`` is the second learning objective under ``CO3``. Every learning objective sits under exactly one course objective.
+2. The two form a ladder, not a list.
+   - ``LO<n>.1`` is the **enabling** objective: what the learner must recognize or recall before the course objective is reachable. Use ``Identify``, ``Describe``, or ``Differentiate``.
+   - ``LO<n>.2`` is the **terminal** objective: it performs the course objective itself. Decide for each course objective whether to hold its own verb or lift one level above it (``Explain`` above ``Describe``, ``Compare`` above ``Explain``, ``Evaluate`` above ``Apply``). Hold the verb when the course objective already names the performance a learner must demonstrate. Lift it when the course objective describes knowledge that the course actually assesses through judgment, and the draft's own activities and assessments show learners doing that. Never lift more than one level.
+3. Do not write two objectives at the same cognitive level, and do not split a course objective into parallel objectives by topic, setting, or code set. For "Apply ICD-10-CM, CPT, and HCPCS Level II codes", three objectives that each assign one code set is wrong; one enabling objective that differentiates the three and one terminal objective that applies them is right.
+4. Each learning objective states one observable, assessable performance and uses a measurable verb. Rewrite one that says "understand", "learn about", or "be familiar with".
+5. Together the two must cover the whole of the course objective. Do not introduce content it does not claim.
+6. Write a third learning objective only when the course objective states two genuinely separate performances that one terminal objective cannot reach. Never write a fourth. Say in the analysis why the third was unavoidable.
+7. Assign outcomes to chapters. Start from the course objectives the draft maps to each week and change that mapping only when the draft is internally inconsistent; say so in the analysis when you do. Every chapter must receive at least one outcome, and every outcome must appear in at least one chapter. An outcome may appear in more than one chapter.
+8. In the analysis, for every course objective, state whether its terminal objective holds the course objective's verb or lifts one level, and why. Name the evidence in the draft that decided it. A designer who disagrees must be able to see the reasoning and change the verb without rerunning the analysis.
+9. Also in the analysis, say what was wrong with the draft's learning objectives and what you changed. Name the draft objective and the replacement. Flag any course objective the draft leaves uncovered, any week whose mapping does not match its stated objectives, and any course objective whose own wording is unmeasurable.
 
 ## Curriculum Draft Text
 
@@ -146,10 +152,11 @@ END ANALYSIS
 
 SUGGESTED OUTCOMES
 CO1: <the course objective, character for character>
-LO1.1: <learning objective>
-LO1.2: <learning objective>
+LO1.1: <enabling objective>
+LO1.2: <terminal objective>
 CO2: <the course objective, character for character>
-LO2.1: <learning objective>
+LO2.1: <enabling objective>
+LO2.2: <terminal objective>
 END SUGGESTED OUTCOMES
 
 CHAPTER ASSIGNMENTS

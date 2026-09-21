@@ -46,6 +46,20 @@ Check ($prompt -match [regex]::Escape('CO1: Describe the end-to-end revenue cycl
 Check ($prompt -match 'Fixture note\.') 'Designer notes reach the prompt.'
 Check ($prompt -match 'SUGGESTED OUTCOMES' -and $prompt -match 'CHAPTER ASSIGNMENTS') 'The prompt states the reply format the parser reads.'
 
+# The house pattern the instructional designer actually writes: exactly two
+# learning objectives per course objective, forming an enabling-to-terminal
+# ladder. Without it the analyzer splits a course objective into parallel
+# same-level objectives by topic, which is not what a designer produces.
+Check ($prompt -match 'exactly two learning objectives') 'The prompt states the two-objective pattern.'
+Check ($prompt -match 'enabling' -and $prompt -match 'terminal') 'The prompt describes the enabling-to-terminal ladder.'
+Check ($prompt -match 'each assign one code set is wrong') 'The prompt rejects splitting a course objective into parallel topic objectives.'
+Check ($prompt -match 'Never write a fourth') 'The prompt caps the objective count.'
+# The terminal verb is the designer's judgment call, so the analyzer decides it
+# per course objective and has to show its reasoning rather than apply a rule.
+Check ($prompt -match 'hold its own verb or lift one level') 'The terminal verb is a decision, not a fixed rule.'
+Check ($prompt -match 'Never lift more than one level') 'The lift is capped at one level.'
+Check ($prompt -match 'state whether its terminal objective holds') 'The prompt requires each verb decision to be justified in the analysis.'
+
 # The reply parser. Models decorate blocks with Markdown even when told not to,
 # and a decorated reply that is otherwise correct must not be thrown away.
 $reply = @'

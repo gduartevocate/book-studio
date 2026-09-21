@@ -1,5 +1,11 @@
 # Book Studio ID Changelog
 
+## v2026.09.21.4 (2026-09-21)
+
+- The course-outcome analysis now writes learning objectives in the instructional-designer pattern: exactly two per course objective, forming an enabling objective (Identify, Describe, Differentiate) followed by a terminal objective that performs the course objective itself.
+- It no longer splits a course objective into parallel same-level objectives by topic or code set.
+- The terminal verb is decided per course objective, either holding the course objective's verb or lifting one level where the course genuinely assesses that judgment, and the analysis states which was chosen and why. Change it in the editor if you disagree; no rerun needed.
+
 ## v2026.09.21.3 (2026-09-21)
 
 - Fix: a book waiting for its course-outcome review no longer reports "Generation in progress". It was created with a runner status, so the app claimed it was generating, hid the review action, refused to delete the book, and re-rendered the page on every poll. That re-render is what made the page blink, and it discarded anything typed into the outcome editor mid-review.
