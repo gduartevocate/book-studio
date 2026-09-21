@@ -2337,6 +2337,15 @@ function Get-CourseDomain {
     if ($lower -match "\bci\d{4}\b|computer applications|windows operating system|microsoft word|files and folders|cloud storage|apa standards|cybersecurity|keyboarding") {
         return "computer-applications"
     }
+    # A revenue cycle or medical coding course must be recognized before the
+    # generic title domains, or "compliance", "ethical", and "risk" in its week
+    # titles pull it into critical thinking, and the fallback then frames a
+    # medical coding book as office operations, down to GM1000 section titles.
+    # Plain "healthcare" is deliberately not enough: a healthcare systems or
+    # workforce course is not this domain.
+    if ($titleText -match "revenue cycle|medical coding|medical billing|health information management|charge capture|claim form|cms-1500|cms1500|ub-04|ub04|icd-10|\bcpt\b|hcpcs|reimbursement methodolog|payer requirement") {
+        return "healthcare-revenue-cycle"
+    }
     if ($titleText -match "critical thinking|logical reasoning|deductive|inductive|persuasive argument|fallacies|\bethics\b|\blogic\b") {
         return "critical-thinking"
     }
@@ -2403,6 +2412,20 @@ function Get-CoursePracticeFrame {
             ordinary = "The situation is deliberately ordinary: communication quality is built from small choices. A clarified purpose, a better subject line, a respectful response, or a revised opening sentence can prevent misunderstanding later."
             bridgeNoun = "professional communication practice"
             applicationDefault = "Write a short communication note that identifies the audience, purpose, channel, tone, key message, and one revision that would make the message clearer or more respectful."
+        }
+    }
+
+    if ($domain -eq "healthcare-revenue-cycle") {
+        return [pscustomobject]@{
+            learnerWork = "documentation interpretation, code assignment, claim accuracy, and compliance judgment"
+            throughline = "Students move from tracing the revenue cycle end to end, to reading clinical documentation for what it supports, to assigning codes and completing claims, to analyzing errors and denials, and finally to judging payer, reimbursement, and compliance risk across a whole case."
+            chapterPurpose = "The goal is defensible accuracy: students should be able to read the documentation, assign or check a code, complete the claim field, explain the payer rule that applies, and say what evidence supports the decision."
+            preface = "Revenue cycle work is learned by handling real documentation, codes, claim fields, remittance advice, and payer rules. The chapters move from the stages of the cycle, to documentation and coding systems, to claim completion and reimbursement, to errors and denials, and finally to integrated review of a case."
+            chapterArc = "The chapters build from the end-to-end cycle and the departments that own each stage, to clinical documentation and the ICD-10-CM, CPT, and HCPCS Level II systems, to CMS-1500 and UB-04 completion with payer requirements, to error and denial analysis, and finally to integrated assessment with legal and ethical judgment throughout."
+            scenario = "Imagine a billing office working a patient account from registration to payment. The encounter is documented, services are coded, a claim goes out, the remittance comes back short, and someone has to find out whether the documentation, the code, the claim field, or the payer rule is responsible, and correct it without misrepresenting what happened."
+            ordinary = "The situations are deliberately ordinary: a missing modifier, an unverified policy, a diagnosis that does not support the procedure, a field entered from the wrong date. Small documentation and coding choices decide whether a claim is paid, denied, or becomes a compliance problem."
+            bridgeNoun = "revenue cycle accuracy"
+            applicationDefault = "Write a short claim note that states what the documentation supports, the code or field assigned, the payer requirement applied, the risk if it is wrong, and the evidence that supports the decision."
         }
     }
 
@@ -2742,6 +2765,16 @@ function New-EbookPlan {
             "Bridge paragraph into the next chapter"
         )
     }
+    elseif ($courseDomain -eq "healthcare-revenue-cycle") {
+        @(
+            "Chapter opener with a patient account or claim scenario",
+            "Concept explanation tied to the learning objectives",
+            "Documentation, coding, or claim decision model learners can reuse",
+            "Applied example worked from documentation through claim outcome",
+            "Reader-notice moment and chapter synthesis",
+            "Bridge paragraph into the next chapter"
+        )
+    }
     elseif ($courseDomain -eq "professional-communication") {
         @(
             "Chapter opener with a realistic communication scenario",
@@ -2893,6 +2926,17 @@ function Get-ChapterFocus {
         if ($text -match "operational improvements|operational strategy|case study|workplace scenario|continuous improvement|operations improvement") { return "evidence-based operational improvement" }
         if ($text -match "organizational|structure|strategic goals|people|technology|procedures|productivity|risk") { return "organizational structure and strategic support" }
         return "people, technology, procedures, productivity, and risk"
+    }
+
+    if ($domain -eq "healthcare-revenue-cycle") {
+        if ($combinedText -match "integrated|capstone|improvement proposal|improvement strateg|synthesis|analysis report") { return "integrated revenue cycle assessment and improvement recommendations" }
+        if ($combinedText -match "denial|underpayment|billing error|coding error|root cause|corrective action|risk management") { return "coding and billing error analysis and denial prevention" }
+        if ($combinedText -match "cms-1500|cms1500|ub-04|ub04|claim form|claim submission|adjudication") { return "claim completion, payer requirements, and reimbursement methods" }
+        if ($combinedText -match "registration|scheduling|insurance verification|revenue cycle stage|collections|patient access|front-end") { return "end-to-end revenue cycle stages and departmental handoffs" }
+        if ($combinedText -match "icd-10|\bcpt\b|hcpcs|code set|code assignment|coding system|documentation|charge capture|medical record") { return "clinical documentation interpretation and code assignment" }
+        if ($combinedText -match "payer requirement|reimbursement methodolog|payment determination") { return "claim completion, payer requirements, and reimbursement methods" }
+        if ($combinedText -match "legal|ethical|compliance|hipaa|fraud|abuse") { return "legal, ethical, and compliance standards in coding and billing" }
+        return "revenue cycle accuracy, compliance, and reimbursement integrity"
     }
 
     if ($domain -eq "computer-applications") {

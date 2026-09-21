@@ -1,5 +1,11 @@
 # Book Studio ID Changelog
 
+## v2026.09.21.6 (2026-09-21)
+
+- Healthcare revenue cycle and medical coding courses now have their own content domain. Previously they fell back to the business/office-operations templates, which gave every chapter the same focus and proposed office-operations section titles such as "What Are Business and Office Operations?" for a medical coding book.
+- Each chapter now gets its own focus (revenue cycle stages, documentation and coding, claim completion and payers, errors and denials, integrated assessment), and section titles come from the course's own learning objectives.
+- Detection is narrow: it looks for revenue cycle, coding, billing, claim form, and payer wording in the course and week titles. A general healthcare course is unaffected.
+
 ## v2026.09.21.5 (2026-09-21)
 
 - Fix: a book whose runner never started no longer reports "Generation in progress" with no way to continue. The status is now checked against an actual running process, so the button that starts the format preview stays available.
