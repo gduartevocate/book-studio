@@ -177,4 +177,45 @@ New-Item -ItemType Directory -Path $onlyRefFolder -Force | Out-Null
 $aloneReport = Update-EbookRequiredSourceEvidence $onlyRefPlan $onlyRefFolder { param($url, $folder) throw 'must not fetch' }
 Check ($aloneReport.status -eq 'FAIL' -and ($aloneReport.issues -join ' ') -match 'no reading that could be read') 'A chapter with nothing readable was allowed.'
 
+# A week-per-column blueprint keeps its reading list in one grid row, one cell
+# per week. Read in document order that row flattens into a single run with no
+# week markers left in it, so every reading in the course was assigned to
+# whichever week was last seen: 40 real URLs all landed in chapter 5.
+function New-GridCell([string[]]$Lines) {
+    $paragraphs = ($Lines | ForEach-Object { "<w:p><w:r><w:t xml:space=`"preserve`">$([System.Security.SecurityElement]::Escape($_))</w:t></w:r></w:p>" }) -join ''
+    if (-not $Lines.Count) { $paragraphs = '<w:p/>' }
+    return "<w:tc>$paragraphs</w:tc>"
+}
+$gridRows = @(
+    "<w:tr>$((New-GridCell @('')) + (New-GridCell @('Week 1')) + (New-GridCell @('T')) + (New-GridCell @('Week 2')) + (New-GridCell @('T')) + (New-GridCell @('Week 3')) + (New-GridCell @('T')))</w:tr>",
+    "<w:tr>$((New-GridCell @('Weekly Topics')) + (New-GridCell @('Intake')) + (New-GridCell @('')) + (New-GridCell @('Coding')) + (New-GridCell @('')) + (New-GridCell @('Claims')) + (New-GridCell @('')))</w:tr>",
+    "<w:tr>$((New-GridCell @('Textbook/ebook/ Resource list')) + (New-GridCell @('One: https://example.org/one')) + (New-GridCell @('')) + (New-GridCell @('Two: https://example.org/two')) + (New-GridCell @('')) + (New-GridCell @('Three: https://example.org/three')) + (New-GridCell @('')))</w:tr>",
+    "<w:tr>$((New-GridCell @('Learn - readings; videos')) + (New-GridCell @('Read the intake guide. Resource: https://example.org/one')) + (New-GridCell @('')) + (New-GridCell @('Annotate a record. Resource: https://example.org/two')) + (New-GridCell @('')) + (New-GridCell @('Walk a claim form. Resource: https://example.org/three')) + (New-GridCell @('')))</w:tr>"
+)
+$gridXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Course Blueprint</w:t></w:r></w:p><w:tbl>' + ($gridRows -join '') + '</w:tbl></w:body></w:document>'
+$gridTypes = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'
+$gridRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'
+$gridPath = Join-Path $fixture 'QA3010 Curriculum Draft.docx'
+Add-Type -AssemblyName System.IO.Compression
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$gridArchive = [System.IO.Compression.ZipFile]::Open($gridPath, [System.IO.Compression.ZipArchiveMode]::Create)
+try {
+    foreach ($part in @(@{ name = '[Content_Types].xml'; body = $gridTypes }, @{ name = '_rels/.rels'; body = $gridRels }, @{ name = 'word/document.xml'; body = $gridXml })) {
+        $entry = $gridArchive.CreateEntry($part.name)
+        $writer = New-Object System.IO.StreamWriter($entry.Open(), (New-Object System.Text.UTF8Encoding($false)))
+        try { $writer.Write($part.body) } finally { $writer.Dispose() }
+    }
+}
+finally { $gridArchive.Dispose() }
+
+$gridReadings = @(ConvertFrom-EbookReadingList -Text (Get-EbookBlueprintReadingText -Path $gridPath) -Origin 'Blueprint')
+Check (@($gridReadings | Where-Object url).Count -eq 3) "The week grid must yield its three readings (got $(@($gridReadings | Where-Object url).Count))."
+foreach ($pair in @(@{ url = 'https://example.org/one'; week = 1 }, @{ url = 'https://example.org/two'; week = 2 }, @{ url = 'https://example.org/three'; week = 3 })) {
+    $record = @($gridReadings | Where-Object { $_.url -eq $pair.url })
+    Check ($record.Count -eq 1) "One record per reading URL ($($pair.url))."
+    Check ((@($record[0].chapters) -join ',') -eq ([string]$pair.week)) "$($pair.url) belongs to week $($pair.week) only (got '$(@($record[0].chapters) -join ',')')."
+}
+# Activity rows cite the same readings; their prose is not a reading of its own.
+Check (@($gridReadings | Where-Object { -not $_.url }).Count -eq 0) "An activity description must not become a title-only reading (got $((@($gridReadings | Where-Object { -not $_.url }) | ForEach-Object { $_.title }) -join ' | '))."
+
 "PASS: $script:checks required-source and QA regression checks. Fixtures: $fixture"

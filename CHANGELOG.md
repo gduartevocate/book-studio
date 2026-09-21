@@ -1,5 +1,10 @@
 # Book Studio ID Changelog
 
+## v2026.09.21.8 (2026-09-21)
+
+- Fix: a curriculum draft that assigns readings per week in its grid now has them read per week. The reading list lives in one grid row with a cell per week; reading it in document order flattened that row and assigned every reading in the course to the last week seen. RB1010 went from 40 readings all in chapter 5 to 40 spread across its five weeks.
+- Activity rows that cite the same readings are read per week too, and their prose is no longer turned into readings with no URL.
+
 ## v2026.09.21.7 (2026-09-21)
 
 - Fix: the course-outcome analysis was building its Codex prompt without the curriculum draft text. It read the draft through a call that always failed, inside a catch that replaced it with nothing, so the analyzer only ever saw the parsed course structure. It now reads the draft, and says so in the book log when it cannot.

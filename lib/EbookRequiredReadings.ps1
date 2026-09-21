@@ -20,8 +20,15 @@ function Get-EbookBlueprintReadingText {
         $ns = [Xml.XmlNamespaceManager]::new($document.NameTable)
         $ns.AddNamespace('w','http://schemas.openxmlformats.org/wordprocessingml/2006/main')
         $ns.AddNamespace('r','http://schemas.openxmlformats.org/officeDocument/2006/relationships')
-        $lines = foreach ($p in $document.SelectNodes('//w:body//w:p', $ns)) {
-            foreach ($link in $p.SelectNodes('.//w:hyperlink', $ns)) {
+        # A week-per-column blueprint keeps its reading list in one grid row,
+        # one cell per week. Walking every paragraph in document order flattens
+        # that row into a single run with no week markers left in it, so every
+        # reading in the course was assigned to whichever week was last seen.
+        # Tables that carry week columns are therefore read column by column,
+        # and each week's cell is announced before its readings.
+        $emit = {
+            param($paragraph)
+            foreach ($link in $paragraph.SelectNodes('.//w:hyperlink', $ns)) {
                 $label = ($link.SelectNodes('.//w:t',$ns) | ForEach-Object InnerText) -join ''
                 $target = $targets[$link.GetAttribute('id','http://schemas.openxmlformats.org/officeDocument/2006/relationships')]
                 if ($target -and $label) {
@@ -30,16 +37,58 @@ function Get-EbookBlueprintReadingText {
                     foreach ($extra in @($texts | Select-Object -Skip 1)) { $extra.InnerText='' }
                 }
             }
-            $text = ($p.SelectNodes('.//w:t',$ns) | ForEach-Object InnerText) -join ''
+            $text = ($paragraph.SelectNodes('.//w:t',$ns) | ForEach-Object InnerText) -join ''
             # Word field hyperlinks are not always represented by w:hyperlink.
-            $fields = @(($p.SelectNodes('.//w:instrText',$ns) | ForEach-Object InnerText) -join '')
-            $fields += @($p.SelectNodes('.//w:fldSimple',$ns) | ForEach-Object { $_.GetAttribute('instr','http://schemas.openxmlformats.org/wordprocessingml/2006/main') })
+            $fields = @(($paragraph.SelectNodes('.//w:instrText',$ns) | ForEach-Object InnerText) -join '')
+            $fields += @($paragraph.SelectNodes('.//w:fldSimple',$ns) | ForEach-Object { $_.GetAttribute('instr','http://schemas.openxmlformats.org/wordprocessingml/2006/main') })
             foreach ($field in $fields) {
-                if ($field -match '(?i)HYPERLINK\s+"(https?://[^\"]+)"' -and -not $text.Contains($Matches[1])) { $text += ' ' + $Matches[1] }
+                if ($field -match '(?i)HYPERLINK[ ]+"(https?://[^"]+)"' -and -not $text.Contains($Matches[1])) { $text += ' ' + $Matches[1] }
             }
-            $text
+            return $text
         }
-        return $lines -join "`n"
+
+        $lines = New-Object System.Collections.ArrayList
+        foreach ($node in $document.SelectNodes('//w:body/*', $ns)) {
+            if ($node.LocalName -ne 'tbl') {
+                foreach ($paragraph in $node.SelectNodes('.//w:p', $ns)) { [void]$lines.Add((& $emit $paragraph)) }
+                if ($node.LocalName -eq 'p') { [void]$lines.Add((& $emit $node)) }
+                continue
+            }
+            $rows = @($node.SelectNodes('./w:tr', $ns))
+            $weekColumns = @{}
+            if ($rows.Count -gt 0) {
+                $headerCells = @($rows[0].SelectNodes('./w:tc', $ns))
+                for ($c = 0; $c -lt $headerCells.Count; $c++) {
+                    $headerText = (($headerCells[$c].SelectNodes('.//w:t',$ns) | ForEach-Object InnerText) -join '').Trim()
+                    if ($headerText -match '^Week[ ]*([0-9]+)$') { $weekColumns[$c] = [int]$Matches[1] }
+                }
+            }
+            foreach ($row in $rows) {
+                $cells = @($row.SelectNodes('./w:tc', $ns))
+                $label = (($cells | Select-Object -First 1 | ForEach-Object { ($_.SelectNodes('.//w:t',$ns) | ForEach-Object InnerText) -join '' }) -join '').Trim()
+                if ($weekColumns.Count -lt 2) {
+                    foreach ($paragraph in $row.SelectNodes('.//w:p', $ns)) { [void]$lines.Add((& $emit $paragraph)) }
+                    continue
+                }
+                # Every row of a week grid is read column by column, not only
+                # the resource row. The activity rows cite the same readings,
+                # and read flat they were all attributed to the last week seen.
+                $isResourceRow = $label -match '(?i)textbook|resource list|reading list'
+                foreach ($column in @($weekColumns.Keys | Sort-Object { [int]$_ })) {
+                    if ([int]$column -ge $cells.Count) { continue }
+                    $cellLines = @(foreach ($paragraph in $cells[[int]$column].SelectNodes('.//w:p', $ns)) { & $emit $paragraph })
+                    if (-not @($cellLines | Where-Object { $_ -and $_.Trim() }).Count) { continue }
+                    [void]$lines.Add("Week $($weekColumns[$column]):")
+                    # Only the resource row is a reading list. Elsewhere a line
+                    # without a link is an activity description, not a source,
+                    # and the reading-list marker is sticky, so it is turned
+                    # off again for every other row.
+                    [void]$lines.Add($(if ($isResourceRow) { 'Resources:' } else { 'Activities:' }))
+                    foreach ($cellLine in $cellLines) { [void]$lines.Add($cellLine) }
+                }
+            }
+        }
+        return (@($lines) -join "`n")
     } finally { $zip.Dispose() }
 }
 
