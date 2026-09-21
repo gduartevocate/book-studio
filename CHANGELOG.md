@@ -1,5 +1,10 @@
 # Book Studio ID Changelog
 
+## v2026.09.21.7 (2026-09-21)
+
+- Fix: the course-outcome analysis was building its Codex prompt without the curriculum draft text. It read the draft through a call that always failed, inside a catch that replaced it with nothing, so the analyzer only ever saw the parsed course structure. It now reads the draft, and says so in the book log when it cannot.
+- Adds a repository hygiene check that catches unexported functions called across the module boundary, lost file encodings, and client scripts the server does not serve.
+
 ## v2026.09.21.6 (2026-09-21)
 
 - Healthcare revenue cycle and medical coding courses now have their own content domain. Previously they fell back to the business/office-operations templates, which gave every chapter the same focus and proposed office-operations section titles such as "What Are Business and Office Operations?" for a medical coding book.

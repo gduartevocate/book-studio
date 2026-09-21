@@ -124,8 +124,15 @@ function Start-BookStudioOutcomeAnalysis {
     $exitCodePath = Join-Path $requestFolder 'exit-code.txt'
     $runScriptPath = Join-Path $requestFolder 'run.ps1'
 
+    # Get-DocxText is internal to the generator, so it is reached through the
+    # module's own scope. Called directly it throws, and the catch below then
+    # quietly sent the analyzer a prompt with no curriculum draft in it.
     $excerpt = ''
-    try { $excerpt = Get-DocxText -Path $job.specPath } catch { $excerpt = '' }
+    try { $excerpt = [string](& (Get-Module EbookGenerator) { param($p) Get-DocxText -Path $p } $job.specPath) }
+    catch { $excerpt = '' }
+    if ([string]::IsNullOrWhiteSpace($excerpt)) {
+        Add-BookStudioLogEntry -DatabasePath $DatabasePath -JobId $JobId -Message 'The curriculum draft text could not be read for the analysis prompt; the analyzer sees the parsed course structure only.'
+    }
     if ($excerpt.Length -gt 60000) { $excerpt = $excerpt.Substring(0, 60000) + "`r`n(The curriculum draft was truncated here. The parsed structure above is complete.)" }
     $prompt = New-EbookOutcomeAnalysisPrompt -Facts $facts -DesignerNotes $Notes -SourceExcerpt $excerpt
     Set-Content -LiteralPath $promptPath -Value $prompt -Encoding UTF8
