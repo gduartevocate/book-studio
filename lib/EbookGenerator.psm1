@@ -12860,7 +12860,14 @@ function Export-EbookPackage {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][object]$Package,
-        [Parameter(Mandatory)][string]$OutputRoot
+        [Parameter(Mandatory)][string]$OutputRoot,
+        # A Codex drafting pass runs after this export and is what teaches and
+        # cites the assigned readings. Enforcing the final release gate here
+        # judges the scaffold for work the drafter has not been allowed to do
+        # yet, and aborts the run before it can. The report is still written,
+        # and Repair-EbookPackageOutputs enforces the same gate afterwards on
+        # the finished manuscript, so nothing is released without passing it.
+        [switch]$DeferReleaseGate
     )
 
     $templateCheck = Test-EbookPublicationTemplate -Markdown $Package.markdown
@@ -12951,7 +12958,9 @@ function Export-EbookPackage {
     $releaseIntegrityReport = Test-EbookReleaseArtifacts -Course $Package.course -Plan $Package.plan -Markdown $Package.markdown -HtmlPath $htmlPath -DocxPath $docxPath -OutputFolder $outputFolder
     Set-Content -LiteralPath $releaseIntegrityPath -Value ($releaseIntegrityReport | ConvertTo-Json -Depth 16) -Encoding UTF8
     if ($releaseIntegrityReport.status -eq "FAIL") {
-        throw "Release artifact gate failed. $((@($releaseIntegrityReport.checks | Where-Object { $_.status -eq 'FAIL' } | ForEach-Object { $_.name + ': ' + $_.detail }) -join ' '))"
+        $releaseFailureDetail = (@($releaseIntegrityReport.checks | Where-Object { $_.status -eq 'FAIL' } | ForEach-Object { $_.name + ': ' + $_.detail }) -join ' ')
+        if (-not $DeferReleaseGate) { throw "Release artifact gate failed. $releaseFailureDetail" }
+        Write-EbookGeneratorProgress -Phase "Release gate deferred" -Detail "The scaffold does not yet satisfy the release gate. Drafting runs next and must resolve it; the same gate is enforced on the finished manuscript. $releaseFailureDetail"
     }
     Write-EbookGeneratorProgress -Phase "Writing planning artifacts" -Detail "Writing planning packet, outline, and plan files."
     Set-Content -LiteralPath $planningPacketPath -Value ($Package.blueprint | ConvertTo-Json -Depth 16) -Encoding UTF8

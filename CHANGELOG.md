@@ -1,5 +1,10 @@
 # Book Studio ID Changelog
 
+## v2026.09.21.10 (2026-09-21)
+
+- Fix: generation no longer fails before drafting starts. With required readings assigned, the release gate ran on the scaffold and demanded a numbered source note for every reading, which is what the Codex drafting pass writes. Generation aborted in under a minute with dozens of "required reading needs one numbered source note" errors and Codex never ran.
+- The gate now runs after drafting, on the finished manuscript, where it still blocks a book that has not cited its assigned readings.
+
 ## v2026.09.21.9 (2026-09-21)
 
 - Fix: PDF readings are now readable without installing anything. Checking sources refused every PDF with "Install the Poppler pdftotext utility", which a designer without administrator rights cannot do. Book Studio now finds pdftotext inside the Git for Windows installation you already have, so CMS and AHIMA PDFs are retrieved as teaching text.

@@ -657,7 +657,7 @@ $package = New-EbookPackage `
     -ApprovalNotes $ApprovalNotes `
     -ReviewedOutlinePath $ReviewedOutlinePath
 Write-EbookProgress -Phase "Exporting package" -Detail "Writing Markdown, HTML, Word, visuals, reports, and validation files."
-$result = Export-EbookPackage -Package $package -OutputRoot $OutputDir
+$result = Export-EbookPackage -Package $package -OutputRoot $OutputDir -DeferReleaseGate:($UseCodexDrafting -ne 0)
 if ($UseCodexDrafting -ne 0) {
     Write-EbookProgress -Phase "Codex AI drafting" -Detail "Starting Codex to revise the scaffold into a production-quality learner-facing e-book."
     $codexCommand = Resolve-EbookCodexCommand -ConfiguredPath $CodexCommandPath

@@ -99,4 +99,24 @@ foreach ($asset in $assets) {
     Check ($studio -match ("\`$path -eq ['`"]/" + [regex]::Escape($name) + "['`"]")) "The server does not serve /$name. Add it to the static file route in lib/BookStudio.psm1, or the page 404s and the client dies at startup."
 }
 
-Write-Output "PASS: $checks repository hygiene assertions (module exports across the Book Studio boundary, CRLF and BOM preservation, client assets served and cache-busted)."
+
+# The release gate is the final gate. Export-EbookPackage runs before the Codex
+# drafting pass, and drafting is what teaches and cites the assigned readings,
+# so enforcing it there judged the scaffold for work the drafter had not been
+# allowed to do. RB1010 aborted in 45 seconds with 27 "required reading needs
+# one numbered source note" failures, before Codex started.
+$exportSource = Get-Content -LiteralPath (Join-Path $root 'lib/EbookGenerator.psm1') -Raw -Encoding UTF8
+Check ($exportSource -match '\[switch\]\$DeferReleaseGate') 'Export-EbookPackage must be able to defer the release gate.'
+Check ($exportSource -match 'if \(-not \$DeferReleaseGate\) \{ throw "Release artifact gate failed') 'The release gate still throws when it is not deferred.'
+Check ($exportSource -match 'Release gate deferred') 'A deferred gate must be reported, not silently skipped.'
+# The report is written either way, so the evidence survives the deferral.
+$releaseWriteIndex = $exportSource.IndexOf('Set-Content -LiteralPath $releaseIntegrityPath')
+$deferIndex = $exportSource.IndexOf('if (-not $DeferReleaseGate)')
+Check ($releaseWriteIndex -gt 0 -and $deferIndex -gt $releaseWriteIndex) 'release-integrity.json must be written before the gate decides whether to throw.'
+# And the final repair still enforces it, so deferring never releases a book.
+Check ($exportSource -match 'Release artifact gate failed during repair') 'Repair-EbookPackageOutputs must still enforce the release gate on the finished manuscript.'
+$generatorScript = Get-Content -LiteralPath (Join-Path $root 'ebook-generator.ps1') -Raw -Encoding UTF8
+Check ($generatorScript -match 'Export-EbookPackage -Package \$package -OutputRoot \$OutputDir -DeferReleaseGate:\(\$UseCodexDrafting -ne 0\)') 'The generator defers the gate only when a drafting pass will follow.'
+Check ($generatorScript -match '(?s)Export-EbookPackage.*Invoke-EbookCodexDraftingPass.*Repair-EbookPackageOutputs') 'Drafting must run between the scaffold export and the final gate.'
+
+Write-Output "PASS: $checks repository hygiene assertions (module exports across the Book Studio boundary, CRLF and BOM preservation, client assets served and cache-busted, release gate after drafting)."
