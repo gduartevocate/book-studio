@@ -129,5 +129,48 @@ $module = Get-Module EbookGenerator
     $trace = Test-EbookObjectiveTraceability $objectiveCourse $objectivePlan $cleaned
     Check ($trace.status -eq 'PASS') "A cleaned manuscript must keep objective traceability: $(@($trace.issues) -join ' ')"
 
+
+# Objective traceability reads the Learning Objectives list as a numbered list
+# restarting at 1 per chapter, but nothing told the drafting pass that. Codex
+# rendered RB1010's objectives as bullets, the gate reported "Markdown has 0
+# rendered objective(s); source has 4" for every chapter, and a book whose
+# objectives were word-perfect was refused over the list marker.
+$objFixture = Join-Path ([IO.Path]::GetTempPath()) ('objective-numbering-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $objFixture | Out-Null
+try {
+    $objPath = Join-Path $objFixture 'book.md'
+    $objective1 = "Describe the major stages of the revenue cycle from patient scheduling through final payment."
+    $objective2 = "Explain how each department contributes to revenue integrity and the patient's financial experience."
+    $objective3 = "Apply ICD-10-CM, CPT, and HCPCS Level II codes to basic healthcare scenarios."
+    @(
+        '# Chapter 1: Revenue Cycle', '', '### Learning Objectives', '',
+        'By the end of this chapter, you should be able to:', '',
+        "- $objective1", "- $objective2", '',
+        '## Section 1.1 - Intake', '',
+        '# Chapter 2: Coding', '', '### Learning Objectives', '',
+        "7. $objective3", '',
+        '## Section 2.1 - Codes'
+    ) -join "`r`n" | Set-Content -LiteralPath $objPath -Encoding UTF8
+
+    Check (Update-EbookObjectiveListNumbering -MarkdownPath $objPath) 'A bulleted objective list must be renumbered.'
+    $fixed = Get-Content -LiteralPath $objPath -Raw -Encoding UTF8
+    $records = @(& $module { param($t) Get-EbookObjectiveRecordsFromMarkdown -Markdown $t } $fixed)
+    Check ($records.Count -eq 3) "The gate must now see every objective (got $($records.Count) of 3)."
+    Check ((@($records | Where-Object chapterNumber -eq 1 | ForEach-Object { $_.objectiveId }) -join ',') -eq '1,2') 'Chapter 1 numbering starts at 1.'
+    Check ((@($records | Where-Object chapterNumber -eq 2 | ForEach-Object { $_.objectiveId }) -join ',') -eq '1') 'Chapter 2 numbering restarts at 1 instead of continuing.'
+    # Traceability compares wording character for character, so only the marker may change.
+    foreach ($text in @($objective1, $objective2, $objective3)) {
+        Check (@($records | Where-Object { $_.objective -ceq $text }).Count -eq 1) "Objective wording must survive renumbering unchanged: $text"
+    }
+    Check ($fixed -notmatch '(?m)^- ') 'No objective may be left as a bullet.'
+    Check (-not (Update-EbookObjectiveListNumbering -MarkdownPath $objPath)) 'Renumbering an already-numbered list must report no change.'
+
+    # The drafter has to be told, or the cleaner runs on every single book.
+    $instructions = Get-EbookTemplateInstructions
+    Check ($instructions -match 'numbered list that restarts at 1') 'The drafting instruction must state the objective list format the gate requires.'
+    Check ($instructions -match 'Do not convert it to bullets') 'The drafting instruction must forbid the exact drift that occurred.'
+}
+finally { Remove-Item -LiteralPath $objFixture -Recurse -Force -ErrorAction SilentlyContinue }
+
     Write-Output "PASS: $script:checksRun publication regression assertions."
 }

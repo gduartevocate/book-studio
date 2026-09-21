@@ -197,9 +197,43 @@ Use '# Chapter N: Title', '## Section N.1 - Title' through '## Section N.4 - Int
 Section N.1 contains Opening Scenario, a named **Business Case:**, Chapter Roadmap, and context. Section N.2 develops the concepts. Section N.3 contains Case Study Progression, Communication Toolbox, and Practical Field Guide. Section N.4 begins with synthesis prose, then Key Takeaways, Vocabulary Review, Looking Ahead (or Conclusion in the final chapter), and Scholarly Sources.
 Write the opening heading as '### Opening Scenario' (an optional ': scenario title' may follow). In its body, before the next heading, start a paragraph with the literal '**Business Case:** ' immediately followed by the scenario person's capitalized name, then their role, decision, and stakes. Keep the colon inside the bold label. Do not turn that label into a separate heading or replace it with '**Business Case**:'.
 Use $($t.font) $($t.bodyPoints)-point body text and the shared $($t.chapterPoints)/$($t.sectionPoints)/$($t.subsectionPoints)-point heading hierarchy. Tables or visuals support the explanation only where useful.
-Preserve this course's exact weekly objectives and assigned sources. Do not copy GM1000 topics, people, sources, or objectives into another course. Do not introduce GM1025 leadership content into unrelated courses.
+Keep the Learning Objectives list a numbered list that restarts at 1 in every chapter, one objective per item, wording unchanged. Do not convert it to bullets, do not merge or reorder items, and do not continue the numbering from the previous chapter. Preserve this course's exact weekly objectives and assigned sources. Do not copy GM1000 topics, people, sources, or objectives into another course. Do not introduce GM1025 leadership content into unrelated courses.
 Do not include Knowledge Checks, Check Your Reasoning, Reflection Activity, Workplace Challenge, Chapter Summary, Think About It, or interactive-study links. Keep operational examples and job aids, not renamed learner assessments.
 "@
+}
+
+function Update-EbookObjectiveListNumbering {
+    # Objective traceability reads the Learning Objectives list as a numbered
+    # list that restarts at 1 in each chapter. A drafting pass that renders it
+    # as bullets leaves the gate seeing no objectives at all, and a whole book
+    # is refused for a list marker while its wording is word-perfect.
+    #
+    # Only the marker is rewritten. The objective text is never touched, which
+    # is what traceability compares.
+    param([Parameter(Mandatory)][string]$MarkdownPath)
+
+    if (-not (Test-Path -LiteralPath $MarkdownPath -PathType Leaf)) { return $false }
+    $markdown = Get-Content -LiteralPath $MarkdownPath -Raw -Encoding UTF8
+    $lines = @($markdown -split "`r?`n")
+    $changed = $false
+    $inObjectives = $false
+    $number = 0
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        $heading = [regex]::Match($lines[$i], '^(#{1,6})[ 	]+(.+?)[ 	]*$')
+        if ($heading.Success) {
+            $inObjectives = [bool]($heading.Groups[2].Value.Trim() -match '(?i)^learning objectives$')
+            $number = 0
+            continue
+        }
+        if (-not $inObjectives) { continue }
+        $item = [regex]::Match($lines[$i], '^(?<indent>[ 	]*)(?<marker>[-*+]|[0-9]+\.)[ 	]+(?<text>.+?)[ 	]*$')
+        if (-not $item.Success) { continue }
+        $number++
+        $rebuilt = "$($item.Groups['indent'].Value)$number. $($item.Groups['text'].Value)"
+        if ($lines[$i] -cne $rebuilt) { $lines[$i] = $rebuilt; $changed = $true }
+    }
+    if ($changed) { Set-Content -LiteralPath $MarkdownPath -Value ($lines -join "`r`n") -Encoding UTF8 }
+    return $changed
 }
 
 function Add-EbookLearningObjectives {

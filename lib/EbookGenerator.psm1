@@ -12623,6 +12623,13 @@ function Repair-EbookPackageOutputs {
         Join-Path $resolvedOutputFolder "$($ebookMarkdownFile.BaseName).docx"
     }
 
+    # Restore the objective list's numbering before anything is derived from the
+    # manuscript. Both paths reach here: generation calls this at the end, and
+    # Rebuild Package is this. Only the list marker changes; traceability
+    # compares the wording, which is left alone.
+    if (Update-EbookObjectiveListNumbering -MarkdownPath $ebookMarkdownFile.FullName) {
+        Write-EbookGeneratorProgress -Phase "Restoring objective numbering" -Detail "The Learning Objectives list was renumbered to restart at 1 in each chapter. Objective wording is unchanged."
+    }
     $markdown = Get-Content -LiteralPath $ebookMarkdownFile.FullName -Raw -Encoding UTF8
     $citationMarkdown = ConvertTo-EbookCitationMarkdown -Markdown (ConvertTo-EbookPublicationMarkdown -Markdown (ConvertTo-EbookBusinessCaseLabel -Markdown $markdown))
     $citationChanged = $citationMarkdown -cne ($markdown -replace '\r\n', "`n")
@@ -13038,7 +13045,7 @@ function Export-EbookPackage {
 Export-ModuleMember -Function Import-CourseSpec, Import-SourceContext, Import-BrandProfile, New-EbookPlan, Merge-EbookReviewedOutline, Resolve-EbookSources, New-EbookBlueprintPackage, Export-EbookBlueprintPackage, New-EbookPackage, Export-EbookPackage, Repair-EbookPackageOutputs, Get-ProhibitedKnowledgeCheckSignals, Remove-ProhibitedKnowledgeCheckSections, Get-ProhibitedLearnerSectionSignals, Remove-ProhibitedLearnerSections, Test-EbookObjectiveTraceability, Test-EbookReleaseArtifacts, Test-EbookAssignedSources, Test-EbookAssignedSourcePackage, Get-EbookTemplateInstructions, Get-EbookPublicationTemplate, Test-EbookPublicationTemplate
 Export-ModuleMember -Function Test-EbookManuscriptPreflight, Update-EbookManuscriptPreflight
 Export-ModuleMember -Function ConvertFrom-EbookOutcomeCatalog, Set-EbookCourseOutcomeRevision
-Export-ModuleMember -Function Export-MarkdownToDocx
+Export-ModuleMember -Function Export-MarkdownToDocx, Update-EbookObjectiveListNumbering
 Export-ModuleMember -Function Resolve-EbookOutcomeAssignments, Get-EbookOutcomeComparableText, Get-EbookOutcomeAnalysisFacts, New-EbookOutcomeAnalysisPrompt, ConvertFrom-EbookOutcomeAnalysisResponse, Test-EbookCourseObjectiveFidelity, ConvertTo-EbookOutcomeSpecSheetMarkdown, ConvertTo-EbookOutcomeAnalysisMarkdown
 Export-ModuleMember -Function Get-EbookBlueprintReadingText, ConvertFrom-EbookReadingList, Merge-EbookReadingLists, ConvertTo-EbookReadingListText, Update-EbookRequiredSourceEvidence, Get-EbookRequiredSourceReview, New-EbookRequiredSourceBrief, ConvertTo-SafePathPart
 

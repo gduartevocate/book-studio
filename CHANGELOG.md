@@ -1,5 +1,10 @@
 # Book Studio ID Changelog
 
+## v2026.09.21.12 (2026-09-21)
+
+- Fix: a book no longer fails objective traceability because the drafting pass turned the Learning Objectives list into bullets. The gate reads that list as a numbered list restarting at 1 in each chapter, but the drafting instruction never said so, and a book whose objectives were word-perfect was refused with "Markdown has 0 rendered objective(s)".
+- The instruction now states the format, and the numbering is restored automatically if it drifts. Only the list marker changes; objective wording is never touched.
+
 ## v2026.09.21.11 (2026-09-21)
 
 - New: a book can now use its required readings and research additional sources as well. Previously these were mutually exclusive, so a course document's reading list ruled out any wider evidence.
