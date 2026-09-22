@@ -82,7 +82,7 @@ function Get-BookStudioProductionPreferences {
     if ($Job.outputFolder -and (Test-Path -LiteralPath (Join-Path $Job.outputFolder 'required-source-report.json'))) {
         $report=Get-Content -LiteralPath (Join-Path $Job.outputFolder 'required-source-report.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     }
-    [pscustomobject]@{sourceMode=$Job.options.sourceMode;allowAdditionalResearch=[bool]$Job.options.allowAdditionalResearch;requiredSources=(ConvertTo-EbookReadingListText $readings);readings=$readings;sourceReport=$report;imageSettings=$(if($Job.options.imageSettings){$Job.options.imageSettings}else{[pscustomobject]@{context='Generic';instructions=''}})}
+    [pscustomobject]@{sourceMode=$Job.options.sourceMode;readingLevel=$(if($Job.options.readingLevel){[int]$Job.options.readingLevel}else{8});allowAdditionalResearch=[bool]$Job.options.allowAdditionalResearch;requiredSources=(ConvertTo-EbookReadingListText $readings);readings=$readings;sourceReport=$report;imageSettings=$(if($Job.options.imageSettings){$Job.options.imageSettings}else{[pscustomobject]@{context='Generic';instructions=''}})}
 }
 
 function Set-BookStudioProductionPreferences {
@@ -100,8 +100,12 @@ function Set-BookStudioProductionPreferences {
     # on top of them, so it is meaningless without an assigned list.
     $allowAdditionalResearch = [bool]$Request.allowAdditionalResearch
     if ($allowAdditionalResearch -and $Request.sourceMode -ne 'Assigned') { throw 'Additional research alongside required readings applies only to the required-readings source policy.' }
+    $readingLevel = 8
+    if ($null -ne $Request.readingLevel -and [string]$Request.readingLevel -ne '') {
+        if (-not [int]::TryParse([string]$Request.readingLevel, [ref]$readingLevel) -or $readingLevel -lt 6 -or $readingLevel -gt 16) { throw 'Choose a reading level between grade 6 and grade 16.' }
+    }
     $settings=[pscustomobject]@{context=$Request.imageContext;instructions=([string]$Request.imageInstructions).Trim()}
-    $production=[pscustomobject]@{sourceMode=$Request.sourceMode;requiredReadings=$readings;imageSettings=$settings;allowAdditionalResearch=$allowAdditionalResearch}
+    $production=[pscustomobject]@{sourceMode=$Request.sourceMode;readingLevel=$readingLevel;requiredReadings=$readings;imageSettings=$settings;allowAdditionalResearch=$allowAdditionalResearch}
     if (-not $job.sourceContextPath -or -not (Test-Path -LiteralPath $job.sourceContextPath)) { throw 'Original course uploads are not available for this book.' }
     $planPath=if($job.outputFolder){Join-Path $job.outputFolder 'ebook-plan.json'}else{''}
     $plan=if($planPath -and (Test-Path -LiteralPath $planPath)){Get-Content -LiteralPath $planPath -Raw -Encoding UTF8 | ConvertFrom-Json}else{$null}
@@ -109,7 +113,7 @@ function Set-BookStudioProductionPreferences {
         foreach ($reading in $readings) {
             if (@($reading.chapters | Where-Object { $_ -ne 0 -and $_ -notin @($plan.chapters.number) }).Count) { throw 'A required reading refers to a chapter outside this outline.' }
         }
-        foreach ($key in @('sourceMode','requiredReadings','imageSettings','allowAdditionalResearch')) { $plan | Add-Member -NotePropertyName $key -NotePropertyValue $production.$key -Force }
+        foreach ($key in @('sourceMode','readingLevel','requiredReadings','imageSettings','allowAdditionalResearch')) { $plan | Add-Member -NotePropertyName $key -NotePropertyValue $production.$key -Force }
         $backup=Join-Path $job.outputFolder 'production-backups'
         New-Item -ItemType Directory -Path $backup -Force | Out-Null
         Copy-Item -LiteralPath $planPath -Destination (Join-Path $backup ((Get-Date -Format 'yyyyMMddHHmmssfff')+'-plan.json'))
@@ -118,7 +122,7 @@ function Set-BookStudioProductionPreferences {
     $production | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $job.sourceContextPath 'book-studio-production.json') -Encoding UTF8
     Update-BookStudioJob -DatabasePath $DatabasePath -JobId $JobId -Update {
         param($current)
-        foreach ($key in @('sourceMode','requiredReadings','imageSettings','allowAdditionalResearch')) { $current.options | Add-Member -NotePropertyName $key -NotePropertyValue $production.$key -Force }
+        foreach ($key in @('sourceMode','readingLevel','requiredReadings','imageSettings','allowAdditionalResearch')) { $current.options | Add-Member -NotePropertyName $key -NotePropertyValue $production.$key -Force }
         # The runner reads skipResearch and skipOpenStaxFetch from the job, so
         # permitting research here has no effect unless these follow it.
         if ($allowAdditionalResearch) {

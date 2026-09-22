@@ -10,6 +10,13 @@ function Test-BookStudioUploadRequest {
     # Assigned readings stay assigned: locked, taught, and required to be cited.
     # This only adds permission to research beyond them, so the reading list and
     # every gate on it keep working exactly as before.
+    # The reading level the QA gate will enforce. Grade 8 is the UMA default;
+    # a course that needs a different one says so here rather than having the
+    # gate quietly relaxed later.
+    if($null -ne $Request.readingLevel -and [string]$Request.readingLevel -ne ''){
+        $level=0
+        if(-not [int]::TryParse([string]$Request.readingLevel,[ref]$level) -or $level -lt 6 -or $level -gt 16){throw 'Choose a reading level between grade 6 and grade 16.'}
+    }
     if($Request.allowAdditionalResearch -and $Request.sourceMode -ne 'Assigned'){throw 'Additional research alongside required readings applies only to the required-readings source policy.'}
     if(([string]$Request.requiredSources).Length -gt 40000 -or ([string]$Request.imageInstructions).Length -gt 4000){throw 'Required sources or image instructions exceed the input limit.'}
     if($Request.imageContext -eq 'Custom' -and [string]::IsNullOrWhiteSpace([string]$Request.imageInstructions)){throw 'Describe the custom image setting.'}
@@ -29,5 +36,5 @@ function Test-BookStudioUploadRequest {
     # for outcomes that are already final.
     if([string]::IsNullOrWhiteSpace([string]$Request.courseDocumentKind)){throw 'Say whether the authoritative course document is a curriculum draft that still needs its learning objectives analyzed, or an ebook-ready course file whose outcomes are final.'}
     if($Request.courseDocumentKind -notin @('CurriculumDraft','EbookReady')){throw 'Unknown course document kind.'}
-    [pscustomobject]@{primaryFileIndex=$primary;files=@($decoded);sourceMode=$(if($Request.sourceMode){$Request.sourceMode}else{'UploadedOnly'});courseDocumentKind=[string]$Request.courseDocumentKind;allowAdditionalResearch=[bool]$Request.allowAdditionalResearch}
+    [pscustomobject]@{primaryFileIndex=$primary;files=@($decoded);sourceMode=$(if($Request.sourceMode){$Request.sourceMode}else{'UploadedOnly'});courseDocumentKind=[string]$Request.courseDocumentKind;allowAdditionalResearch=[bool]$Request.allowAdditionalResearch;readingLevel=$(if($null -ne $Request.readingLevel -and [string]$Request.readingLevel -ne ''){[int]$Request.readingLevel}else{8})}
 }

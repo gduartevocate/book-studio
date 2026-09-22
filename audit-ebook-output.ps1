@@ -139,9 +139,12 @@ function Get-ReportGateStatus {
 }
 
 function Get-ReadabilityGateStatus {
-    param([double]$Grade)
+    # The audit recomputes every threshold rather than trusting the report, so
+    # it has to enforce the same reading level the book was written to. Reading
+    # it from the plan keeps one value behind generation, the report, and here.
+    param([double]$Grade, [AllowNull()][object]$MaximumGrade)
 
-    return (Test-EbookEditorialThresholds -Grade $Grade -PassiveRate 0).status
+    return (Test-EbookEditorialThresholds -Grade $Grade -PassiveRate 0 -MaximumGrade $MaximumGrade).status
 }
 
 function Get-FirstFile {
@@ -224,6 +227,9 @@ foreach ($key in $paths.Keys) {
 }
 
 $planning = Read-JsonFile -Path $paths.planningJson
+# Resolved before any threshold is recomputed: every style gate below must
+# enforce the reading level this book was written to, not a constant.
+$auditReadingLevel = Get-EbookPlanReadingLevel -Plan (Read-JsonFile -Path (Join-Path $resolvedOutputFolder 'ebook-plan.json'))
 $quality = Read-JsonFile -Path $paths.qualityJson
 $agent = Read-JsonFile -Path $paths.agentJson
 $publishing = Read-JsonFile -Path $paths.publishingJson
@@ -305,7 +311,7 @@ if ($quality) {
         $fidelity = @($chapter.checks | Where-Object { $_.name -eq "source_fidelity" })[0]
         Add-AuditCheck -Checks $checks -Category "Style Gates" -Name "chapter_$($chapter.chapterNumber)_uma_style" -Status $(if ($style) { Get-ReportGateStatus $style.status } else { "FAIL" }) -Detail $(if ($style) { $style.detail } else { "UMA style check missing." })
         if ($style -and $style.metrics) {
-            Add-AuditCheck -Checks $checks -Category "Style Gates" -Name "chapter_$($chapter.chapterNumber)_readability" -Status (Get-ReadabilityGateStatus ([double]$style.metrics.fleschKincaidGrade)) -Detail "Flesch-Kincaid grade $($style.metrics.fleschKincaidGrade)."
+            Add-AuditCheck -Checks $checks -Category "Style Gates" -Name "chapter_$($chapter.chapterNumber)_readability" -Status (Get-ReadabilityGateStatus -Grade ([double]$style.metrics.fleschKincaidGrade) -MaximumGrade $auditReadingLevel) -Detail "Flesch-Kincaid grade $($style.metrics.fleschKincaidGrade); maximum is $auditReadingLevel."
             $passiveRate = [double]$style.metrics.passiveVoiceRatePerThousand
             $passiveStatus = (Test-EbookEditorialThresholds -Grade 0 -PassiveRate $style.metrics.passiveVoiceRatePerThousand).status
             Add-AuditCheck -Checks $checks -Category "Style Gates" -Name "chapter_$($chapter.chapterNumber)_passive_voice" -Status $passiveStatus -Detail "Possible passive phrase rate $($style.metrics.passiveVoiceRatePerThousand) per 1,000 words; maximum 4, counted by occurrence."
@@ -490,8 +496,8 @@ $currentChapters = @([regex]::Matches($ebookMarkdown, '(?ms)^# Chapter \d+:.*?(?
 Add-AuditCheck -Checks $checks -Category 'Style Gates' -Name 'editorial_chapters_present' -Status (Get-CheckStatus ($currentChapters.Count -gt 0)) -Detail 'Current manuscript must contain chapters for a live editorial review.'
 foreach ($chapterMatch in $currentChapters) {
     $number = [regex]::Match($chapterMatch.Value, '^# Chapter (\d+):').Groups[1].Value
-    $liveStyle = & $editorialModule { param($text) Get-UmaWritingStyleGuideMetrics -Markdown $text } $chapterMatch.Value
-    Add-AuditCheck -Checks $checks -Category 'Style Gates' -Name "chapter_${number}_live_editorial" -Status $liveStyle.status -Detail $liveStyle.detail -Evidence "Recomputed from current manuscript with policy $((Get-EbookEditorialPolicy).version), not trusted from a cached report."
+    $liveStyle = & $editorialModule { param($text,$grade) Get-UmaWritingStyleGuideMetrics -Markdown $text -MaximumGrade $grade } $chapterMatch.Value $auditReadingLevel
+    Add-AuditCheck -Checks $checks -Category 'Style Gates' -Name "chapter_${number}_live_editorial" -Status $liveStyle.status -Detail $liveStyle.detail -Evidence "Recomputed from current manuscript with policy $((Get-EbookEditorialPolicy).version), not trusted from a cached report. Reading level: grade $auditReadingLevel."
 }
 $imageProduction = Get-EbookImageProductionReview -OutputFolder $resolvedOutputFolder
 Add-AuditCheck -Checks $checks -Category 'Image Production' -Name 'generated_chapter_images' -Status $imageProduction.status -Detail $imageProduction.detail

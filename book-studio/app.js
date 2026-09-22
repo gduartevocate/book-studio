@@ -3439,6 +3439,7 @@ form.addEventListener("submit", async (event) => {
       primaryFileIndex: Number(formData.get("primaryFileIndex")),
       sourceMode: formData.get("sourceMode") || "Assigned",
       allowAdditionalResearch: formData.get("allowAdditionalResearch") === "on",
+      readingLevel: Number(formData.get("readingLevel") || 8),
       courseDocumentKind: formData.get("courseDocumentKind") || "",
       requiredSources: formData.get("requiredSources") || "",
       imageContext: formData.get("imageContext") || "Generic",

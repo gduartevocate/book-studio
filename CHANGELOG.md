@@ -1,5 +1,12 @@
 # Book Studio ID Changelog
 
+## v2026.09.22.1 (2026-09-22)
+
+- New: each book chooses its reading level. Pick it in step 3 of New book, or in Sources and image setting on an existing book. Grade 8 remains the default and stays selected unless you change it.
+- The choice reaches everything: the drafting pass is now told the target and that it is measured, and the quality report and output audit enforce that grade instead of a fixed 8.
+- The drafting pass was previously never told any reading target at all, which is why books were measured against a standard they had not been asked to write to.
+- A missing or out-of-range value falls back to grade 8 rather than removing the check, and raising the reading level does not relax any other gate.
+
 ## v2026.09.21.12 (2026-09-21)
 
 - Fix: a book no longer fails objective traceability because the drafting pass turned the Learning Objectives list into bullets. The gate reads that list as a numbered list restarting at 1 in each chapter, but the drafting instruction never said so, and a book whose objectives were word-perfect was refused with "Markdown has 0 rendered objective(s)".

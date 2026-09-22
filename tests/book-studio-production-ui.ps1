@@ -20,10 +20,15 @@ $html=@'
   const tick=()=>new Promise(resolve=>setTimeout(resolve,30));
   const panel=host.querySelector('details');panel.open=true;panel.dispatchEvent(new Event('toggle'));await tick();
   if(calls.length!==1 || !host.textContent.includes('Needs accessible full text.')) throw new Error('Reading status not visible or duplicate load');
-  const selectors=host.querySelectorAll('select');
-  if(selectors[0].value!=='Assigned' || selectors[1].value!=='Generic') throw new Error('Wrong initial preferences');
+  const fieldByLabel=(caption)=>{
+    const label=[...host.querySelectorAll('label')].find(l=>l.textContent.includes(caption));
+    if(!label) throw new Error('Control not found: '+caption);
+    return label.querySelector('select,input,textarea');
+  };
+  if(fieldByLabel('Sources to use').value!=='Assigned' || fieldByLabel('Image setting').value!=='Generic') throw new Error('Wrong initial preferences');
+  if(fieldByLabel('Reading level').value!=='8') throw new Error('Reading level must default to grade 8');
   const click=async(label)=>{[...host.querySelectorAll('button')].find(button=>button.textContent===label).click();await tick();};
-  selectors[1].value='Business';selectors[1].dispatchEvent(new Event('input'));
+  const imageField=fieldByLabel('Image setting');imageField.value='Business';imageField.dispatchEvent(new Event('input'));
   await click('Check required sources');
   if(calls.length!==1 || !host.textContent.includes('Save your settings first')) throw new Error('Unsaved settings used for retrieval');
   await click('Save settings');

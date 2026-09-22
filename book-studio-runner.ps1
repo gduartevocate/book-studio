@@ -521,6 +521,9 @@ function Get-RunnerQaRepairInstruction {
         [Parameter(Mandatory)][string]$FailureMessage
     )
 
+    # A repair pass is judged against the same reading level as the draft, so
+    # it is told the same target rather than a constant.
+    $repairReadingLevel = Test-EbookReadingLevel -Value $Job.options.readingLevel
     $courseLabel = "$($Job.courseCode) $($Job.title)".Trim()
     if ([string]::IsNullOrWhiteSpace($courseLabel)) {
         $courseLabel = "this ebook package"
@@ -543,7 +546,7 @@ Required workflow:
 6. Fix content depth, missing sections, broken image references, weak visuals, obvious accessibility issues, and export problems that are visible from the reports.
 
 Publication format contract (also applies to repairs):
-$(Get-EbookTemplateInstructions)
+$(Get-EbookTemplateInstructions -ReadingLevel $repairReadingLevel)
 
 After editing, summarize exactly which files changed and which QA issues you addressed.
 "@

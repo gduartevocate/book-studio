@@ -172,5 +172,54 @@ try {
 }
 finally { Remove-Item -LiteralPath $objFixture -Recurse -Force -ErrorAction SilentlyContinue }
 
+
+# The reading level is chosen per course, defaults to grade 8, and has to reach
+# every place that enforces or teaches it. RB1010 measured 11.8 against a
+# hardcoded 8 in all five chapters, and the drafting pass was never told the
+# target it was being judged against.
+$range = Get-EbookReadingLevelRange
+Check ($range.default -eq 8) 'Grade 8 stays the default.'
+Check ($range.minimum -eq 6 -and $range.maximum -eq 16) 'The selectable range is grade 6 to 16.'
+
+# A bad value must fall back to the default, never to "no threshold".
+foreach ($bad in @($null, '', 'abc', 4, 99, [double]::NaN)) {
+    Check ((Test-EbookReadingLevel -Value $bad) -eq 8) "An unusable reading level falls back to grade 8, not to no limit: '$bad'"
+}
+Check ((Test-EbookReadingLevel -Value 12) -eq 12) 'A valid level is honoured.'
+Check ((Get-EbookEditorialPolicy -MaximumGrade 12).maximumGrade -eq 12) 'The policy carries the chosen level.'
+Check ((Get-EbookEditorialPolicy).maximumGrade -eq 8) 'The policy still defaults to grade 8.'
+Check ((Get-EbookEditorialPolicy -MaximumGrade 12).version -eq (Get-EbookEditorialPolicy).version) 'Changing the level must not change the policy version, which is compared for staleness.'
+
+# The same manuscript passes or fails on the course's own setting.
+Check ((Test-EbookEditorialThresholds -Grade 11.8 -PassiveRate 0 -MaximumGrade 8).status -eq 'FAIL') 'Grade 11.8 fails a grade-8 course.'
+Check ((Test-EbookEditorialThresholds -Grade 11.8 -PassiveRate 0 -MaximumGrade 12).status -eq 'PASS') 'Grade 11.8 passes a grade-12 course.'
+Check ((Test-EbookEditorialThresholds -Grade 11.8 -PassiveRate 0).status -eq 'FAIL') 'With no level supplied the grade-8 default still applies.'
+# Raising the reading level must not loosen anything else.
+Check ((Test-EbookEditorialThresholds -Grade 6 -PassiveRate 9 -MaximumGrade 16).status -eq 'FAIL') 'The passive-voice threshold is not course-specific and still binds.'
+
+# The plan is the one place every consumer reads it from.
+Check ((Get-EbookPlanReadingLevel -Plan ([pscustomobject]@{readingLevel=12})) -eq 12) 'The plan carries the level.'
+Check ((Get-EbookPlanReadingLevel -Plan ([pscustomobject]@{})) -eq 8) 'A plan without a level uses the default.'
+Check ((Get-EbookPlanReadingLevel -Plan $null) -eq 8) 'A missing plan uses the default.'
+
+# The style check enforces the course's level, and reports which one applied.
+$prose = ('# Chapter 1: Test' + "`r`n`r`n" + ('A clerk checks the claim. The payer reads the codes. A denial costs time. The team fixes it fast. ') + ('The billing department reviews each submitted claim against the clinical documentation before adjudication. ' * 4))
+$measured = (Get-UmaWritingStyleGuideMetrics -Markdown $prose).fleschKincaidGrade
+$below = [Math]::Max(6, [Math]::Floor($measured) - 1)
+$above = [Math]::Min(16, [Math]::Ceiling($measured) + 1)
+Check ($measured -gt 8) "The readability fixture must sit above the default to be meaningful (measured $measured)."
+$strict = Get-UmaWritingStyleGuideMetrics -Markdown $prose -MaximumGrade $below
+Check ($strict.readingLevel -eq $below) 'The style check reports the level it enforced.'
+Check (@($strict.issues | Where-Object { $_ -match 'Flesch-Kincaid' }).Count -eq 1) "Prose at grade $measured fails a grade-$below course."
+if ($above -ge $measured) {
+    $lenient = Get-UmaWritingStyleGuideMetrics -Markdown $prose -MaximumGrade $above
+    Check (@($lenient.issues | Where-Object { $_ -match 'Flesch-Kincaid' }).Count -eq 0) "The same prose passes a grade-$above course."
+}
+
+# The drafting pass has to be told the target, or it writes to no target at all.
+Check ((Get-EbookTemplateInstructions) -match 'Flesch-Kincaid grade 8') 'The drafting instruction states the default target.'
+Check ((Get-EbookTemplateInstructions -ReadingLevel 12) -match 'Flesch-Kincaid grade 12') "The drafting instruction states the course's chosen target."
+Check ((Get-EbookTemplateInstructions) -match 'the quality gate measures it') 'The drafting instruction says the target is enforced, not advisory.'
+
     Write-Output "PASS: $script:checksRun publication regression assertions."
 }

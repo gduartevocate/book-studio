@@ -81,6 +81,7 @@
             </div>
             <div class="wizard-step" data-wizard-step="3" hidden>
               <h3>3. Production preferences</h3><p class="step-intro">Add guidance for the draft. You can refine the book later during instructional-designer review.</p>
+              <label><span>Reading level</span><select name="readingLevel"><option value="6">Grade 6</option><option value="7">Grade 7</option><option value="8" selected>Grade 8 (UMA default)</option><option value="9">Grade 9</option><option value="10">Grade 10</option><option value="11">Grade 11</option><option value="12">Grade 12</option><option value="13">Grade 13</option><option value="14">Grade 14</option><option value="15">Grade 15</option><option value="16">Grade 16</option></select></label><p class="hint">The Flesch-Kincaid grade the book is written to and checked against. The drafting pass is given this target, and QA refuses a chapter above it. Grade 8 is the UMA default; raise it for a technical course whose vocabulary cannot be simplified further.</p>
               <label><span>Production notes</span><textarea name="specialInstructions" placeholder="Audience, tone, special requirements, chapter emphasis, or exclusions"></textarea></label>
               <label><span>Image setting</span><select name="imageContext"><option value="Generic">Generic / everyday (nonclinical)</option><option value="Healthcare">Healthcare</option><option value="Business">Business (nonclinical)</option><option value="Custom">Custom</option></select></label>
               <label><span>Image instructions</span><textarea name="imageInstructions" maxlength="4000" placeholder="People, locations, mood, or things to avoid. Required for a custom setting."></textarea></label>
@@ -129,9 +130,9 @@
   </main>
 
   <template id="jobTemplate"><article class="job-row"><div class="job-main"><div class="job-title"></div><div class="job-meta"></div></div><div class="job-status"></div><div class="job-actions"></div><div class="workflow-panel"></div><div class="production-panel"></div><div class="job-log"></div><div class="artifact-list"></div><div class="outcome-analysis-panel" hidden></div><div class="format-review-panel" hidden></div><div class="chapter-panel" hidden></div><div class="codex-prompt-panel" hidden></div><div class="visual-panel" hidden></div></article></template>
-  <script src="/production.js?v=20260921-1"></script>
+  <script src="/production.js?v=20260922-1"></script>
   <script src="/outcomes.js?v=20260918-outline"></script>
   <script src="/outcome-analysis.js?v=20260921-2"></script>
-  <script src="/app.js?v=20260921-4"></script>
+  <script src="/app.js?v=20260922-1"></script>
 </body>
 </html>

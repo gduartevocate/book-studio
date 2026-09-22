@@ -32,6 +32,9 @@ function appendProductionPreferences(container, job) {
       };
       mode.addEventListener("change", syncResearch);
       syncResearch();
+      const level = addField("Reading level", document.createElement("select"));
+      for (let g = 6; g <= 16; g++) level.append(new Option(g === 8 ? "Grade 8 (UMA default)" : `Grade ${g}`, String(g)));
+      level.value = String(saved.readingLevel || 8);
       const readings = addField("Required reading list (review links extracted from the blueprint)", document.createElement("textarea"));
       readings.rows = 10; readings.maxLength = 40000; readings.value = saved.requiredSources || "";
       readings.placeholder = "Week 1:\n[Title](https://example.org/article)\n[Orientation video](https://example.org/video) (reference only)\nAll chapters:\nhttps://example.org/shared-reading";
@@ -74,7 +77,7 @@ function appendProductionPreferences(container, job) {
       };
       for (const field of [mode, readings, context, instructions]) field.addEventListener("input", () => { dirty = true; status.textContent = "Unsaved settings. Save before checking sources or generating images."; });
       addAction("Save settings", async () => {
-        const updated = await api(`/api/jobs/${job.id}/production-settings`, { method: "POST", body: JSON.stringify({ sourceMode: mode.value, allowAdditionalResearch: research.checked, requiredSources: readings.value, imageContext: context.value, imageInstructions: instructions.value }) });
+        const updated = await api(`/api/jobs/${job.id}/production-settings`, { method: "POST", body: JSON.stringify({ sourceMode: mode.value, readingLevel: Number(level.value), allowAdditionalResearch: research.checked, requiredSources: readings.value, imageContext: context.value, imageInstructions: instructions.value }) });
         dirty = false; renderReport(updated); status.textContent = "Saved. Existing manuscript and images are unchanged. Check sources before requesting a revision.";
       });
       addAction("Remove entries with no URL", async () => {

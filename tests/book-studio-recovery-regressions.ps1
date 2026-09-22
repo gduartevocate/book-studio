@@ -13,6 +13,13 @@ function Reject([scriptblock]$Action, [string]$Pattern) {
     throw "Expected rejection matching: $Pattern"
 }
 
+# The runner dot-sources these before defining anything, so a harness that
+# lifts only its function bodies has to do the same or those functions run
+# without the helpers they call.
+foreach ($shared in @('lib/EbookReadiness.ps1', 'lib/EbookPublicationTemplate.ps1')) {
+    . (Join-Path $root $shared)
+}
+
 # Load the real functions without starting a generator or touching real books.
 foreach ($file in @('book-studio-runner.ps1', 'ebook-generator.ps1')) {
     $tokens = $null; $parseErrors = $null

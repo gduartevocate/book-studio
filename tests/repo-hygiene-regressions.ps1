@@ -26,8 +26,9 @@ $studio = Get-Content -LiteralPath (Join-Path $root 'lib/BookStudio.psm1') -Raw 
 $studioSide = @([regex]::Matches($studio, "(?m)^\.\s+\(Join-Path \`$PSScriptRoot '([A-Za-z0-9]+\.ps1)'\)") | ForEach-Object { $_.Groups[1].Value })
 Check ($studioSide.Count -gt 5) "Only $($studioSide.Count) dot-sourced Book Studio files were found."
 $offenders = New-Object System.Collections.ArrayList
-foreach ($file in @($studioSide + 'BookStudio.psm1')) {
-    $path = Join-Path $root "lib/$file"
+$rootScripts = @('ebook-generator.ps1', 'book-studio-runner.ps1', 'audit-ebook-output.ps1')
+foreach ($file in @($studioSide + 'BookStudio.psm1' + $rootScripts)) {
+    $path = if ($rootScripts -contains $file) { Join-Path $root $file } else { Join-Path $root "lib/$file" }
     if (-not (Test-Path -LiteralPath $path)) { continue }
     # Reaching an internal function through the module's own scope is the
     # documented way to do it, so those regions are removed before scanning.
@@ -35,7 +36,7 @@ foreach ($file in @($studioSide + 'BookStudio.psm1')) {
     $kept = New-Object System.Text.StringBuilder
     $depth = 0
     foreach ($line in ($text -split "`n")) {
-        if ($depth -eq 0 -and $line -match '&\s*\((Get-Module\s+EbookGenerator|\$\w+)\)?\s*\{|&\s*\$(module|ebook|studio)\s*\{') {
+        if ($depth -eq 0 -and $line -match '&\s*\(\s*Get-Module[^)]*\)\s*\{|&\s*\$[A-Za-z_][A-Za-z0-9_]*\s*\{') {
             $depth = 1
             $depth += (@([regex]::Matches($line, '\{')).Count - 1) - @([regex]::Matches($line, '\}')).Count
             if ($depth -lt 1) { $depth = 0 }
@@ -49,8 +50,18 @@ foreach ($file in @($studioSide + 'BookStudio.psm1')) {
         [void]$kept.AppendLine($line)
     }
     $text = $kept.ToString()
+    $dotSourced = @()
+    foreach ($sourced in [regex]::Matches($text, "(?m)^\.\s+\(Join-Path[^']*'(?:lib/)?([A-Za-z0-9]+\.ps1)'\)")) {
+        $sourcedPath = Join-Path $root ("lib/" + $sourced.Groups[1].Value)
+        if (Test-Path -LiteralPath $sourcedPath) {
+            $dotSourced += @([regex]::Matches((Get-Content -LiteralPath $sourcedPath -Raw -Encoding UTF8), '(?m)^function\s+([A-Za-z]+-[A-Za-z0-9]+)') | ForEach-Object { $_.Groups[1].Value })
+        }
+    }
     foreach ($name in $internal) {
         # A call, not a definition or a mention inside a string of prose.
+        # A file that dot-sources the defining lib file reaches the function
+        # directly and needs no export.
+        if ($dotSourced -contains $name) { continue }
         if ($text -match ("(?m)(^|[\s\(\|\{=])" + [regex]::Escape($name) + "(\s+-[A-Za-z]|\s*\()")) {
             [void]$offenders.Add("$file calls $name, which lib/EbookGenerator.psm1 defines but does not export")
         }

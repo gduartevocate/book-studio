@@ -189,7 +189,9 @@ function Test-EbookPublicationTemplate {
 }
 
 function Get-EbookTemplateInstructions {
+    param([AllowNull()][object]$ReadingLevel)
     $t = Get-EbookPublicationTemplate
+    $grade = Test-EbookReadingLevel -Value $ReadingLevel
     return @"
 Use the $($t.name) ($($t.id)) as a FORMAT-ONLY standard for every course.
 Begin with Chapter 1, not a cover or preface. Each chapter starts with Introduction and Learning Objectives, then has exactly four main sections, numbered N.1 through N.4 with course-specific titles.
@@ -197,7 +199,7 @@ Use '# Chapter N: Title', '## Section N.1 - Title' through '## Section N.4 - Int
 Section N.1 contains Opening Scenario, a named **Business Case:**, Chapter Roadmap, and context. Section N.2 develops the concepts. Section N.3 contains Case Study Progression, Communication Toolbox, and Practical Field Guide. Section N.4 begins with synthesis prose, then Key Takeaways, Vocabulary Review, Looking Ahead (or Conclusion in the final chapter), and Scholarly Sources.
 Write the opening heading as '### Opening Scenario' (an optional ': scenario title' may follow). In its body, before the next heading, start a paragraph with the literal '**Business Case:** ' immediately followed by the scenario person's capitalized name, then their role, decision, and stakes. Keep the colon inside the bold label. Do not turn that label into a separate heading or replace it with '**Business Case**:'.
 Use $($t.font) $($t.bodyPoints)-point body text and the shared $($t.chapterPoints)/$($t.sectionPoints)/$($t.subsectionPoints)-point heading hierarchy. Tables or visuals support the explanation only where useful.
-Keep the Learning Objectives list a numbered list that restarts at 1 in every chapter, one objective per item, wording unchanged. Do not convert it to bullets, do not merge or reorder items, and do not continue the numbering from the previous chapter. Preserve this course's exact weekly objectives and assigned sources. Do not copy GM1000 topics, people, sources, or objectives into another course. Do not introduce GM1025 leadership content into unrelated courses.
+Write for a Flesch-Kincaid grade $grade reading level, and treat that as a hard requirement: the quality gate measures it and refuses the book above it. Keep sentences short, prefer the plain word over the formal one (records not documentation, find not identify, details not information, show not demonstrate), and split any sentence carrying two ideas. Technical terms the course teaches, such as ICD-10-CM or reimbursement, stay as they are; it is the surrounding prose that carries the level. Keep the Learning Objectives list a numbered list that restarts at 1 in every chapter, one objective per item, wording unchanged. Do not convert it to bullets, do not merge or reorder items, and do not continue the numbering from the previous chapter. Preserve this course's exact weekly objectives and assigned sources. Do not copy GM1000 topics, people, sources, or objectives into another course. Do not introduce GM1025 leadership content into unrelated courses.
 Do not include Knowledge Checks, Check Your Reasoning, Reflection Activity, Workplace Challenge, Chapter Summary, Think About It, or interactive-study links. Keep operational examples and job aids, not renamed learner assessments.
 "@
 }

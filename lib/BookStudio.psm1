@@ -1037,7 +1037,7 @@ function New-BookStudioJob {
     $blueprintReadings = @(ConvertFrom-EbookReadingList -Text $readingText -Origin 'Blueprint')
     $designerReadings = @(ConvertFrom-EbookReadingList -Text ([string]$Request.requiredSources) -Origin 'Designer')
     $requiredReadings = @(Merge-EbookReadingLists -BlueprintReadings $blueprintReadings -DesignerReadings $designerReadings)
-    $production = [pscustomobject]@{sourceMode=$validated.sourceMode;requiredReadings=$requiredReadings;imageSettings=[pscustomobject]@{context=$(if($Request.imageContext){$Request.imageContext}else{'Generic'});instructions=[string]$Request.imageInstructions}}
+    $production = [pscustomobject]@{sourceMode=$validated.sourceMode;readingLevel=[int]$validated.readingLevel;requiredReadings=$requiredReadings;imageSettings=[pscustomobject]@{context=$(if($Request.imageContext){$Request.imageContext}else{'Generic'});instructions=[string]$Request.imageInstructions}}
     $production | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $uploadFolder 'book-studio-production.json') -Encoding UTF8
     $intakeContext=Import-SourceContext -Path $uploadFolder -CourseSpecPath $specFile.path -MaxFiles 52 -MaxTotalChars 1000000 -StrictCoverage -IncludedPaths @($uploadedFiles.path)
     $intake=[pscustomobject]@{status='PASS';generatedAt=(Get-Date).ToString('o');sourceMode=$validated.sourceMode;primarySource=$specFile.name;uploadedFiles=$uploadedFiles.Count;readFiles=$intakeContext.files.Count;charactersRead=$intakeContext.totalCharactersUsed;files=@($intakeContext.files);notes='Every accepted file was extracted without truncation. Reading a file does not establish academic coverage.'}
@@ -1088,6 +1088,7 @@ function New-BookStudioJob {
             maxResearchPerChapter = if ($Request.maxResearchPerChapter) { [int]$Request.maxResearchPerChapter } else { 3 }
             maxSourceContextFiles = 52
             maxSourceContextChars = 1000000
+            readingLevel = [int]$validated.readingLevel
             allowAdditionalResearch = [bool]$validated.allowAdditionalResearch
             skipResearch = (-not $validated.allowAdditionalResearch) -and ($validated.sourceMode -eq 'UploadedOnly' -or [bool]$Request.skipResearch)
             skipOpenStaxFetch = (-not $validated.allowAdditionalResearch) -and ($validated.sourceMode -eq 'UploadedOnly' -or [bool]$Request.skipOpenStaxFetch)

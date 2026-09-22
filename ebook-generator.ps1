@@ -264,6 +264,16 @@ function Invoke-EbookCodexDraftingPass {
         throw "Codex drafting could not find the e-book Markdown artifact: $markdownPath"
     }
     $beforeHash = (Get-FileHash -LiteralPath $markdownPath -Algorithm SHA256).Hash
+    # The drafting pass is judged against the book's reading level, so it has
+    # to be told which one. Read from the plan, the one place every consumer
+    # of this value looks.
+    $draftReadingLevel = 8
+    try {
+        $draftPlanPath = Join-Path $outputFolder 'ebook-plan.json'
+        if (Test-Path -LiteralPath $draftPlanPath -PathType Leaf) {
+            $draftReadingLevel = Get-EbookPlanReadingLevel -Plan (Get-Content -LiteralPath $draftPlanPath -Raw -Encoding UTF8 | ConvertFrom-Json)
+        }
+    } catch { $draftReadingLevel = 8 }
 
     $passName = if ($RepairIssues.Count) { 'format repair' } else { 'drafting' }
     $prefix = if ($RepairIssues.Count) { 'codex-format-repair' } else { 'codex-drafting' }
@@ -325,7 +335,7 @@ $guidanceSection
 - Before saving, read the manuscript as a copyeditor. Search for lowercase words immediately after periods, fragment-like list sentences, repeated sentence blocks, mojibake, and missing introductory context. Correct every finding in the Markdown itself.
 - Target a production draft suitable for SME review: the SME should be reviewing, correcting, and improving, not writing the book from scratch.
 - For a five-week general education course, each chapter must land at 2,600+ words, with 3,200 words preferred when source context supports it. Do not stop at 1,800-2,000 words.
-- $(Get-EbookTemplateInstructions)
+- $(Get-EbookTemplateInstructions -ReadingLevel $draftReadingLevel)
 - Every chapter must include a named `**Business Case:**` scenario that develops through the chapter.
 - Every chapter must include a modeled communication artifact, practical field guide/toolbox, synthesis, key takeaways, and clean numbered scholarly/source notes.
 - Keep relevant verified image and visual references. Do not include local interactive-study links or promises of interactive activities in the book.
@@ -357,7 +367,7 @@ Preserve the approved chapter order, exact learning objectives, supported prose,
 Fix heading syntax in place; do not add duplicate sections around existing content. If synthesis or the named Business Case is genuinely missing, develop it from that chapter's existing supported material. Do not invent evidence or bibliographic details; report anything that cannot safely be repaired.
 Use plain numbered source entries (1. Source details), restarting at 1 in each chapter's Scholarly Sources. Body references use [1](#chapter-1-note-1) with the correct chapter and note numbers. Do not write HTML a/span anchors or escaped equivalents; the renderer creates targets. Preserve source text when removing markup.
 
-$(Get-EbookTemplateInstructions)
+$(Get-EbookTemplateInstructions -ReadingLevel $draftReadingLevel)
 
 ## Exact preflight findings
 $(($RepairIssues | ForEach-Object { '- ' + $_ }) -join "`n")
@@ -601,6 +611,10 @@ $sourceContext | Add-Member -NotePropertyName sourceMode -NotePropertyValue $Sou
 $preferencesPath = Join-Path $SourceContextPath 'book-studio-production.json'
 $preferences = if (Test-Path -LiteralPath $preferencesPath) { Get-Content -LiteralPath $preferencesPath -Raw -Encoding UTF8 | ConvertFrom-Json } else { $null }
 $requiredReadings = @(if ($preferences) { $preferences.requiredReadings | Where-Object { $_ } } elseif ($SourceMode -eq 'Assigned') { ConvertFrom-EbookReadingList -Text (Get-EbookBlueprintReadingText -Path $SpecPath) -Origin 'Blueprint' })
+# The reading level every downstream check enforces. It travels on the plan so
+# generation, the quality report, and the audit all read one value.
+$planReadingLevel = Test-EbookReadingLevel -Value $(if ($preferences) { $preferences.readingLevel } else { $null })
+$plan | Add-Member -NotePropertyName readingLevel -NotePropertyValue $planReadingLevel -Force
 $plan | Add-Member -NotePropertyName requiredReadings -NotePropertyValue $requiredReadings -Force
 $plan | Add-Member -NotePropertyName imageSettings -NotePropertyValue $(if($preferences){$preferences.imageSettings}else{[pscustomobject]@{context='Generic';instructions=''}}) -Force
 

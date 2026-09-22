@@ -1,14 +1,45 @@
 . (Join-Path $PSScriptRoot 'EbookImages.ps1')
 
+function Get-EbookReadingLevelRange {
+    # A course chooses its reading level; the range is what the check will
+    # accept. Grade 8 is the UMA default and stays the default everywhere.
+    [pscustomobject]@{ minimum = 6; maximum = 16; default = 8 }
+}
+
+function Test-EbookReadingLevel {
+    # Returns the reading level to enforce. Anything missing, unparseable, or
+    # outside the range falls back to the default rather than disabling the
+    # check, because a bad value must never become "no threshold".
+    param([AllowNull()][object]$Value)
+    $range = Get-EbookReadingLevelRange
+    $number = 0.0
+    if ($null -eq $Value -or -not [double]::TryParse([string]$Value, [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$number)) { return [double]$range.default }
+    if ([double]::IsNaN($number) -or [double]::IsInfinity($number)) { return [double]$range.default }
+    if ($number -lt $range.minimum -or $number -gt $range.maximum) { return [double]$range.default }
+    return [double]$number
+}
+
+function Get-EbookPlanReadingLevel {
+    # The plan is where every consumer looks: generation, the quality report,
+    # and the audit all read the same value from the same place.
+    param([AllowNull()][object]$Plan)
+    $value = $null
+    if ($Plan -and $Plan.PSObject.Properties['readingLevel']) { $value = $Plan.readingLevel }
+    return (Test-EbookReadingLevel -Value $value)
+}
+
 function Get-EbookEditorialPolicy {
     # One release threshold, shared by generation, audit, and regression tests.
     # Do not relax it to make a manuscript pass; revise the manuscript instead.
-    [pscustomobject]@{ version = '2026-09-15.1'; maximumGrade = 8.0; maximumPassiveRate = 4.0 }
+    # The reading level is chosen per course and defaults to grade 8; the
+    # passive-voice threshold is not course-specific.
+    param([AllowNull()][object]$MaximumGrade)
+    [pscustomobject]@{ version = '2026-09-15.1'; maximumGrade = (Test-EbookReadingLevel -Value $MaximumGrade); maximumPassiveRate = 4.0 }
 }
 
 function Test-EbookEditorialThresholds {
-    param([AllowNull()][object]$Grade, [AllowNull()][object]$PassiveRate)
-    $policy = Get-EbookEditorialPolicy
+    param([AllowNull()][object]$Grade, [AllowNull()][object]$PassiveRate, [AllowNull()][object]$MaximumGrade)
+    $policy = Get-EbookEditorialPolicy -MaximumGrade $MaximumGrade
     $issues = New-Object System.Collections.ArrayList
     foreach ($entry in @(
         @{ name = 'Flesch-Kincaid grade'; value = $Grade; maximum = $policy.maximumGrade },
@@ -24,7 +55,7 @@ function Test-EbookEditorialThresholds {
             [void]$issues.Add("$($entry.name) is $number; maximum is $($entry.maximum). Revise the prose before delivery.")
         }
     }
-    [pscustomobject]@{ status = $(if ($issues.Count) { 'FAIL' } else { 'PASS' }); policyVersion = $policy.version; issues = @($issues); detail = $(if ($issues.Count) { $issues -join ' ' } else { 'Grade-8 and active-voice release thresholds passed.' }) }
+    [pscustomobject]@{ status = $(if ($issues.Count) { 'FAIL' } else { 'PASS' }); policyVersion = $policy.version; issues = @($issues); detail = $(if ($issues.Count) { $issues -join ' ' } else { "Grade-$($policy.maximumGrade) and active-voice release thresholds passed." }) }
 }
 
 function Get-EbookDeliveryReadiness {

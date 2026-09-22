@@ -9211,7 +9211,7 @@ function Get-FormalToneMatches {
 }
 
 function Get-UmaWritingStyleGuideMetrics {
-    param([AllowNull()][string]$Markdown)
+    param([AllowNull()][string]$Markdown, [AllowNull()][object]$MaximumGrade)
 
     $plain = Get-PlainTextForStyleGuideCheck -Markdown $Markdown
     $readability = Get-ReadabilityMetrics -PlainText $plain
@@ -9271,7 +9271,7 @@ function Get-UmaWritingStyleGuideMetrics {
         [void]$issues.Add("Average sentence length is $averageSentenceWords words; revise for plain-language readability.")
     }
     $passiveRate = [Math]::Round((($passiveMatches.Count / [double][Math]::Max(1, $readability.wordCount)) * 1000), 1)
-    $editorial = Test-EbookEditorialThresholds -Grade $readability.fleschKincaidGrade -PassiveRate $passiveRate
+    $editorial = Test-EbookEditorialThresholds -Grade $readability.fleschKincaidGrade -PassiveRate $passiveRate -MaximumGrade $MaximumGrade
     foreach ($issue in $editorial.issues) { [void]$issues.Add($issue) }
     if ($formalToneMatches.Count -gt 3) {
         [void]$issues.Add("Tone may be too formal; review terms: $($formalToneMatches -join ', ').")
@@ -9292,6 +9292,7 @@ function Get-UmaWritingStyleGuideMetrics {
         averageSentenceWords = $averageSentenceWords
         fleschKincaidGrade = $readability.fleschKincaidGrade
         fleschReadingEase = $readability.fleschReadingEase
+        readingLevel = (Test-EbookReadingLevel -Value $MaximumGrade)
         longSentenceCount = $longSentenceCount
         passiveVoiceMatches = @($passiveMatches)
         passiveVoiceRatePerThousand = $passiveRate
@@ -9311,6 +9312,8 @@ function Get-UmaWritingStyleGuideMetrics {
 }
 
 function New-EbookQualityReport {
+    # The reading level is the book's own, not a constant: a course chooses it
+    # and every check that enforces it reads the same value from the plan.
     param(
         [object]$Course,
         [object]$Plan,
@@ -9319,6 +9322,8 @@ function New-EbookQualityReport {
         [string]$Markdown,
         [object]$BrandProfile
     )
+
+    $planReadingLevel = Get-EbookPlanReadingLevel -Plan $Plan
 
     $learnerResiduePatterns = @(
         "(?im)^\s*#{1,4}\s*(assignment|discussion|quiz|test|exam|homework|rubric)\b",
@@ -9370,7 +9375,7 @@ function New-EbookQualityReport {
         $chapterWords = Get-MarkdownWordCount -Markdown $chapterText
         $chapterImages = Get-MarkdownImageReferences -Markdown $chapterText
         $imageAccessibilityIssues = Get-ImageAccessibilityIssues -Images $chapterImages
-        $styleGuideMetrics = Get-UmaWritingStyleGuideMetrics -Markdown $chapterText
+        $styleGuideMetrics = Get-UmaWritingStyleGuideMetrics -Markdown $chapterText -MaximumGrade $planReadingLevel
         $depthStandard = Get-ProductionDepthStandard -Course $Course -Chapter $chapter
         $repetitionSignals = Get-ContentRepetitionSignals -Markdown $chapterText
         $proseIntegritySignals = Get-ProseIntegritySignals -Markdown $chapterText
@@ -9980,11 +9985,13 @@ function New-PublishingEditorReport {
         editorialRole = "Publishing Editor Agent"
         manuscriptSha256 = Get-EbookTextSha256 -Text $Markdown
         editorialPolicyVersion = (Get-EbookEditorialPolicy).version
+        readingLevel = $planReadingLevel
         editorialLens = "Higher education developmental editor reviewing content depth, learner experience, visual support, source integrity, brand fit, and production readiness."
         decision = $decision
         summary = [pscustomobject]@{
             chapters = $chapterCount
             manuscriptWords = $totalWords
+            readingLevel = $planReadingLevel
             averageChapterWords = $averageChapterWords
             minimumChapterWords = $minimumChapterWords
             preferredChapterWords = $preferredChapterWords
@@ -13046,6 +13053,7 @@ Export-ModuleMember -Function Import-CourseSpec, Import-SourceContext, Import-Br
 Export-ModuleMember -Function Test-EbookManuscriptPreflight, Update-EbookManuscriptPreflight
 Export-ModuleMember -Function ConvertFrom-EbookOutcomeCatalog, Set-EbookCourseOutcomeRevision
 Export-ModuleMember -Function Export-MarkdownToDocx, Update-EbookObjectiveListNumbering
+Export-ModuleMember -Function Test-EbookReadingLevel, Get-EbookPlanReadingLevel, Get-EbookReadingLevelRange, Get-EbookEditorialPolicy, Test-EbookEditorialThresholds
 Export-ModuleMember -Function Resolve-EbookOutcomeAssignments, Get-EbookOutcomeComparableText, Get-EbookOutcomeAnalysisFacts, New-EbookOutcomeAnalysisPrompt, ConvertFrom-EbookOutcomeAnalysisResponse, Test-EbookCourseObjectiveFidelity, ConvertTo-EbookOutcomeSpecSheetMarkdown, ConvertTo-EbookOutcomeAnalysisMarkdown
 Export-ModuleMember -Function Get-EbookBlueprintReadingText, ConvertFrom-EbookReadingList, Merge-EbookReadingLists, ConvertTo-EbookReadingListText, Update-EbookRequiredSourceEvidence, Get-EbookRequiredSourceReview, New-EbookRequiredSourceBrief, ConvertTo-SafePathPart
 
