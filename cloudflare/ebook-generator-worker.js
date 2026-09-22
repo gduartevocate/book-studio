@@ -158,14 +158,18 @@ el("check").addEventListener("click", async () => {
       return;
     }
     const working = machines.filter((machine) => (machine.codex || {}).status === "Connected");
+    const unchecked = machines.filter((machine) => (machine.codex || {}).status === "Unknown");
     el("state").textContent = working.length ? (machines.length === 1 ? "Ready" : working.length + " of " + machines.length + " ready") : "Codex unavailable";
-    el("state").className = "pill " + (working.length ? "ok" : "bad");
+    el("state").className = "pill " + (working.length ? "ok" : (unchecked.length ? "warn" : "bad"));
     el("detail").innerHTML = machines.map((machine) => {
       const codex = machine.codex || {};
       const name = machine.runnerName || machine.label || "unnamed computer";
       const good = codex.status === "Connected";
-      return "<dt>" + name + "</dt><dd>" +
-        (good ? "Ready" : "Codex " + (codex.status || "unknown").toLowerCase()) +
+      // A check that timed out is not a broken Codex, and must not be dressed
+      // as one: it sends a designer hunting for a problem that is not there.
+      const unknown = (codex.status || "") === "Unknown";
+      const state = good ? "Ready" : (unknown ? "Codex not checked yet" : "Codex " + (codex.status || "unknown").toLowerCase());
+      return "<dt>" + name + "</dt><dd>" + state +
         (codex.version ? " - " + codex.version : "") +
         " - last heard from " + describeAge(machine.seenAt) +
         (good ? "" : "<br>" + (codex.detail || "")) + "</dd>";
@@ -1297,6 +1301,10 @@ function setupScript(token, origin) {
     "    if (Test-Path -LiteralPath (Join-Path $folder '.git')) {",
     "        Write-Host ('Updating Book Studio in ' + $folder)",
     "        git -C $folder pull --ff-only | Out-Host",
+    "        if ($LASTEXITCODE -ne 0) {",
+    "            Write-Host 'Book Studio could not be updated on this computer.' -ForegroundColor Yellow",
+    "            Write-Host 'The version check below will say whether the copy you have is new enough.'",
+    "        }",
     "    }",
     "    else {",
     "        Write-Host ('Installing Book Studio into ' + $folder)",
@@ -1324,6 +1332,7 @@ function setupScript(token, origin) {
     "    while ($parts.Count -lt 4) { $parts += 0 }",
     "    return ($parts[0] * 1000000L) + ($parts[1] * 10000L) + ($parts[2] * 100L) + $parts[3]",
     "}",
+    "Write-Host ('Book Studio on this computer: ' + $(if ($installed) { $installed } else { 'unknown' }))",
     "if (-not $installed -or (ConvertTo-Comparable $installed) -lt (ConvertTo-Comparable $needed)) {",
     "    Write-Host ''",
     "    Write-Host ('The Book Studio on this computer is older than the cloud expects.') -ForegroundColor Yellow",

@@ -216,6 +216,10 @@ if ($node) {
     Check ($setup -match 'older than the cloud expects') 'A version that is too old must be explained in words.'
     Check ($setup -match 'version\.json') 'The check must read the version actually installed.'
     Check ($setup -match '(?s)older than the cloud expects.*?return') 'A version that is too old must stop, not carry on into a confusing error.'
+    # "Which version do I have?" must be answerable by reading the window, not
+    # by reading the code.
+    Check ($setup -match 'Book Studio on this computer: ') 'The setup script must say which version is on that computer.'
+    Check ($setup -match '(?s)git -C \$folder pull --ff-only.*?LASTEXITCODE') 'A failed update must be reported, not passed over in silence.'
 }
 
 "PASS: $checks connection assertions (token remembered and replaced, kept in the user profile, start with Windows without an administrator)."

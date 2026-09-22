@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.22.5 (2026-09-22)
+
+- A Codex check that times out is reported as unknown rather than broken.
+
 ## v2026.09.22.4 (2026-09-22)
 
 - Each computer is listed separately, and the agent says when the cloud has accepted it.

@@ -95,8 +95,17 @@ function Test-LocalCodexConnection {
         # status/message; reading the wrong pair reported every healthy Codex
         # as unavailable with no explanation.
         $connection = Test-BookStudioCodexConnection -ProjectRoot $ProjectRoot
-        $result.status = if ($connection.connectionStatus -eq 'PASS') { 'Connected' } else { 'Unavailable' }
-        $result.detail = [string]$connection.connectionMessage
+        # A check that timed out is not a Codex that is missing or signed out.
+        # Reporting the two the same way told a designer their Codex was broken
+        # when the only thing that had happened was a slow answer, and sent them
+        # looking for a problem that was not there.
+        $message = [string]$connection.connectionMessage
+        $result.status = if ($connection.connectionStatus -eq 'PASS') { 'Connected' }
+            elseif ($message -match 'timed out') { 'Unknown' }
+            else { 'Unavailable' }
+        $result.detail = if ($result.status -eq 'Unknown') {
+            "Codex did not answer in time, so its state is unknown. Book Studio checks again every ten minutes. ($message)"
+        } else { $message }
         $result.signedIn = [bool]$connection.signedIn
         if (-not $result.commandPath -and $connection.commandPath) { $result.commandPath = [string]$connection.commandPath }
         if ($connection.version) { $result.version = [string]$connection.version }
