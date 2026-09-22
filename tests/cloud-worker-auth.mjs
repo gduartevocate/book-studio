@@ -268,4 +268,45 @@ check(everyone.json.jobs.some((job) => job.status === "Running"), "The shared vi
 const strangerScope = await call("GET", "/api/jobs?scope=everyone");
 check(strangerScope.status === 401, "Everyone's books must not be readable without signing in.");
 
+// 16. Two computers belonging to one person must both be visible. They shared
+//     a single record before, so a laptop and a desktop overwrote each other
+//     every twenty seconds and a designer standing at the one that was not
+//     reporting was shown the other one as "Ready".
+const laptopToken = await call("POST", "/api/runner-tokens", { cookie: admin, body: { label: "Vocate laptop" } });
+const deskToken = await call("POST", "/api/runner-tokens", { cookie: admin, body: { label: "Desk" } });
+check(laptopToken.json.token !== deskToken.json.token, "Two machines must get two tokens.");
+
+const report = (token, name, codexStatus) => call("POST", "/api/runner/status", {
+  headers: { "x-book-runner-token": token },
+  body: { runnerName: name, codex: { status: codexStatus, version: "codex-cli 0.154.0" } }
+});
+check((await report(laptopToken.json.token, "LAPTOP / gio", "Connected")).status === 200, "A machine must be able to report itself.");
+check((await report(deskToken.json.token, "NEWKING / gio", "Unavailable")).status === 200, "A second machine must be able to report itself too.");
+
+const machines = await call("GET", "/api/runner/status", { cookie: admin });
+check(machines.status === 200, "The list of computers must load.");
+check(machines.json.machines.length === 2, "Both computers must be listed, saw " + machines.json.machines.length);
+const names = machines.json.machines.map((machine) => machine.runnerName).sort();
+check(names[0] === "LAPTOP / gio" && names[1] === "NEWKING / gio", "Each computer must keep its own name; got " + names.join(", "));
+check(machines.json.machines.some((machine) => machine.codex.status === "Unavailable"), "A computer whose Codex is not working must say so rather than borrow another computer's answer.");
+
+// And one person must not see another person's computers.
+const otherSees = await call("GET", "/api/runner/status", { cookie: designerAgain });
+check((otherSees.json.machines || []).length === 0, "Machines must belong to the person who connected them.");
+check(otherSees.json.connected === false, "Someone with no computer running must be told so plainly.");
+check(/not running|is running/i.test(otherSees.json.detail || ""), "That message must say what to do about it: " + otherSees.json.detail);
+
+// 17. Tokens created before machines were told apart must not have to be
+//     recreated by hand. The first time such a machine reports, it earns an id
+//     and stops sharing a record with every other computer its owner has.
+await kv.put("runner:token:old-token", JSON.stringify({ owner: "boss@vocate.org", label: "Older laptop" }));
+check((await report("old-token", "OLDER / gio", "Connected")).status === 200, "An older token must still work.");
+const upgraded = await kv.get("runner:token:old-token", "json");
+check(Boolean(upgraded.id), "An older token must be given a machine id the first time it reports.");
+check(!("tokenKey" in upgraded), "The stored token must not carry the key it is stored under.");
+const afterUpgrade = await call("GET", "/api/runner/status", { cookie: admin });
+check(afterUpgrade.json.machines.length === 3, "The upgraded machine must be listed alongside the others, saw " + afterUpgrade.json.machines.length);
+const older = afterUpgrade.json.machines.filter((machine) => machine.runnerName === "OLDER / gio");
+check(older.length === 1, "The upgraded machine must appear once, not twice; saw " + older.length);
+
 console.log("PASS: " + checks + " sign-in checks (sessions, password storage, lockout, administration, runner tokens)");

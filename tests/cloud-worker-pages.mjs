@@ -118,10 +118,16 @@ check(/sign in to Windows/.test(connect), "The connect page must say the compute
 check(/Copy/.test(connect), "The connect page must offer to copy the command rather than make a designer select it.");
 
 // The connect page is where a designer finds out whether their machine is
-// there, so the fields it reads must be the ones the worker sends.
-for (const field of ["connected", "runnerName", "seenAt", "detail"]) {
-  check(script.includes("status." + field), "The connect page no longer reads status." + field + ".");
+// there, so the fields it reads must be the ones the worker sends. One line per
+// computer: a laptop and a desktop used to share a single record and overwrite
+// each other, so a laptop that had never connected could show its owner a
+// "Ready" belonging to a machine in another building.
+check(script.includes("status.machines"), "The connect page must show every computer, not one of them.");
+check(script.includes("status.detail"), "A person with no computer running must be told why.");
+for (const field of ["runnerName", "seenAt", "codex"]) {
+  check(script.includes("machine." + field), "Each computer listed must show its " + field + ".");
 }
+check(/last heard from/.test(script), "Each computer must say when it was last heard from; that is what tells a designer theirs is not running.");
 
 // The front page is where a designer lands after signing in. It has to say
 // whose books these are, offer the shared view, and let them leave.

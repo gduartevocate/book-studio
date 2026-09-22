@@ -90,7 +90,7 @@ const CONNECT_HTML = `<!doctype html>
   command uses the copy you have instead of fetching another.</p>
 </section>
 
-<section><h2>4. Is it working?</h2>
+<section><h2>4. Your computers</h2>
   <div class="row"><button class="secondary" id="check">Test connection</button><span id="state" class="pill">Not checked</span></div>
   <dl id="detail"></dl>
 </section>
@@ -133,22 +133,43 @@ el("mint").addEventListener("click", async () => {
   finally { el("mint").disabled = false; }
 });
 
+// Every computer of yours that is running Book Studio, each on its own line.
+// One line per machine matters: a laptop and a desktop used to overwrite each
+// other, so a laptop that had never connected could show its owner a "Ready"
+// that belonged to a different computer in another building.
+function describeAge(seenAt) {
+  const seen = Date.parse(seenAt || "");
+  if (!seen) return "";
+  const seconds = Math.max(0, Math.round((Date.now() - seen) / 1000));
+  if (seconds < 90) return "just now";
+  if (seconds < 3600) return Math.round(seconds / 60) + " minutes ago";
+  return new Date(seen).toLocaleString();
+}
+
 el("check").addEventListener("click", async () => {
   el("state").textContent = "Checking…"; el("state").className = "pill";
   el("detail").innerHTML = "";
   try {
     const status = await api("/api/runner/status");
-    if (!status.connected) {
+    const machines = status.machines || (status.connected ? [status] : []);
+    if (!machines.length) {
       el("state").textContent = "No machine"; el("state").className = "pill warn";
       el("detail").innerHTML = "<dt>Why</dt><dd>" + status.detail + "</dd>";
       return;
     }
-    const codex = status.codex || {};
-    const good = codex.status === "Connected";
-    el("state").textContent = good ? "Ready" : "Codex unavailable";
-    el("state").className = "pill " + (good ? "ok" : "bad");
-    const rows = [["Computer", status.runnerName || "unknown"], ["Named", status.label || ""], ["Codex", codex.status || "unknown"], ["Version", codex.version || ""], ["Last seen", status.seenAt || ""], ["Detail", codex.detail || ""]];
-    el("detail").innerHTML = rows.filter((row) => row[1]).map((row) => "<dt>" + row[0] + "</dt><dd>" + row[1] + "</dd>").join("");
+    const working = machines.filter((machine) => (machine.codex || {}).status === "Connected");
+    el("state").textContent = working.length ? (machines.length === 1 ? "Ready" : working.length + " of " + machines.length + " ready") : "Codex unavailable";
+    el("state").className = "pill " + (working.length ? "ok" : "bad");
+    el("detail").innerHTML = machines.map((machine) => {
+      const codex = machine.codex || {};
+      const name = machine.runnerName || machine.label || "unnamed computer";
+      const good = codex.status === "Connected";
+      return "<dt>" + name + "</dt><dd>" +
+        (good ? "Ready" : "Codex " + (codex.status || "unknown").toLowerCase()) +
+        (codex.version ? " - " + codex.version : "") +
+        " - last heard from " + describeAge(machine.seenAt) +
+        (good ? "" : "<br>" + (codex.detail || "")) + "</dd>";
+    }).join("");
   } catch (error) {
     el("state").textContent = "Error"; el("state").className = "pill bad";
     el("detail").innerHTML = "<dt>Detail</dt><dd>" + error.message + "</dd>";
@@ -1064,7 +1085,10 @@ async function resolveRunner(request, env) {
   const presented = request.headers.get("x-book-runner-token") || "";
   if (!presented) return null;
   const record = await env.BOOK_STUDIO_KV.get("runner:token:" + presented, "json");
-  if (record) return record;
+  // The key is carried along so a token minted before machines had ids can be
+  // given one the first time it reports, rather than needing every designer to
+  // create a new token by hand.
+  if (record) return { ...record, tokenKey: "runner:token:" + presented };
   // The original single shared token, kept so an existing agent keeps working
   // until its owner mints a personal one.
   const legacy = await env.BOOK_STUDIO_KV.get(RUNNER_TOKEN_KEY);
@@ -1226,6 +1250,13 @@ async function createJob(request, env, owner) {
   return jsonResponse(job, { status: 201 });
 }
 
+// The oldest Book Studio the cloud can drive. These are released separately:
+// the worker deploys in seconds, a designer PC updates when a release is
+// published and pulled. A worker that needs something newer than the copy on
+// that PC produced, in the one case that reached a designer, a PowerShell
+// binding error about an empty string. Raise this when the cloud starts
+// depending on something new, and the setup script says so in words.
+const MINIMUM_AGENT_VERSION = "2026.09.22.3";
 // One paste, into any PowerShell window. A designer should not have to know
 // what a clone is, which folder to stand in, or that a token goes in a
 // parameter. This script is what the connect page hands them: it checks Git,
@@ -1276,6 +1307,30 @@ function setupScript(token, origin) {
     "if (-not (Test-Path -LiteralPath (Join-Path $folder 'cloud-book-runner.ps1'))) {",
     "    Write-Host 'Book Studio was fetched but the agent is missing from it.' -ForegroundColor Red",
     "    Write-Host 'Update Book Studio and try again, or tell whoever administers it.'",
+    "    return",
+    "}",
+    "",
+    "# The copy on this computer has to be new enough for what follows. It is",
+    "# released separately from the cloud, so it can legitimately be behind,",
+    "# and saying so is far better than the binding error an old one throws.",
+    "$needed = '" + MINIMUM_AGENT_VERSION + "'",
+    "$installed = ''",
+    "$versionFile = Join-Path $folder 'book-studio/version.json'",
+    "if (Test-Path -LiteralPath $versionFile) {",
+    "    try { $installed = (Get-Content -LiteralPath $versionFile -Raw | ConvertFrom-Json).version } catch { $installed = '' }",
+    "}",
+    "function ConvertTo-Comparable([string]$value) {",
+    "    $parts = @($value -split '[.]' | ForEach-Object { [int]($_ -replace '[^0-9]', '0') })",
+    "    while ($parts.Count -lt 4) { $parts += 0 }",
+    "    return ($parts[0] * 1000000L) + ($parts[1] * 10000L) + ($parts[2] * 100L) + $parts[3]",
+    "}",
+    "if (-not $installed -or (ConvertTo-Comparable $installed) -lt (ConvertTo-Comparable $needed)) {",
+    "    Write-Host ''",
+    "    Write-Host ('The Book Studio on this computer is older than the cloud expects.') -ForegroundColor Yellow",
+    "    Write-Host ('  on this computer: ' + $(if ($installed) { $installed } else { 'unknown' }))",
+    "    Write-Host ('  needed:           ' + $needed)",
+    "    Write-Host 'This command already tried to update it, so a new release has to be published.'",
+    "    Write-Host 'Tell whoever administers Book Studio, and run this again afterwards.'",
     "    return",
     "}",
     "",
@@ -1477,7 +1532,10 @@ export default {
         const payload = await request.json().catch(() => ({}));
         const label = String(payload.label || "").slice(0, 80) || "Unnamed machine";
         const token = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
-        const record = { owner: owner || "local-development", label, createdAt: nowIso() };
+        // The id is what keeps two computers apart. Without it every machine
+        // a person owns wrote to the same place, so a laptop and a desktop
+        // overwrote each other and the page could only ever show one.
+        const record = { id: randomHex(8), owner: owner || "local-development", label, createdAt: nowIso() };
         await env.BOOK_STUDIO_KV.put("runner:token:" + token, JSON.stringify(record));
         // Returned once. It is not stored anywhere it can be read back, so a
         // lost token is replaced rather than recovered.
@@ -1494,14 +1552,29 @@ export default {
         const auth = await requireRunner(request, env);
         if (auth.response) return auth.response;
         const payload = await request.json().catch(() => ({}));
+        // A token from before machines were told apart earns an id here, once,
+        // and the single record it used to share is cleared so its machine does
+        // not appear twice.
+        if (!auth.runner.id && auth.runner.tokenKey) {
+          auth.runner.id = randomHex(8);
+          const { tokenKey, ...stored } = auth.runner;
+          await env.BOOK_STUDIO_KV.put(tokenKey, JSON.stringify(stored));
+          await env.BOOK_STUDIO_KV.delete("runner:status:" + (auth.runner.owner || "shared"));
+        }
         const record = {
+          id: auth.runner.id || "legacy",
           owner: auth.runner.owner || "",
           label: auth.runner.label || "",
           runnerName: String(payload.runnerName || "").slice(0, 120),
           codex: payload.codex || null,
           seenAt: nowIso()
         };
-        await env.BOOK_STUDIO_KV.put("runner:status:" + (auth.runner.owner || "shared"), JSON.stringify(record), {
+        // One key per machine, under its owner. A token minted before ids
+        // existed keeps the old single key so it does not stop reporting.
+        const statusKey = auth.runner.id
+          ? "runner:status:" + (auth.runner.owner || "shared") + ":" + auth.runner.id
+          : "runner:status:" + (auth.runner.owner || "shared");
+        await env.BOOK_STUDIO_KV.put(statusKey, JSON.stringify(record), {
           // A machine that stops reporting stops being shown as connected,
           // rather than appearing online forever after it is switched off.
           expirationTtl: 900
@@ -1514,22 +1587,34 @@ export default {
       if (request.method === "GET" && pathname === "/api/runner/status") {
         const user = await requireUser(request, env);
         if (user.response) return user.response;
-        let record = await env.BOOK_STUDIO_KV.get("runner:status:" + user.email, "json");
-        // An agent running on the original shared token has no owner, so it
-        // reports under "shared". Before sign-in is switched on there is no
-        // owner to scope to either, and looking only under the email address
-        // showed a connected machine as missing. With Access on, the email is
-        // the only key read, so one person cannot see another machine.
-        if (!record && env.REQUIRE_ACCESS !== "true") {
-          record = await env.BOOK_STUDIO_KV.get("runner:status:shared", "json");
+        // Every machine this person has, newest sighting first. A machine
+        // stops being listed fifteen minutes after its agent stops talking,
+        // so the list is what is actually running rather than what once ran.
+        const machines = [];
+        const listed = await env.BOOK_STUDIO_KV.list({ prefix: "runner:status:" + user.email + ":" });
+        for (const key of listed.keys) {
+          const record = await env.BOOK_STUDIO_KV.get(key.name, "json");
+          if (record) machines.push(record);
         }
-        if (!record) {
+        // Tokens minted before machines had ids, and the shared token from
+        // before sign-in existed, still report to the old single keys.
+        const single = await env.BOOK_STUDIO_KV.get("runner:status:" + user.email, "json");
+        if (single) machines.push(single);
+        if (!machines.length && env.REQUIRE_ACCESS !== "true") {
+          const shared = await env.BOOK_STUDIO_KV.get("runner:status:shared", "json");
+          if (shared) machines.push(shared);
+        }
+        machines.sort((left, right) => String(right.seenAt || "").localeCompare(String(left.seenAt || "")));
+        if (!machines.length) {
           return jsonResponse({
             connected: false,
-            detail: "No machine has checked in for this account. Install Book Studio on your PC, paste your runner token, and start it."
+            machines: [],
+            detail: "No computer of yours is running Book Studio right now. Open the window you started it in and check it is still going, or run the command above again on that computer."
           });
         }
-        return jsonResponse({ connected: true, ...record });
+        // connected and the first machine stay in the reply so an older page
+        // still shows something sensible.
+        return jsonResponse({ connected: true, machines, ...machines[0] });
       }
 
       if (request.method === "GET" && pathname === "/api/runner/jobs") {

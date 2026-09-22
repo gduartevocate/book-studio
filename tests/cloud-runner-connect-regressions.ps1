@@ -97,6 +97,16 @@ try {
     Check ($runner -match 'Sign in at \$SignInUrl') 'The missing-token message must use the sign-in address, not the address the agent dials.'
     Check ($runner -notmatch 'deploy-ebook-generator-cloudflare\.ps1 once to create it') 'A designer must not be told to run a deployment script.'
     Check ($runner -match "EbookCloudRunner\.ps1") 'The agent must dot-source the connection library.'
+    # A designer watching the window must be able to tell a computer that
+    # reported itself from one that quietly could not: the web page looks the
+    # same either way until it is refreshed.
+    Check ($runner -match 'now visible in Book Studio') 'The agent must say when the cloud has accepted this computer.'
+    Check ($runner -match 'could not report itself') 'The agent must say when it could not, rather than looking healthy.'
+    Check ($runner -match 'reportedOnce') 'That confirmation must be said once, not on every poll.'
+    # A function that returns a value prints it when the caller ignores it, so
+    # the word True appeared in the middle of what a designer was reading.
+    Check ($runner -notmatch '(?m)^\s*Publish-CodexStatus[^|
+]*$') 'The result of reporting must be consumed, or it is printed at the designer.'
 }
 finally {
     Remove-Item -LiteralPath $fixture -Recurse -Force -ErrorAction SilentlyContinue
@@ -198,6 +208,14 @@ if ($node) {
     Check ($setup -match '(?s)try \{ Set-ExecutionPolicy.*?catch') 'A refused policy change must not stop the setup.'
     Check ($setup -notmatch 'Scope LocalMachine') 'Nothing may need an administrator.'
     Check ($setup -match '-ProjectRoot \$folder') 'Run as a command, the agent cannot work out its own folder; it must be told.'
+    # The cloud and the copy of Book Studio on a PC are released separately, so
+    # the PC can legitimately be behind. Saying so is the difference between a
+    # designer knowing to ask for a release and reading a binding error about
+    # an empty string, which is what actually happened.
+    Check ($setup -match "needed = '\d{4}\.\d{2}\.\d{2}\.\d+'") 'The setup script must know the oldest Book Studio the cloud can drive.'
+    Check ($setup -match 'older than the cloud expects') 'A version that is too old must be explained in words.'
+    Check ($setup -match 'version\.json') 'The check must read the version actually installed.'
+    Check ($setup -match '(?s)older than the cloud expects.*?return') 'A version that is too old must stop, not carry on into a confusing error.'
 }
 
 "PASS: $checks connection assertions (token remembered and replaced, kept in the user profile, start with Windows without an administrator)."

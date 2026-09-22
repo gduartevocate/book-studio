@@ -166,4 +166,15 @@ foreach ($suite in [regex]::Matches($package, "'([a-z0-9-]+\.ps1)'")) {
     }
 }
 
+# The worker can demand a Book Studio newer than any release that exists. It
+# deploys in seconds; a designer PC updates only when a release is published
+# and pulled. Asking for one that was never published breaks every machine,
+# which is exactly what reached a designer's laptop.
+$minimum = ([regex]::Match($worker, 'MINIMUM_AGENT_VERSION = "([0-9.]+)"')).Groups[1].Value
+Check ([bool]$minimum) 'The worker no longer states the oldest Book Studio it can drive.'
+$published = (Get-Content -LiteralPath (Join-Path $root 'book-studio/version.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version
+Check ([bool]$published) 'The published version could not be read.'
+$asNumber = { param([string]$value) $parts = @($value -split '[.]' | ForEach-Object { [int]$_ }); while ($parts.Count -lt 4) { $parts += 0 }; ($parts[0] * 1000000L) + ($parts[1] * 10000L) + ($parts[2] * 100L) + $parts[3] }
+Check ((& $asNumber $minimum) -le (& $asNumber $published)) "The cloud needs Book Studio $minimum, but the newest published release is $published; every designer PC would refuse to connect."
+
 "PASS: $checks repository hygiene assertions (module exports across the Book Studio boundary, CRLF and BOM preservation, client assets served and cache-busted, release gate after drafting)."

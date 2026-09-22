@@ -109,14 +109,25 @@ function Test-LocalCodexConnection {
 
 function Publish-CodexStatus {
     param([object]$Status)
+
+    $machineName = "$env:COMPUTERNAME / $env:USERNAME"
     try {
         Invoke-RunnerApi -Method Post -Path '/api/runner/status' -Body @{
             codex = $Status
-            runnerName = "$env:COMPUTERNAME / $env:USERNAME"
+            runnerName = $machineName
         } | Out-Null
+        # Said once, on the first success. Without it a designer has no way to
+        # tell a machine that reported itself from one that quietly could not,
+        # and the web page looks identical either way until they refresh it.
+        if (-not $script:reportedOnce) {
+            $script:reportedOnce = $true
+            Write-Host "This computer is now visible in Book Studio as $machineName. Leave this window open." -ForegroundColor Green
+        }
+        return $true
     }
     catch {
-        Write-Warning "Could not report Codex status to the cloud: $($_.Exception.Message)"
+        Write-Warning "This computer could not report itself to Book Studio, so it will show there as not running: $($_.Exception.Message)"
+        return $false
     }
 }
 
@@ -430,7 +441,7 @@ $script:codexStatus = Test-LocalCodexConnection -ProjectRoot $ProjectRoot
 $script:codexCommandPath = $script:codexStatus.commandPath
 $script:codexCheckedAt = Get-Date
 Write-Host "Codex: $($script:codexStatus.status). $($script:codexStatus.detail)"
-Publish-CodexStatus -Status $script:codexStatus
+Publish-CodexStatus -Status $script:codexStatus | Out-Null
 
 do {
     try {
@@ -439,7 +450,7 @@ do {
             $script:codexCommandPath = $script:codexStatus.commandPath
             $script:codexCheckedAt = Get-Date
         }
-        Publish-CodexStatus -Status $script:codexStatus
+        Publish-CodexStatus -Status $script:codexStatus | Out-Null
         $queue = Invoke-RunnerApi -Method Get -Path "/api/runner/jobs"
         $jobs = @($queue.jobs)
         if ($jobs.Count -eq 0) {

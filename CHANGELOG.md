@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.22.4 (2026-09-22)
+
+- Each computer is listed separately, and the agent says when the cloud has accepted it.
+
 ## v2026.09.22.3 (2026-09-22)
 
 - The agent starts on computers that forbid running script files, and the front page shows whose books are whose.
