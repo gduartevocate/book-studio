@@ -1312,7 +1312,7 @@ async function createJob(request, env, owner) {
 // that PC produced, in the one case that reached a designer, a PowerShell
 // binding error about an empty string. Raise this when the cloud starts
 // depending on something new, and the setup script says so in words.
-const MINIMUM_AGENT_VERSION = "2026.09.22.3";
+const MINIMUM_AGENT_VERSION = "2026.09.22.7";
 // One paste, into any PowerShell window. A designer should not have to know
 // what a clone is, which folder to stand in, or that a token goes in a
 // parameter. This script is what the connect page hands them: it checks Git,

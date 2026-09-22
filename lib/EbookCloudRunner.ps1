@@ -150,3 +150,106 @@ function Enter-BookRunnerSingleInstance {
     }
     return [pscustomobject]@{ acquired = $true; mutex = $mutex }
 }
+
+# Keeping itself up to date.
+#
+# A designer should never be asked to paste a command again to get a fix. The
+# agent updates its own copy of Book Studio and restarts into it. Two things it
+# must never do: touch a folder that is not the managed install, and throw away
+# work someone has in progress there.
+function Get-BookStudioInstalledVersion {
+    param([Parameter(Mandatory)][string]$ProjectRoot)
+
+    $file = Join-Path $ProjectRoot 'book-studio/version.json'
+    if (-not (Test-Path -LiteralPath $file)) { return '' }
+    try { return [string]((Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json).version) }
+    catch { return '' }
+}
+
+function ConvertTo-BookStudioVersionNumber {
+    param([string]$Version)
+
+    $parts = @(([string]$Version) -split '[.]' | ForEach-Object { [int]($_ -replace '[^0-9]', '0') })
+    while ($parts.Count -lt 4) { $parts += 0 }
+    return ($parts[0] * 1000000L) + ($parts[1] * 10000L) + ($parts[2] * 100L) + $parts[3]
+}
+
+# Only the copy Book Studio installed for itself, and only when nothing there is
+# half-finished. A development checkout, or a folder somebody has edited, is
+# left alone: updating it would throw away their work.
+function Test-BookStudioSelfUpdatable {
+    param(
+        [Parameter(Mandatory)][string]$ProjectRoot,
+        # Which remote counts as the Book Studio distribution. A parameter so
+        # the rule can be exercised against a scratch repository; production
+        # never passes anything else.
+        [string]$DistributionPattern = 'gduartevocate/book-studio'
+    )
+
+    $reason = ''
+    if (-not (Test-Path -LiteralPath (Join-Path $ProjectRoot '.git'))) {
+        return [pscustomobject]@{ updatable = $false; reason = 'not a Book Studio install that updates itself' }
+    }
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        return [pscustomobject]@{ updatable = $false; reason = 'git is not installed' }
+    }
+    $remote = (& git -C $ProjectRoot remote get-url origin 2>&1) -as [string]
+    if ($LASTEXITCODE -ne 0 -or -not $remote) {
+        return [pscustomobject]@{ updatable = $false; reason = 'no origin to update from' }
+    }
+    if ($remote -notmatch $DistributionPattern) {
+        # The private development checkout ends up here, and updating it would
+        # overwrite work in progress with a published release.
+        return [pscustomobject]@{ updatable = $false; reason = "this folder follows $remote, not the Book Studio distribution" }
+    }
+    $dirty = (& git -C $ProjectRoot status --porcelain 2>&1) -as [string]
+    if ($dirty) {
+        return [pscustomobject]@{ updatable = $false; reason = 'there are unsaved changes in this folder' }
+    }
+    return [pscustomobject]@{ updatable = $true; reason = '' }
+}
+
+function Update-BookStudioInstall {
+    param(
+        [Parameter(Mandatory)][string]$ProjectRoot,
+        [string]$DistributionPattern = 'gduartevocate/book-studio'
+    )
+
+    $before = Get-BookStudioInstalledVersion -ProjectRoot $ProjectRoot
+    $allowed = Test-BookStudioSelfUpdatable -ProjectRoot $ProjectRoot -DistributionPattern $DistributionPattern
+    if (-not $allowed.updatable) {
+        return [pscustomobject]@{ updated = $false; from = $before; to = $before; reason = $allowed.reason }
+    }
+    $output = (& git -C $ProjectRoot pull --ff-only 2>&1) -as [string]
+    if ($LASTEXITCODE -ne 0) {
+        return [pscustomobject]@{ updated = $false; from = $before; to = $before; reason = "update failed: $output" }
+    }
+    $after = Get-BookStudioInstalledVersion -ProjectRoot $ProjectRoot
+    return [pscustomobject]@{
+        updated = ((ConvertTo-BookStudioVersionNumber $after) -gt (ConvertTo-BookStudioVersionNumber $before))
+        from = $before
+        to = $after
+        reason = ''
+    }
+}
+
+# Restarting into the new copy. The agent's own code is already stale by the
+# time it gets here, so it starts a fresh one and stands down, releasing the
+# single-instance hold first so the new one is not turned away by the old.
+function Restart-BookRunner {
+    param(
+        [Parameter(Mandatory)][string]$ProjectRoot,
+        [object]$Instance
+    )
+
+    if ($Instance -and $Instance.mutex) {
+        try { $Instance.mutex.ReleaseMutex() } catch { }
+        try { $Instance.mutex.Dispose() } catch { }
+    }
+    $agent = Join-Path $ProjectRoot 'cloud-book-runner.ps1'
+    # Read and run as a command, because a managed PC refuses to run a file.
+    $inner = "& ([scriptblock]::Create((Get-Content -Raw -LiteralPath '" + $agent + "'))) -ProjectRoot '" + $ProjectRoot + "'"
+    $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Minimized', '-Command', $inner)
+    Start-Process -FilePath 'powershell.exe' -ArgumentList $arguments -WindowStyle Minimized | Out-Null
+}
+

@@ -589,6 +589,25 @@ $script:codexCheckedAt = Get-Date
 Write-Host "Codex: $($script:codexStatus.status). $($script:codexStatus.detail)"
 Publish-CodexStatus -Status $script:codexStatus | Out-Null
 
+# A designer should never have to paste a command again to get a fix. The check
+# happens at start and then hourly; when there is something new, the agent
+# restarts into it.
+function Invoke-BookRunnerSelfUpdate {
+    param([string]$ProjectRoot, [object]$Instance)
+
+    $result = Update-BookStudioInstall -ProjectRoot $ProjectRoot
+    $script:lastUpdateCheck = Get-Date
+    if (-not $result.updated) { return $false }
+    Write-Host "Book Studio updated itself from $($result.from) to $($result.to). Restarting." -ForegroundColor Green
+    Restart-BookRunner -ProjectRoot $ProjectRoot -Instance $Instance
+    return $true
+}
+
+$script:lastUpdateCheck = [datetime]::MinValue
+if (-not $Once) {
+    if (Invoke-BookRunnerSelfUpdate -ProjectRoot $ProjectRoot -Instance $instance) { return }
+}
+
 do {
     try {
         if (((Get-Date) - $script:codexCheckedAt).TotalMinutes -ge 10) {
@@ -615,6 +634,9 @@ do {
         # designer clicks something in the browser, and otherwise after
         # about twenty-five seconds, which is the poll interval by another
         # name.
+        if (((Get-Date) - $script:lastUpdateCheck).TotalMinutes -ge $UpdateCheckMinutes) {
+            if (Invoke-BookRunnerSelfUpdate -ProjectRoot $ProjectRoot -Instance $instance) { return }
+        }
         $carried = Invoke-BridgeCycle -ProjectRoot $ProjectRoot -Port $StudioPort
         # Several clicks arrive together; none of them should wait for the
         # job queue to be checked first.

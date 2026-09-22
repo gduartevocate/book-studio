@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.22.8 (2026-09-22)
+
+- Book Studio keeps itself up to date on every connected computer.
+
 ## v2026.09.22.7 (2026-09-22)
 
 - The real Book Studio is reachable in a browser: the agent carries requests to the copy on your own PC.

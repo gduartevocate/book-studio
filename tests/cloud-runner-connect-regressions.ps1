@@ -249,4 +249,76 @@ if ($node) {
     Check ($setup -match '(?s)git -C \$folder pull --ff-only.*?LASTEXITCODE') 'A failed update must be reported, not passed over in silence.'
 }
 
+# 13. Updating itself. A designer should never be asked to paste a command
+#     again to get a fix, and the two ways that can go wrong are worse than
+#     the problem: updating a folder that is not the managed install, and
+#     throwing away work somebody has in progress there. Both are exercised
+#     against real git repositories rather than described.
+$gitCommand = Get-Command git -ErrorAction SilentlyContinue
+if ($gitCommand) {
+    # git writes ordinary progress to stderr, and PowerShell 5.1 turns a native
+    # program's stderr into a terminating error while ErrorActionPreference is
+    # Stop. Nothing here is failing when that happens.
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $updateFixture = Join-Path ([IO.Path]::GetTempPath()) ('self-update-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $updateFixture | Out-Null
+    try {
+        $origin = Join-Path $updateFixture 'origin'
+        $work = Join-Path $updateFixture 'work'
+        $install = Join-Path $updateFixture 'install'
+        & git init --bare -q $origin
+        & git clone -q $origin $work 2>&1 | Out-Null
+        New-Item -ItemType Directory -Path (Join-Path $work 'book-studio') | Out-Null
+        Set-Content -LiteralPath (Join-Path $work 'book-studio/version.json') -Value '{"version":"2026.01.01.1"}' -Encoding UTF8
+        & git -C $work add -A; & git -C $work -c user.email=t@t -c user.name=t commit -q -m first
+        & git -C $work push -q origin HEAD:refs/heads/master 2>&1 | Out-Null
+        & git clone -q $origin $install 2>&1 | Out-Null
+
+        Check ((Get-BookStudioInstalledVersion -ProjectRoot $install) -eq '2026.01.01.1') 'The installed version must be readable.'
+        Check ((ConvertTo-BookStudioVersionNumber '2026.09.22.7') -gt (ConvertTo-BookStudioVersionNumber '2026.09.22.6')) 'Versions must compare in order.'
+        Check ((ConvertTo-BookStudioVersionNumber '2026.10.01.1') -gt (ConvertTo-BookStudioVersionNumber '2026.09.30.9')) 'A later month must count as newer.'
+
+        # This clone follows a scratch repository, not the distribution, so it
+        # must be left alone: this is what protects a development checkout.
+        $verdict = Test-BookStudioSelfUpdatable -ProjectRoot $install
+        Check (-not $verdict.updatable) 'A folder that does not follow the Book Studio distribution must not be updated.'
+        Check ($verdict.reason -match 'distribution') "The refusal must say why: $($verdict.reason)"
+        Check ((Test-BookStudioSelfUpdatable -ProjectRoot $install -DistributionPattern 'self-update-').updatable) 'The managed install must be updatable.'
+
+        # Unsaved work in that folder stops it: an update would discard it.
+        Set-Content -LiteralPath (Join-Path $install 'scratch.txt') -Value 'half-finished' -Encoding UTF8
+        $dirty = Test-BookStudioSelfUpdatable -ProjectRoot $install -DistributionPattern 'self-update-'
+        Check (-not $dirty.updatable) 'A folder with unsaved changes must not be updated.'
+        Check ($dirty.reason -match 'unsaved') "The refusal must name the reason: $($dirty.reason)"
+        Remove-Item -LiteralPath (Join-Path $install 'scratch.txt') -Force
+
+        # Nothing new published: nothing happens, and it says so quietly.
+        $quiet = Update-BookStudioInstall -ProjectRoot $install -DistributionPattern 'self-update-'
+        Check (-not $quiet.updated) 'With nothing new, no update must be reported.'
+
+        # A new release appears, and the install picks it up on its own.
+        Set-Content -LiteralPath (Join-Path $work 'book-studio/version.json') -Value '{"version":"2026.01.02.1"}' -Encoding UTF8
+        & git -C $work add -A; & git -C $work -c user.email=t@t -c user.name=t commit -q -m second
+        & git -C $work push -q origin HEAD 2>&1 | Out-Null
+        $done = Update-BookStudioInstall -ProjectRoot $install -DistributionPattern 'self-update-'
+        Check ($done.updated) "A newly published release must be picked up: $($done.reason)"
+        Check ($done.from -eq '2026.01.01.1' -and $done.to -eq '2026.01.02.1') "The update must report both versions, got $($done.from) to $($done.to)"
+        Check ((Get-BookStudioInstalledVersion -ProjectRoot $install) -eq '2026.01.02.1') 'The files on disk must actually be the new ones.'
+    }
+    finally {
+        Get-ChildItem -LiteralPath $updateFixture -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object { try { $_.Attributes = [IO.FileAttributes]::Normal } catch { } }
+        Remove-Item -LiteralPath $updateFixture -Recurse -Force -ErrorAction SilentlyContinue
+        $ErrorActionPreference = $previousPreference
+    }
+}
+else { Write-Warning 'git was not found; the self-update checks were skipped.' }
+
+# And the agent has to act on all that: at start, then on a timer, restarting
+# into whatever it fetched.
+$runnerText = Get-Content -LiteralPath (Join-Path $root 'cloud-book-runner.ps1') -Raw -Encoding UTF8
+Check ($runnerText -match 'Invoke-BookRunnerSelfUpdate') 'The agent must check for its own updates.'
+Check ($runnerText -match 'UpdateCheckMinutes') 'It must keep checking, not only at start.'
+Check ($runnerText -match 'Restart-BookRunner') 'It must restart into what it fetched, or the update does nothing until the PC is rebooted.'
+
 "PASS: $checks connection assertions (token remembered and replaced, kept in the user profile, start with Windows without an administrator)."
