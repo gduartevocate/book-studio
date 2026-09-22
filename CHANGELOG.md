@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.22.3 (2026-09-22)
+
+- The agent starts on computers that forbid running script files, and the front page shows whose books are whose.
+
 ## v2026.09.22.2 (2026-09-22)
 
 - Cloud sign-in with Book Studio accounts, and one command to connect a computer.

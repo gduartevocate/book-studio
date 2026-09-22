@@ -68,7 +68,10 @@ try {
     $shell = New-Object -ComObject WScript.Shell
     $shortcut = $shell.CreateShortcut($link)
     Check ($shortcut.TargetPath -like '*powershell.exe') 'The shortcut must start PowerShell.'
-    Check ($shortcut.Arguments -match '-File "') 'The script path must be quoted; a Book Studio folder with a space in its name silently starts nothing.'
+    # Quoted, because a Book Studio folder can have a space in it, and read as a
+    # command rather than started as a file, because a managed computer refuses
+    # to run a .ps1 at all and a designer cannot change that.
+    Check ($shortcut.Arguments -match "LiteralPath '") 'The script path must be quoted; a Book Studio folder with a space in its name silently starts nothing.'
     Check ($shortcut.Arguments -match [regex]::Escape($scriptPath)) 'The shortcut must start this copy of the agent.'
     Check ($shortcut.Arguments -match '-WindowStyle Minimized') 'The agent must not sit in front of the designer all day.'
     Check ($shortcut.Arguments -notmatch 'Token') 'The shortcut must not carry the token; that is what the saved file is for.'
@@ -97,6 +100,104 @@ try {
 }
 finally {
     Remove-Item -LiteralPath $fixture -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# 10. The one command the connect page hands a designer fetches a setup script
+#     from the worker and runs it. It is the only thing most people will ever
+#     type, so it has to be valid PowerShell, has to survive being run twice,
+#     and has to say what to do about the two things it cannot install.
+$node = Get-Command node -ErrorAction SilentlyContinue
+if ($node) {
+    $fixture2 = Join-Path ([IO.Path]::GetTempPath()) ('setup-script-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $fixture2 | Out-Null
+    $render = Join-Path $fixture2 'render.js'
+    $rendered = Join-Path $fixture2 'setup.ps1'
+    $workerPath = (Join-Path $root 'cloudflare/ebook-generator-worker.js').Replace('\', '/')
+    @(
+        "const {readFileSync,writeFileSync,mkdtempSync}=require('fs');const {tmpdir}=require('os');const {join}=require('path');",
+        "const d=mkdtempSync(join(tmpdir(),'setup-'));const c=join(d,'w.mjs');writeFileSync(c,readFileSync('$workerPath'));",
+        "import(require('url').pathToFileURL(c).href).then(async m=>{",
+        "  const kv={async get(){return null},async put(){},async delete(){},async list(){return{keys:[]}}};",
+        "  const r=await m.default.fetch(new Request('https://ebook.vocate.app/setup.ps1?token=testtoken123'),{BOOK_STUDIO_KV:kv,BOOK_STUDIO_FILES:{},REQUIRE_ACCESS:'false'});",
+        "  writeFileSync(process.argv[2], await r.text());",
+        "});"
+    ) -join "`n" | Set-Content -LiteralPath $render -Encoding UTF8
+    & $node.Source $render $rendered | Out-Null
+    Check (Test-Path -LiteralPath $rendered) 'The worker must serve a setup script at /setup.ps1.'
+    $setup = Get-Content -LiteralPath $rendered -Raw -Encoding UTF8
+    $errors = $null
+    [System.Management.Automation.Language.Parser]::ParseInput($setup, [ref]$null, [ref]$errors) | Out-Null
+    Check ($errors.Count -eq 0) "The setup command a designer pastes is not valid PowerShell: $($errors | Select-Object -First 1)"
+    Check ($setup -match "testtoken123") 'The setup script must carry the token the page issued.'
+    Check ($setup -match 'git-scm\.com') 'The setup script must say where to get Git when it is missing.'
+    Check ($setup -match 'npm install -g @openai/codex') 'The setup script must say how to install Codex.'
+    Check ($setup -match 'codex login') 'The setup script must say Codex has to be signed in.'
+    Check ($setup -match 'git clone' -and $setup -match 'git -C \$folder pull') 'The setup script must install Book Studio, and update it when it is already there.'
+    Check ($setup -match '-StartWithWindows') 'The setup script must leave the computer connecting on its own.'
+    Check ($setup -match 'LOCALAPPDATA') 'Book Studio must land somewhere that needs no administrator.'
+    Check ($setup -notmatch 'Program Files') 'The setup script must not install anywhere that needs an administrator.'
+    Check ($setup -notmatch '(?m)^\s*Remove-Item') 'The setup script must not delete anything on a designer PC.'
+    Remove-Item -LiteralPath $fixture2 -Recurse -Force -ErrorAction SilentlyContinue
+}
+else { Write-Warning 'node was not found; the setup script was not rendered or parsed.' }
+
+# 11. A designer PC refuses to run a .ps1 file at all. That is not a setting
+#     they can change: the policy comes from their organisation, and even
+#     -ExecutionPolicy Bypass is overridden by it. The first version of the
+#     setup command died exactly there, after cloning, with "running scripts is
+#     disabled on this system". So both ways of starting the agent are run here
+#     under a Restricted policy: the file must fail, and the way Book Studio
+#     actually starts it must work.
+$policyFixture = Join-Path ([IO.Path]::GetTempPath()) ('exec-policy-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $policyFixture | Out-Null
+try {
+    $sample = Join-Path $policyFixture 'sample agent.ps1'
+    Set-Content -LiteralPath $sample -Value 'param([string]$Token)' -Encoding UTF8
+    Add-Content -LiteralPath $sample -Value 'Write-Output ("agent ran with " + $Token)' -Encoding UTF8
+
+    # Output goes to files, never through a pipe: PowerShell 5.1 turns a native
+    # program's stderr into a terminating error, and a blocked script writing to
+    # stderr is exactly what this is trying to observe.
+    function Invoke-Restricted([string[]]$Arguments, [string]$Name) {
+        $out = Join-Path $policyFixture "$Name.out"
+        $err = Join-Path $policyFixture "$Name.err"
+        $process = Start-Process -FilePath 'powershell.exe' -ArgumentList $Arguments -PassThru -NoNewWindow -RedirectStandardOutput $out -RedirectStandardError $err
+        if (-not $process.WaitForExit(60000)) { $process.Kill() }
+        return ((Get-Content -LiteralPath $out -Raw) + '' ) + ((Get-Content -LiteralPath $err -Raw) + '')
+    }
+
+    $asFile = Invoke-Restricted @('-NoProfile', '-ExecutionPolicy', 'Restricted', '-File', "`"$sample`"", '-Token', 'abc') 'file'
+    Check ($asFile -notmatch 'agent ran with abc') 'This computer is not enforcing a restricted policy, so the check below proves nothing.'
+    Check ($asFile -match 'cannot be loaded') "A restricted policy must refuse a script file; got: $asFile"
+
+    $command = '& ([scriptblock]::Create((Get-Content -Raw -LiteralPath ''' + $sample + '''))) -Token abc'
+    $asCommand = Invoke-Restricted @('-NoProfile', '-ExecutionPolicy', 'Restricted', '-Command', "`"$command`"") 'command'
+    Check ($asCommand -match 'agent ran with abc') "Book Studio must start its agent on a computer that forbids running script files; got: $asCommand"
+
+    # And the startup shortcut has to use that same way in, or the machine
+    # connects once and never again after a restart.
+    $startup2 = Join-Path $policyFixture 'startup'
+    $link = Install-BookRunnerStartup -ScriptPath $sample -StartupFolder $startup2
+    $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($link)
+    Check ($shortcut.Arguments -match 'scriptblock\]::Create') 'The startup shortcut must start the agent as a command, not as a file.'
+    Check ($shortcut.Arguments -notmatch '-File ') 'The startup shortcut must not start a file; a managed PC refuses to run one.'
+    $shortcutCommand = [regex]::Match($shortcut.Arguments, '-Command "(.+)"$').Groups[1].Value
+    Check ([bool]$shortcutCommand) 'The shortcut must carry a command to run.'
+    $fromShortcut = Invoke-Restricted @('-NoProfile', '-ExecutionPolicy', 'Restricted', '-Command', "`"$shortcutCommand`"") 'shortcut'
+    Check ($fromShortcut -match 'agent ran') "What the startup shortcut runs must work under a restricted policy; got: $fromShortcut"
+}
+finally {
+    Remove-Item -LiteralPath $policyFixture -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# 12. The setup script must say the same thing: a file is never started, and
+#     the per-user policy is only ever attempted, never required.
+if ($node) {
+    Check ($setup -match 'scriptblock\]::Create') 'The setup script must run the agent as a command, or a managed PC stops after cloning.'
+    Check ($setup -match 'Set-ExecutionPolicy -Scope CurrentUser') 'The setup script should try to make this easier for the next time.'
+    Check ($setup -match '(?s)try \{ Set-ExecutionPolicy.*?catch') 'A refused policy change must not stop the setup.'
+    Check ($setup -notmatch 'Scope LocalMachine') 'Nothing may need an administrator.'
+    Check ($setup -match '-ProjectRoot \$folder') 'Run as a command, the agent cannot work out its own folder; it must be told.'
 }
 
 "PASS: $checks connection assertions (token remembered and replaced, kept in the user profile, start with Windows without an administrator)."

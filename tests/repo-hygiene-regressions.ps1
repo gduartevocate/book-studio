@@ -138,9 +138,13 @@ Check ($generatorScript -match '(?s)Export-EbookPackage.*Invoke-EbookCodexDrafti
 # tests that could not run.
 $package = Get-Content -LiteralPath (Join-Path $root 'Build-BookStudioIdPackage.ps1') -Raw -Encoding UTF8
 $worker = Get-Content -LiteralPath (Join-Path $root 'cloudflare/ebook-generator-worker.js') -Raw -Encoding UTF8
-# One backslash or two: the page source doubles it, because a template literal
-# eats one level before the browser sees it.
-$namedScripts = @([regex]::Matches($worker, '\.\\{1,2}([a-z0-9-]+\.ps1)') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
+# Every PowerShell script the worker names, wherever it names it: the connect
+# page used to spell it ".\cloud-book-runner.ps1", and now the setup script the
+# page hands over builds the path instead. Either way a designer ends up running
+# it, so either way the package has to contain it.
+$namedScripts = @([regex]::Matches($worker, "'([a-z0-9-]+\.ps1)'|\.\\{1,2}([a-z0-9-]+\.ps1)") | ForEach-Object {
+    if ($_.Groups[1].Success) { $_.Groups[1].Value } else { $_.Groups[2].Value }
+} | Select-Object -Unique)
 Check ($namedScripts.Count -ge 1) 'No script name was found in the cloud pages; the scan pattern is wrong.'
 foreach ($script in $namedScripts) {
     Check ($package -match [regex]::Escape('"' + $script + '"')) "The cloud pages tell a designer to run $script, which the package does not ship."
@@ -155,6 +159,9 @@ foreach ($suite in [regex]::Matches($package, "'([a-z0-9-]+\.ps1)'")) {
     $text = Get-Content -LiteralPath $suitePath -Raw -Encoding UTF8
     foreach ($companion in [regex]::Matches($text, "'([a-z0-9-]+\.mjs)'")) {
         $name = $companion.Groups[1].Value
+        # Only a harness that exists beside the suite: a suite may also name a
+        # scratch file it writes itself, which nothing has to ship.
+        if (-not (Test-Path -LiteralPath (Join-Path $root ("tests/" + $name)))) { continue }
         Check ($package -match [regex]::Escape("'" + $name + "'")) "$($suite.Groups[1].Value) runs $name, which the package does not ship."
     }
 }

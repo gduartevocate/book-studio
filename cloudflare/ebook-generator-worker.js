@@ -68,14 +68,26 @@ const CONNECT_HTML = `<!doctype html>
   <div id="token"></div>
 </section>
 
-<section><h2>3. Start Book Studio on that PC</h2>
-  <pre id="cmd">.\\cloud-book-runner.ps1 -Token &lt;create one above&gt;</pre>
-  <p>Paste it once. Book Studio remembers the token on that computer, so every start after this one needs
-  no token at all. Leave the window running: it checks Codex when it starts and every ten minutes, and picks
-  up any book you ask for here.</p>
-  <p class="muted">To have it connect on its own whenever you sign in to Windows, run it once as
-  <code>.\\cloud-book-runner.ps1 -StartWithWindows</code>. A computer whose agent is not running shows here as
-  no machine, which is the usual reason this page says one is missing.</p>
+<section><h2>3. Set up that computer</h2>
+  <p><strong>On the computer you just named</strong>, press the Windows key, type <strong>PowerShell</strong>,
+  open it, and paste this one line in. It does not matter which folder the window is in.</p>
+  <pre id="cmd">Create a token above and the command will appear here.</pre>
+  <div class="row"><button class="secondary" id="copy">Copy the command</button><span id="copied" class="muted"></span></div>
+  <p>It installs or updates Book Studio on that computer, connects it to your account, and sets it to
+  reconnect whenever you sign in to Windows. Running it again is safe. Leave the window it opens running:
+  that is what writes your books.</p>
+  <details><summary>What that computer needs first</summary>
+  <ul>
+    <li><strong>Git for Windows</strong> - <a href="https://git-scm.com/download/win">git-scm.com/download/win</a>.
+        Accept every default. The command above tells you if it is missing.</li>
+    <li><strong>Codex, signed in</strong> - your book is written on that computer by Codex.
+        Install <a href="https://nodejs.org">Node.js</a>, then run <code>npm install -g @openai/codex</code>
+        and <code>codex login</code>. You can connect first and do this after.</li>
+  </ul>
+  <p class="muted">Nothing here needs an administrator, and nothing is installed into Program Files.</p>
+  </details>
+  <p class="muted">Already have Book Studio on that computer? Open PowerShell in its folder and the same
+  command uses the copy you have instead of fetching another.</p>
 </section>
 
 <section><h2>4. Is it working?</h2>
@@ -116,7 +128,7 @@ el("mint").addEventListener("click", async () => {
       // which eats one level of escaping: written once, the browser received a
       // real newline inside a quoted string and the page's entire script stopped
       // parsing, so nothing on it worked at all.
-      el("cmd").textContent = '.\\\\cloud-book-runner.ps1 -Token ' + created.token;
+      el("cmd").textContent = 'irm ' + location.origin + '/setup.ps1?token=' + created.token + ' | iex';
   } catch (error) { el("token").innerHTML = "<p class='bad'>" + error.message + "</p>"; }
   finally { el("mint").disabled = false; }
 });
@@ -187,6 +199,15 @@ el("add").addEventListener("click", async () => {
   finally { el("add").disabled = false; }
 });
 
+
+el("copy").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(el("cmd").textContent);
+    el("copied").textContent = "Copied. Paste it into PowerShell on that computer.";
+  } catch (error) {
+    el("copied").textContent = "Select the line above and copy it.";
+  }
+});
 el("signout").addEventListener("click", async () => {
   try { await api("/api/logout", { method: "POST" }); } catch (error) { /* the cookie goes either way */ }
   location.href = "/login";
@@ -472,6 +493,13 @@ const APP_HTML = `<!doctype html>
       .notice { margin: 0 14px; }
       .controls-row { grid-template-columns: 1fr; }
     }
+    .topbar-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .who { color: var(--muted, #667085); font-size: 0.9rem; }
+    .secondary-link { color: inherit; font-size: 0.9rem; }
+    .scope-switch { display: flex; gap: 8px; margin: 4px 0 14px; }
+    .scope { background: transparent; border: 1px solid var(--border, #d0d5dd); color: inherit;
+             padding: 6px 12px; border-radius: 999px; font: inherit; font-size: 0.9rem; cursor: pointer; }
+    .scope.active { border-color: #0d6efd; color: #0d6efd; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -480,9 +508,13 @@ const APP_HTML = `<!doctype html>
       <h1>Ebook Generator</h1>
       <p>Cloud intake queue for Book Studio</p>
     </div>
-    <button id="refreshJobs" class="secondary" type="button">Refresh</button>
+    <div class="topbar-actions">
+      <span id="who" class="who"></span>
+      <a class="secondary-link" href="/connect">Your computer</a>
+      <button id="refreshJobs" class="secondary" type="button">Refresh</button>
+      <button id="signout" class="secondary" type="button">Sign out</button>
+    </div>
   </header>
-  <p class="notice">This app stores new book requests in Cloudflare. An authorized local Book Runner can pick up queued jobs, use the connected workstation to generate the ebook, and upload finished Word/HTML artifacts back here.</p>
   <main class="workspace">
     <section class="panel">
       <h2>Create Book</h2>
@@ -527,8 +559,12 @@ const APP_HTML = `<!doctype html>
     </section>
     <section class="panel">
       <div class="section-heading">
-        <h2>Production Jobs</h2>
+        <h2>Books</h2>
         <span id="jobCount"></span>
+      </div>
+      <div class="scope-switch">
+        <button id="scopeMine" class="scope active" type="button">My books</button>
+        <button id="scopeEveryone" class="scope" type="button">Everyone's books</button>
       </div>
       <div id="jobsList" class="jobs-list"></div>
     </section>
@@ -600,7 +636,7 @@ const APP_HTML = `<!doctype html>
       if (!jobs.length) {
         var empty = document.createElement("div");
         empty.className = "empty-state";
-        empty.textContent = "No book jobs yet.";
+        empty.textContent = scope === "everyone" ? "Nobody has started a book yet." : "You have not started a book yet.";
         jobsList.append(empty);
         return;
       }
@@ -613,7 +649,9 @@ const APP_HTML = `<!doctype html>
         var fileList = node.querySelector(".file-list");
         var artifactList = node.querySelector(".artifact-list");
         title.textContent = (job.courseCode ? job.courseCode + ": " : "") + (job.title || "Untitled Book");
-        meta.textContent = "Created " + formatDate(job.createdAt) + " | " + ((job.uploadedFiles || []).length) + " source file(s)";
+        var owner = job.owner || "unclaimed";
+        var who = scope === "everyone" ? owner + " | " : "";
+        meta.textContent = who + "Created " + formatDate(job.createdAt) + " | " + ((job.uploadedFiles || []).length) + " source file(s)";
         status.textContent = job.status || "Unknown";
         status.classList.add(String(job.status || "").toLowerCase());
         log.textContent = job.error ? job.error : lastLogLine(job);
@@ -632,10 +670,24 @@ const APP_HTML = `<!doctype html>
         jobsList.append(node);
       });
     }
+    var scope = "mine";
     async function loadJobs() {
-      var data = await api("/api/jobs");
+      var data = await api("/api/jobs?scope=" + scope);
+      document.querySelector("#who").textContent = data.you ? "Signed in as " + data.you : "";
       renderJobs(data.jobs || []);
     }
+    function setScope(next) {
+      scope = next;
+      document.querySelector("#scopeMine").classList.toggle("active", scope === "mine");
+      document.querySelector("#scopeEveryone").classList.toggle("active", scope === "everyone");
+      loadJobs();
+    }
+    document.querySelector("#scopeMine").addEventListener("click", function() { setScope("mine"); });
+    document.querySelector("#scopeEveryone").addEventListener("click", function() { setScope("everyone"); });
+    document.querySelector("#signout").addEventListener("click", async function() {
+      try { await api("/api/logout", { method: "POST" }); } catch (error) { /* the cookie goes either way */ }
+      location.href = "/login";
+    });
     form.addEventListener("submit", async function(event) {
       event.preventDefault();
       generateButton.disabled = true;
@@ -1174,6 +1226,90 @@ async function createJob(request, env, owner) {
   return jsonResponse(job, { status: 201 });
 }
 
+// One paste, into any PowerShell window. A designer should not have to know
+// what a clone is, which folder to stand in, or that a token goes in a
+// parameter. This script is what the connect page hands them: it checks Git,
+// fetches or updates Book Studio, and starts the agent with their token.
+//
+// It carries no backticks and no ${ } on purpose. PowerShell uses both, and
+// this lives inside a template literal that would eat them.
+function setupScript(token, origin) {
+  const safeToken = String(token || "").replace(/[^A-Za-z0-9]/g, "");
+  return [
+    "# Book Studio - connect this computer.",
+    "# Paste this whole thing into PowerShell. It is safe to run again.",
+    "",
+    "$ErrorActionPreference = 'Stop'",
+    "$token = '" + safeToken + "'",
+    "$repository = 'https://github.com/gduartevocate/book-studio.git'",
+    "",
+    "Write-Host ''",
+    "Write-Host 'Book Studio - connecting this computer' -ForegroundColor Cyan",
+    "Write-Host ''",
+    "",
+    "# 1. Git. Without it there is nothing to fetch Book Studio with.",
+    "if (-not (Get-Command git -ErrorAction SilentlyContinue)) {",
+    "    Write-Host 'Git for Windows is not installed on this computer.' -ForegroundColor Yellow",
+    "    Write-Host 'Install it from https://git-scm.com/download/win, accept every default, then run this again.'",
+    "    return",
+    "}",
+    "",
+    "# 2. Book Studio itself. If this window is already standing in a copy, that",
+    "#    copy is used; otherwise one is kept in the local app data folder, which",
+    "#    needs no administrator and is never synced to OneDrive.",
+    "if (Test-Path -LiteralPath (Join-Path (Get-Location) 'cloud-book-runner.ps1')) {",
+    "    $folder = (Get-Location).Path",
+    "    Write-Host ('Using the Book Studio folder you are in: ' + $folder)",
+    "}",
+    "else {",
+    "    $folder = Join-Path $env:LOCALAPPDATA 'Book Studio'",
+    "    if (Test-Path -LiteralPath (Join-Path $folder '.git')) {",
+    "        Write-Host ('Updating Book Studio in ' + $folder)",
+    "        git -C $folder pull --ff-only | Out-Host",
+    "    }",
+    "    else {",
+    "        Write-Host ('Installing Book Studio into ' + $folder)",
+    "        git clone --depth 1 $repository $folder | Out-Host",
+    "    }",
+    "}",
+    "",
+    "if (-not (Test-Path -LiteralPath (Join-Path $folder 'cloud-book-runner.ps1'))) {",
+    "    Write-Host 'Book Studio was fetched but the agent is missing from it.' -ForegroundColor Red",
+    "    Write-Host 'Update Book Studio and try again, or tell whoever administers it.'",
+    "    return",
+    "}",
+    "",
+    "# 3. Codex. The book is written here, by the Codex this person is signed in",
+    "#    to, so a missing or signed-out Codex is the one thing this script",
+    "#    cannot fix for them.",
+    "if (-not (Get-Command codex -ErrorAction SilentlyContinue)) {",
+    "    Write-Host ''",
+    "    Write-Host 'Codex is not installed on this computer.' -ForegroundColor Yellow",
+    "    Write-Host 'Book Studio writes your book here, using Codex, so it is needed before a book can be made.'",
+    "    Write-Host 'Install Node.js from https://nodejs.org, then run:  npm install -g @openai/codex'",
+    "    Write-Host 'Then run:  codex login'",
+    "    Write-Host 'You can finish connecting now and install Codex afterwards.'",
+    "    Write-Host ''",
+    "}",
+    "",
+    "# 4. Connect, remember the token, and come back on its own after a restart.",
+    "#",
+    "#    A managed computer refuses to run a .ps1 file at all, and that is not",
+    "#    something a designer can change: -ExecutionPolicy Bypass is itself",
+    "#    overridden when the policy comes from their organisation. So the agent",
+    "#    is read and run as a command, exactly as this script is being run now.",
+    "#    Setting the per-user policy is attempted first as a courtesy, because it",
+    "#    makes everything else on that computer easier, and ignored when refused.",
+    "try { Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force -ErrorAction Stop }",
+    "catch { Write-Host 'This computer does not allow changing the script policy. Continuing without it.' }",
+    "",
+    "Set-Location $folder",
+    "$agent = Join-Path $folder 'cloud-book-runner.ps1'",
+    "& ([scriptblock]::Create((Get-Content -Raw -LiteralPath $agent))) -Token $token -StartWithWindows -ProjectRoot $folder",
+    ""
+  ].join("\n");
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -1198,6 +1334,14 @@ export default {
             "content-type": "text/html; charset=utf-8",
             "cache-control": "no-store"
           }
+        });
+      }
+
+      // Served to PowerShell, not to a browser: no session, because the token
+      // in it is the credential, and a designer pasting this has no cookies.
+      if (request.method === "GET" && pathname === "/setup.ps1") {
+        return new Response(setupScript(url.searchParams.get("token"), url.origin), {
+          headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" }
         });
       }
 
@@ -1308,11 +1452,16 @@ export default {
         const user = await requireUser(request, env);
         if (user.response) return user.response;
         const all = await listPublicJobs(env);
-        // A designer sees their own books. Jobs created before ownership
-        // existed have no owner and stay visible to everyone rather than
-        // disappearing from the person who made them.
-        const mine = all.filter((job) => !job.owner || job.owner === user.email);
-        return jsonResponse({ jobs: mine, you: user.email });
+        // A designer sees their own books first. Everyone's books are one
+        // click away, because a team writing courses together has to be able
+        // to see what is in flight and who has it. Jobs made before ownership
+        // existed have no owner and stay visible rather than disappearing
+        // from the person who made them.
+        const scope = url.searchParams.get("scope") === "everyone" ? "everyone" : "mine";
+        const jobs = scope === "everyone"
+          ? all
+          : all.filter((job) => !job.owner || job.owner === user.email);
+        return jsonResponse({ jobs, you: user.email, scope });
       }
 
       if (request.method === "POST" && pathname === "/api/jobs") {

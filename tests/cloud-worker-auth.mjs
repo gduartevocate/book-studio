@@ -235,4 +235,37 @@ check(runnerJobs.status === 200, "The agent must still reach its work with a run
 const runnerNoToken = await call("GET", "/api/runner/jobs");
 check(runnerNoToken.status === 401, "A runner route without a token must be refused.");
 
+// 15. A designer opens Book Studio and sees their own books. A colleague's
+//     books are one deliberate click away, with a name against each, because a
+//     team writing courses together has to see what is in flight and who has
+//     it. Showing everything by default would bury a person's own work.
+// A fresh account, because the account above has just been through a lockout
+// and a reissued password by the time this runs.
+await seedUser("reader@vocate.org", "a-reader-password-12");
+await kv.put("job:mine-1", JSON.stringify({ id: "mine-1", owner: "reader@vocate.org", status: "Queued", title: "My course", createdAt: new Date().toISOString(), log: [] }));
+await kv.put("job:theirs-1", JSON.stringify({ id: "theirs-1", owner: "boss@vocate.org", status: "Running", title: "Their course", createdAt: new Date().toISOString(), log: [] }));
+await kv.put("job:orphan-1", JSON.stringify({ id: "orphan-1", owner: "", status: "Completed", title: "Made before accounts existed", createdAt: new Date().toISOString(), log: [] }));
+await kv.put("jobs:index", JSON.stringify(["mine-1", "theirs-1", "orphan-1"]));
+
+const designerAgain = cookieFrom(await call("POST", "/api/login", { body: { email: "reader@vocate.org", password: "a-reader-password-12" } }));
+const mineOnly = await call("GET", "/api/jobs", { cookie: designerAgain });
+check(mineOnly.status === 200, "The books list must load for a signed-in designer.");
+const mineIds = mineOnly.json.jobs.map((job) => job.id).sort();
+check(mineIds.includes("mine-1"), "A designer must see their own book.");
+check(!mineIds.includes("theirs-1"), "A designer must not see someone else's book by default.");
+check(mineIds.includes("orphan-1"), "A book made before accounts existed must not vanish from the list.");
+check(mineOnly.json.scope === "mine", "The list must say whose books it is showing.");
+
+const everyone = await call("GET", "/api/jobs?scope=everyone", { cookie: designerAgain });
+check(everyone.status === 200, "Everyone's books must be readable by a signed-in designer.");
+const allIds = everyone.json.jobs.map((job) => job.id).sort();
+check(allIds.includes("mine-1") && allIds.includes("theirs-1"), "The shared view must show every book.");
+check(everyone.json.scope === "everyone", "The shared view must say so.");
+check(everyone.json.jobs.every((job) => "owner" in job), "Each book in the shared view must say whose it is.");
+check(everyone.json.jobs.some((job) => job.status === "Running"), "The shared view must show how far along each book is.");
+
+// Signing out must still be the end of it, whichever view was open.
+const strangerScope = await call("GET", "/api/jobs?scope=everyone");
+check(strangerScope.status === 401, "Everyone's books must not be readable without signing in.");
+
 console.log("PASS: " + checks + " sign-in checks (sessions, password storage, lockout, administration, runner tokens)");

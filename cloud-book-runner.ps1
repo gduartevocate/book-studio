@@ -362,7 +362,19 @@ function Invoke-CloudBookJob {
 }
 
 Import-DotEnvFile -Path $EnvPath
-. (Join-Path $PSScriptRoot 'lib/EbookCloudRunner.ps1')
+
+# Resolved before anything else uses it. $PSScriptRoot is empty both while
+# parameter defaults are evaluated and when this script is run as a command
+# rather than as a file -- which is how a computer whose execution policy
+# forbids running .ps1 files has to run it, and designers cannot change that
+# policy. The folder is worked out once, here, and everything else uses it.
+if ([string]::IsNullOrWhiteSpace($ProjectRoot)) {
+    $ProjectRoot = if ($PSScriptRoot) { $PSScriptRoot }
+        elseif ($MyInvocation.MyCommand.Path) { Split-Path $MyInvocation.MyCommand.Path -Parent }
+        else { (Get-Location).Path }
+}
+$ProjectRoot = (Resolve-Path $ProjectRoot).ProviderPath
+. (Join-Path $ProjectRoot 'lib/EbookCloudRunner.ps1')
 
 if ($StopStartingWithWindows) {
     $removed = Uninstall-BookRunnerStartup
@@ -385,13 +397,6 @@ if ($Token) {
     Write-Host "Token saved for this computer. You will not have to paste it again ($savedTo)."
 }
 
-# $PSScriptRoot is empty while parameter defaults are evaluated, so the script
-# folder is resolved here instead. As a default it silently became an empty
-# string and the first Resolve-Path failed before anything ran.
-if ([string]::IsNullOrWhiteSpace($ProjectRoot)) {
-    $ProjectRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path $MyInvocation.MyCommand.Path -Parent }
-}
-$ProjectRoot = (Resolve-Path $ProjectRoot).ProviderPath
 if ($StartWithWindows) {
     $link = Install-BookRunnerStartup -ScriptPath (Join-Path $ProjectRoot 'cloud-book-runner.ps1')
     Write-Host "This computer will connect to Book Studio whenever you sign in to Windows ($link)."

@@ -99,23 +99,40 @@ for (const [path, html] of Object.entries(pages)) {
 // something to ask a designer to get right on a locked-down PC.
 const connect = pages["/connect"];
 const command = (connect.match(/<pre id="cmd">([\s\S]*?)<\/pre>/) || [])[1] || "";
-check(/\.\\cloud-book-runner\.ps1/.test(command), "The connect page must show the agent being started, with a Windows path.");
-check(/-Token/.test(command), "The connect page must show the token being passed to the agent.");
 check(!command.includes("\n"), "The command must be one line; a second line is a second thing to get wrong.");
 check(!/\$env:/.test(command), "The command must not ask a designer to set an environment variable.");
 const script = (connect.match(/<script>([\s\S]*?)<\/script>/) || [])[1];
 const rewritten = (script.match(/el\("cmd"\)\.textContent = ([^;]+);/) || [])[1] || "";
-check(/\\\\cloud-book-runner/.test(rewritten), "After minting a token the command must still contain the backslash before the script name.");
-check(/-Token/.test(rewritten) && /created\.token/.test(rewritten), "After minting, the command must carry the new token itself.");
+check(/setup\.ps1\?token=/.test(rewritten), "After minting, the command must fetch the setup script with that token.");
+check(/created\.token/.test(rewritten), "After minting, the command must carry the token that was just issued.");
+check(/iex/.test(rewritten), "After minting, the command must run what it fetches.");
 check(!/\\n/.test(rewritten), "After minting, the command must still be a single line.");
-// The page has to say how to stop doing this every morning, because a machine
-// whose agent is not running reads as missing with nothing to explain it.
-check(/-StartWithWindows/.test(connect), "The connect page must say how to make the agent start with Windows.");
+
+// A designer told to "paste this" and nothing else has to guess where. The page
+// has to name the window, and name the two things the script cannot install for
+// them, or they find out by failing.
+check(/PowerShell/.test(connect), "The connect page must say which window to paste the command into.");
+check(/git-scm\.com/.test(connect), "The connect page must say where to get Git.");
+check(/codex login/.test(connect), "The connect page must say Codex has to be signed in.");
+check(/sign in to Windows/.test(connect), "The connect page must say the computer reconnects by itself afterwards.");
+check(/Copy/.test(connect), "The connect page must offer to copy the command rather than make a designer select it.");
 
 // The connect page is where a designer finds out whether their machine is
 // there, so the fields it reads must be the ones the worker sends.
 for (const field of ["connected", "runnerName", "seenAt", "detail"]) {
   check(script.includes("status." + field), "The connect page no longer reads status." + field + ".");
 }
+
+// The front page is where a designer lands after signing in. It has to say
+// whose books these are, offer the shared view, and let them leave.
+const app = pages["/"];
+check(/My books/.test(app), "The front page must show a designer their own books.");
+check(/Everyone/.test(app), "The front page must offer everyone's books.");
+check(/id="who"/.test(app), "The front page must say who is signed in.");
+check(/id="signout"/.test(app), "The front page must offer a way to sign out.");
+check(/href="\/connect"/.test(app), "The front page must link to connecting a computer.");
+const appScript = (app.match(/<script>([\s\S]*?)<\/script>/) || [])[1] || "";
+check(/scope=/.test(appScript), "The front page must ask the server for one scope or the other.");
+check(/job\.owner/.test(appScript), "The shared view must show whose book each one is.");
 
 console.log("PASS: " + checks + " page checks (delivered scripts parse, ids exist, connect command survives minting)");

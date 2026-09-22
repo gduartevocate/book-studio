@@ -101,9 +101,14 @@ function Install-BookRunnerStartup {
     $shell = New-Object -ComObject WScript.Shell
     $shortcut = $shell.CreateShortcut($link)
     $shortcut.TargetPath = (Get-Command powershell.exe).Source
-    # -File, quoted: a Book Studio folder under "Program Files" or OneDrive has
-    # spaces in it, and an unquoted path silently starts nothing.
-    $shortcut.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Minimized -File "' + $ScriptPath + '"'
+    # Read and run as a command, not started as a file. On a managed PC the
+    # execution policy forbids running a .ps1, -ExecutionPolicy Bypass is
+    # itself overridden by group policy, and a designer cannot change either.
+    # A command built from the text of the file is subject to neither.
+    # The path is quoted because a Book Studio folder can have a space in it,
+    # and the quotes are doubled for the shortcut's own parser.
+    $command = '& ([scriptblock]::Create((Get-Content -Raw -LiteralPath ''' + $ScriptPath + ''')))'
+    $shortcut.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Minimized -Command "' + $command + '"'
     $shortcut.WorkingDirectory = Split-Path -Parent $ScriptPath
     $shortcut.Description = 'Keeps this computer connected to Book Studio so books can be written here.'
     $shortcut.Save()
