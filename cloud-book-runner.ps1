@@ -10,6 +10,7 @@ param(
     [switch]$StopStartingWithWindows,
     [string]$BaseUrl = "https://ebook-generator.gduarte-28e.workers.dev",
     [string]$SignInUrl = "https://ebook.vocate.app/connect",
+    [int]$StudioPort = 8790,
     [string]$EnvPath = "..\.env",
     [string]$ProjectRoot = "",
     [string]$WorkRoot = "",
@@ -138,6 +139,130 @@ function Publish-CodexStatus {
         Write-Warning "This computer could not report itself to Book Studio, so it will show there as not running: $($_.Exception.Message)"
         return $false
     }
+}
+
+# The bridge: the designer's browser asks the cloud, the cloud asks this agent,
+# and this agent asks the Book Studio running on this PC. That local server is
+# the only place the outcome analysis, the production panel, the QA review and
+# the Codex chat exist, and it is where they should stay: a second copy of those
+# rules in the cloud would drift from this one.
+function Test-LocalStudioServer {
+    param([int]$Port)
+
+    try {
+        $response = Invoke-WebRequest -Uri "http://localhost:$Port/version.json" -TimeoutSec 4 -UseBasicParsing
+        return $response.StatusCode -eq 200
+    }
+    catch {
+        return $false
+    }
+}
+
+function Start-LocalStudioServer {
+    param([string]$ProjectRoot, [int]$Port)
+
+    if (Test-LocalStudioServer -Port $Port) { return $true }
+    # Started without book-studio.ps1, which opens a browser window: nothing
+    # should appear on a designer's screen because someone clicked in the cloud.
+    $command = "Import-Module '" + (Join-Path $ProjectRoot 'lib\BookStudio.psm1') + "' -Force -DisableNameChecking; " +
+               "Start-BookStudioServer -ProjectRoot '" + $ProjectRoot + "' -Port " + $Port
+    Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Minimized', '-Command', $command) -WindowStyle Minimized | Out-Null
+    foreach ($attempt in 1..20) {
+        Start-Sleep -Milliseconds 500
+        if (Test-LocalStudioServer -Port $Port) { return $true }
+    }
+    return $false
+}
+
+function Invoke-LocalStudioRequest {
+    param([object]$BridgeRequest, [string]$ProjectRoot, [int]$Port)
+
+    $reply = @{ id = $BridgeRequest.id; status = 502; headers = @{}; bodyBase64 = '' }
+    if (-not (Start-LocalStudioServer -ProjectRoot $ProjectRoot -Port $Port)) {
+        $reply.status = 503
+        $reply.headers = @{ 'content-type' = 'application/json' }
+        $reply.bodyBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(
+            '{"error":"Book Studio could not be started on this computer."}'))
+        return $reply
+    }
+
+    try {
+        $uri = "http://localhost:$Port" + $BridgeRequest.path
+        $parameters = @{
+            Uri = $uri
+            Method = $BridgeRequest.method
+            TimeoutSec = 50
+            UseBasicParsing = $true
+            Headers = @{}
+        }
+        foreach ($name in $BridgeRequest.headers.PSObject.Properties.Name) {
+            # Host and content-length describe the hop that has already ended.
+            if ($name -in @('Host', 'Content-Length', 'Content-Type')) { continue }
+            $parameters.Headers[$name] = [string]$BridgeRequest.headers.$name
+        }
+        if ($BridgeRequest.bodyBase64) {
+            $parameters.Body = [Convert]::FromBase64String($BridgeRequest.bodyBase64)
+            $contentType = $BridgeRequest.headers.'content-type'
+            if (-not $contentType) { $contentType = $BridgeRequest.headers.'Content-Type' }
+            if ($contentType) { $parameters.ContentType = [string]$contentType }
+        }
+        $response = Invoke-WebRequest @parameters
+        $reply.status = [int]$response.StatusCode
+        foreach ($name in $response.Headers.Keys) {
+            if ($name -in @('Transfer-Encoding', 'Content-Encoding', 'Content-Length', 'Connection')) { continue }
+            $reply.headers[$name] = [string]$response.Headers[$name]
+        }
+        $bytes = if ($response.RawContentStream) { $response.RawContentStream.ToArray() } else { [byte[]]@() }
+        $reply.bodyBase64 = [Convert]::ToBase64String($bytes)
+    }
+    catch {
+        # An error page from the local server is an answer, not a failure of the
+        # bridge, and the designer has to see it rather than a blank tab.
+        $webResponse = $_.Exception.Response
+        if ($webResponse) {
+            $reply.status = [int]$webResponse.StatusCode
+            try {
+                $stream = $webResponse.GetResponseStream()
+                $reader = New-Object System.IO.StreamReader($stream)
+                $text = $reader.ReadToEnd()
+                $reader.Dispose()
+                $reply.headers = @{ 'content-type' = [string]$webResponse.ContentType }
+                $reply.bodyBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($text))
+            }
+            catch { }
+        }
+        else {
+            $reply.headers = @{ 'content-type' = 'application/json' }
+            $message = ($_.Exception.Message -replace '"', "'")
+            $reply.bodyBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(
+                '{"error":"Book Studio on this computer could not answer: ' + $message + '"}'))
+        }
+    }
+    return $reply
+}
+
+function Invoke-BridgeCycle {
+    param([string]$ProjectRoot, [int]$Port)
+
+    # The cloud holds this request open until a designer clicks something, so
+    # this is both how work arrives and how the agent waits between polls.
+    try {
+        $waiting = Invoke-RunnerApi -Method Get -Path '/api/bridge/next'
+    }
+    catch {
+        Start-Sleep -Seconds 5
+        return $false
+    }
+    if (-not $waiting -or $waiting.idle) { return $false }
+
+    $reply = Invoke-LocalStudioRequest -BridgeRequest $waiting -ProjectRoot $ProjectRoot -Port $Port
+    try {
+        Invoke-RunnerApi -Method Post -Path '/api/bridge/reply' -Body $reply | Out-Null
+    }
+    catch {
+        Write-Warning "Could not return an answer to the cloud: $($_.Exception.Message)"
+    }
+    return $true
 }
 
 function Add-CloudJobLog {
@@ -486,6 +611,13 @@ do {
     }
 
     if (-not $Once) {
-        Start-Sleep -Seconds $PollIntervalSeconds
+        # Waiting on the bridge is the sleep: it returns the moment a
+        # designer clicks something in the browser, and otherwise after
+        # about twenty-five seconds, which is the poll interval by another
+        # name.
+        $carried = Invoke-BridgeCycle -ProjectRoot $ProjectRoot -Port $StudioPort
+        # Several clicks arrive together; none of them should wait for the
+        # job queue to be checked first.
+        while ($carried) { $carried = Invoke-BridgeCycle -ProjectRoot $ProjectRoot -Port $StudioPort }
     }
 } while (-not $Once)

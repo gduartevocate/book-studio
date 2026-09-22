@@ -141,4 +141,18 @@ const appScript = (app.match(/<script>([\s\S]*?)<\/script>/) || [])[1] || "";
 check(/scope=/.test(appScript), "The front page must ask the server for one scope or the other.");
 check(/job\.owner/.test(appScript), "The shared view must show whose book each one is.");
 
+// Every page must say where the others are. The connect page had no way back
+// to the books at all, so signing in and connecting a computer left a designer
+// at a dead end with nothing to click.
+check(/href="\/"/.test(connect), "The connect page must link back to the books.");
+check(/id="signout"/.test(connect), "The connect page must offer a way to sign out.");
+
+// And the choices a designer makes about a book must exist on the page that
+// makes it, or every cloud book is written at the defaults.
+for (const control of ["readingLevel", "sourceMode", "imageContext", "allowAdditionalResearch"]) {
+  check(new RegExp('id="' + control + '"').test(app), "The book form must offer " + control + ".");
+  check(appScript.includes(control), "The book form must send " + control + " to the server.");
+}
+check(/Grade 8 \(default\)/.test(app), "Grade 8 must be the reading level a designer gets without choosing.");
+
 console.log("PASS: " + checks + " page checks (delivered scripts parse, ids exist, connect command survives minting)");

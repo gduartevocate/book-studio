@@ -15,7 +15,21 @@ const workerPath = process.argv[2];
 const scratch = mkdtempSync(join(tmpdir(), "worker-auth-"));
 const copy = join(scratch, "worker.mjs");
 writeFileSync(copy, readFileSync(workerPath));
-const worker = (await import(pathToFileURL(copy).href)).default;
+const workerModule = await import(pathToFileURL(copy).href);
+const worker = workerModule.default;
+
+// A stand-in for the Durable Object namespace that runs the real class in
+// process. The rendezvous logic is the part worth testing; Cloudflare's
+// plumbing around it is not.
+const bridges = new Map();
+const MACHINE_BRIDGE = {
+  idFromName: (name) => ({ name }),
+  get: (id) => {
+    if (!bridges.has(id.name)) bridges.set(id.name, new workerModule.MachineBridge({}));
+    const instance = bridges.get(id.name);
+    return { fetch: (url, init) => instance.fetch(new Request(url, init)) };
+  }
+};
 
 // Node will happily run any iteration count; the Workers runtime refuses more
 // than 100,000 and only says so when a password is checked, which is how a
@@ -63,7 +77,8 @@ const env = {
   ACCESS_TEAM_DOMAIN: "vocate.cloudflareaccess.com",
   ACCESS_AUD: "aud-for-tests",
   REQUIRE_ACCESS: "true",
-  ADMIN_EMAILS: "boss@vocate.org"
+  ADMIN_EMAILS: "boss@vocate.org",
+  MACHINE_BRIDGE
 };
 
 const base = "https://ebook.vocate.app";
@@ -320,5 +335,77 @@ const selfAfter = await call("GET", "/api/runner/self", { headers: { "x-book-run
 check(selfAfter.json.reported === true, "A machine that has reported must be able to see itself.");
 check(selfAfter.json.runnerName === "SELFCHECK / gio", "It must see its own record, not another machine's.");
 check((await call("GET", "/api/runner/self")).status === 401, "Asking without a token must be refused.");
+
+// 19. Everything the agent reads must survive the trip. An option the cloud
+//     drops is replaced by a default on a designer's PC twenty minutes later,
+//     in a book they then have to read to notice.
+const made = await call("POST", "/api/jobs", { cookie: designerAgain, body: {
+  courseCode: "RB1010", title: "Options survive",
+  readingLevel: 10, sourceMode: "Assigned", allowAdditionalResearch: true,
+  imageSettings: { context: "Healthcare", instructions: "no clinical scenes" },
+  files: [{ name: "draft.docx", size: 12, contentBase64: "AAAA" }]
+} });
+check(made.status === 201, "A book must be creatable, got " + made.status + " " + made.text);
+check(made.json.options.readingLevel === 10, "The reading level must be kept, got " + made.json.options.readingLevel);
+check(made.json.options.sourceMode === "Assigned", "The choice of sources must be kept.");
+check(made.json.options.allowAdditionalResearch === true, "Extra research must be kept.");
+check(made.json.options.imageSettings.context === "Healthcare", "The image setting must be kept.");
+check(made.json.owner === "reader@vocate.org", "A book must belong to whoever made it.");
+
+// A made-up source mode must not reach the generator as itself.
+const odd = await call("POST", "/api/jobs", { cookie: designerAgain, body: {
+  title: "Odd", sourceMode: "WhateverIWant",
+  files: [{ name: "draft.docx", size: 12, contentBase64: "AAAA" }]
+} });
+check(odd.json.options.sourceMode === "UploadedOnly", "An unknown source mode must fall back to the safe one, got " + odd.json.options.sourceMode);
+
+// 20. The bridge. The Book Studio a designer knows is thousands of lines of
+//     PowerShell on their own PC, so the browser asks the cloud, the cloud
+//     asks the agent, and the agent answers from that machine. Rewriting any
+//     of it up here would make a second copy of the rules that drifts.
+const studioEnv = { ...env, STUDIO_HOSTNAME: "studio.vocate.app" };
+const studioCall = async (path, options = {}) => {
+  const init = { method: options.method || "GET", headers: { ...(options.headers || {}) } };
+  if (options.cookie) init.headers.cookie = options.cookie;
+  if (options.body !== undefined) { init.body = JSON.stringify(options.body); init.headers["content-type"] = "application/json"; }
+  const response = await worker.fetch(new Request("https://studio.vocate.app" + path, init), studioEnv);
+  return { status: response.status, text: await response.text(), headers: response.headers };
+};
+
+// Nobody signed in: a page is sent to sign in, an API call is refused.
+const strangerPage = await studioCall("/", { headers: { accept: "text/html" } });
+check(strangerPage.status === 302, "A signed-out page request must go to the sign-in screen, got " + strangerPage.status);
+check((await studioCall("/api/jobs")).status === 401, "A signed-out API call must be refused.");
+
+// Signed in, but nothing of theirs is running: say so instead of hanging.
+const noMachinePage = await studioCall("/", { cookie: designerAgain, headers: { accept: "text/html" } });
+check(noMachinePage.status === 503, "With no computer running, the page must say so, got " + noMachinePage.status);
+check(/not running on your computer/i.test(noMachinePage.text), "That page must explain what is missing.");
+check(/connect/i.test(noMachinePage.text), "That page must say where to go to fix it.");
+
+// With a machine, the request is carried to it and its answer comes back.
+// The browser is sent to whichever machine reported most recently, so this one
+// reports last and is therefore the one the request must reach.
+await report(laptopToken.json.token, "LAPTOP / gio", "Connected");
+const admins = await call("GET", "/api/runner/status", { cookie: admin });
+check(admins.json.machines[0].runnerName === "LAPTOP / gio", "The most recent machine must be the one listed first, saw " + admins.json.machines[0].runnerName);
+const bridged = studioCall("/api/jobs", { cookie: admin });
+// The agent collects it, answers, and the browser call completes.
+const collected = await call("GET", "/api/bridge/next", { headers: { "x-book-runner-token": laptopToken.json.token } });
+check(collected.status === 200, "The agent must be able to collect a request, got " + collected.status);
+check(collected.json.path === "/api/jobs", "The request must arrive with the path the browser asked for, got " + collected.json.path);
+check(collected.json.method === "GET", "The method must survive the trip.");
+const answer = { id: collected.json.id, status: 200, headers: { "content-type": "application/json" },
+  bodyBase64: Buffer.from(JSON.stringify({ jobs: ["from the local machine"] })).toString("base64") };
+const delivered = await call("POST", "/api/bridge/reply", { headers: { "x-book-runner-token": laptopToken.json.token }, body: answer });
+check(delivered.json.delivered === true, "An answer must reach the browser call that was waiting.");
+const finished = await bridged;
+check(finished.status === 200, "The browser must get the local answer, got " + finished.status);
+check(finished.text.includes("from the local machine"), "The body must be the local one, got " + finished.text.slice(0, 80));
+check(finished.headers.get("content-type") === "application/json", "The local content type must survive.");
+
+// And the bridge is a runner route: it needs the machine credential.
+check((await call("GET", "/api/bridge/next")).status === 401, "Collecting work must require a runner token.");
+check((await call("POST", "/api/bridge/reply", { body: { id: "1" } })).status === 401, "Answering must require a runner token.");
 
 console.log("PASS: " + checks + " sign-in checks (sessions, password storage, lockout, administration, runner tokens)");

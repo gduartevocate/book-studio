@@ -29,7 +29,11 @@ account_id = "28ef00da45ced8b73d59b430e94053de"
 workers_dev = true
 
 routes = [
-  { pattern = "ebook.vocate.app", custom_domain = true }
+  { pattern = "ebook.vocate.app", custom_domain = true },
+  # The designer's own machine, reached through the agent. Its own hostname so
+  # that the local Book Studio's own URLs -- /api/jobs, /app.js, /version.json
+  # -- arrive unchanged.
+  { pattern = "studio.vocate.app", custom_domain = true }
 ]
 
 # Job records, the job index, and runner tokens. Small values only.
@@ -69,6 +73,17 @@ REQUIRE_ACCESS = "true"
 # change their own password. Kept here rather than in the store, so losing the
 # store cannot promote anyone.
 ADMIN_EMAILS = "gduarte@vocate.org"
+STUDIO_HOSTNAME = "studio.vocate.app"
+
+# One per connected machine. The browser and the agent must see each other
+# immediately, which KV cannot promise, so the rendezvous is a Durable Object.
+[[durable_objects.bindings]]
+name = "MACHINE_BRIDGE"
+class_name = "MachineBridge"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["MachineBridge"]
 
 [observability]
 enabled = true

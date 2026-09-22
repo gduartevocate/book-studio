@@ -55,7 +55,13 @@ const CONNECT_HTML = `<!doctype html>
  table { width:100%; border-collapse:collapse; margin-top:12px; font-size:.92rem; }
  td { padding:6px 8px; border-top:1px solid var(--line); vertical-align:middle; }
  .muted { color:#66788a; font-size:.9rem; }
+ .nav { display:flex; gap:14px; align-items:center; margin-bottom:8px; font-size:.92rem; }
+ .nav a, .linkish { color:#0d6efd; text-decoration:none; background:none; border:0; padding:0;
+                    font:inherit; cursor:pointer; }
+ .nav-here { font-weight:600; }
 </style></head><body><main>
+<nav class="nav"><a href="https://studio.vocate.app/">Book Studio</a><a href="/">Cloud queue</a><span class="nav-here">Your computer</span>
+  <button class="linkish" id="signout">Sign out</button></nav>
 <h1>Connect your computer</h1>
 <p class="sub">Book Studio writes your book on your own PC, using the Codex you are already signed in to. This page pairs that machine with your account.</p>
 
@@ -103,9 +109,7 @@ const CONNECT_HTML = `<!doctype html>
   <table id="roster"></table>
 </section>
 
-<section><h2>Your session</h2>
-  <div class="row"><button class="secondary" id="signout">Sign out</button></div>
-</section>
+
 </main><script>
 const el = (id) => document.getElementById(id);
 async function api(path, options) {
@@ -535,7 +539,9 @@ const APP_HTML = `<!doctype html>
     </div>
     <div class="topbar-actions">
       <span id="who" class="who"></span>
+      <a class="secondary-link" href="https://studio.vocate.app/">Open Book Studio</a>
       <a class="secondary-link" href="/connect">Your computer</a>
+      <span id="machineState" class="who"></span>
       <button id="refreshJobs" class="secondary" type="button">Refresh</button>
       <button id="signout" class="secondary" type="button">Sign out</button>
     </div>
@@ -577,6 +583,35 @@ const APP_HTML = `<!doctype html>
           </label>
         </div>
         <div class="actions">
+        </div>
+        <div class="field-grid">
+          <label>Reading level
+            <select id="readingLevel">
+              <option value="6">Grade 6</option><option value="7">Grade 7</option>
+              <option value="8" selected>Grade 8 (default)</option><option value="9">Grade 9</option>
+              <option value="10">Grade 10</option><option value="11">Grade 11</option>
+              <option value="12">Grade 12</option>
+            </select>
+          </label>
+          <label>Sources to use
+            <select id="sourceMode">
+              <option value="UploadedOnly" selected>Only what I uploaded</option>
+              <option value="Assigned">The readings assigned in the document</option>
+              <option value="Discovery">Let the agent find sources</option>
+            </select>
+          </label>
+          <label>Image setting
+            <select id="imageContext">
+              <option value="Generic" selected>Generic / everyday (nonclinical)</option>
+              <option value="Healthcare">Healthcare</option>
+              <option value="Business">Business (nonclinical)</option>
+              <option value="Custom">Custom</option>
+            </select>
+          </label>
+          <label class="checkbox"><input type="checkbox" id="allowAdditionalResearch">
+            Also let the agent research beyond the document</label>
+        </div>
+        <div class="field-grid">
           <button id="generateButton" type="submit">Create Job</button>
           <span id="formStatus" role="status" aria-live="polite"></span>
         </div>
@@ -733,6 +768,13 @@ const APP_HTML = `<!doctype html>
           maxResearchPerChapter: Number(formData.get("maxResearchPerChapter") || 3),
           skipResearch: formData.get("skipResearch") === "on",
           skipOpenStaxFetch: formData.get("skipOpenStaxFetch") === "on",
+          // The agent has honoured all of these from the start. The form
+          // offered none of them, so every cloud book was written at the
+          // defaults and a designer had no way to say otherwise.
+          readingLevel: Number(document.querySelector("#readingLevel").value || 8),
+          sourceMode: document.querySelector("#sourceMode").value,
+          allowAdditionalResearch: document.querySelector("#allowAdditionalResearch").checked,
+          imageSettings: { context: document.querySelector("#imageContext").value, instructions: "" },
           files: files
         };
         setStatus("Creating Cloudflare job...");
@@ -1022,7 +1064,9 @@ async function startSession(env, email) {
 }
 
 function sessionCookie(id, seconds) {
-  return SESSION_COOKIE + "=" + id + "; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=" + seconds;
+  // Set for the whole domain: the cloud and the designer's own machine are two
+  // hostnames of one site, and signing in on one must count on the other.
+  return SESSION_COOKIE + "=" + id + "; Path=/; Domain=vocate.app; HttpOnly; Secure; SameSite=Lax; Max-Age=" + seconds;
 }
 
 function readCookie(request, name) {
@@ -1235,10 +1279,18 @@ async function createJob(request, env, owner) {
     sourceContextPath: "cloudflare-kv",
     outputFolder: "",
     uploadedFiles,
+    // Everything the agent reads when it runs the generator. Anything dropped
+    // here is silently replaced by a default on the designer's PC, twenty
+    // minutes later, in a book they then have to read to notice.
     options: {
       maxResearchPerChapter: Number(payload.maxResearchPerChapter || 3),
       skipResearch: Boolean(payload.skipResearch),
-      skipOpenStaxFetch: Boolean(payload.skipOpenStaxFetch)
+      skipOpenStaxFetch: Boolean(payload.skipOpenStaxFetch),
+      readingLevel: Number(payload.readingLevel || 8),
+      sourceMode: ["UploadedOnly", "Assigned", "Discovery"].includes(payload.sourceMode) ? payload.sourceMode : "UploadedOnly",
+      allowAdditionalResearch: Boolean(payload.allowAdditionalResearch),
+      imageSettings: payload.imageSettings || { context: "Generic", instructions: "" },
+      requiredReadings: Array.isArray(payload.requiredReadings) ? payload.requiredReadings : []
     },
     artifacts: [],
     log: [
@@ -1423,12 +1475,214 @@ function setupScript(token, origin) {
   ].join("\n");
 }
 
+// A rendezvous point for one machine.
+//
+// The Book Studio a designer knows -- the outcome analysis, the production
+// panel, the QA review, the Codex chat -- is thousands of lines of PowerShell
+// that only runs on their own PC. Rewriting it in the cloud would make two
+// copies of the same rules that drift apart, which is the failure this project
+// has been bitten by before. So the browser talks to the cloud, the cloud hands
+// each request to the agent on that PC, and the agent answers from the local
+// Book Studio. One implementation, reachable from a browser.
+//
+// This has to be a Durable Object rather than KV: the two sides must see each
+// other's writes at once, and KV is eventually consistent.
+export class MachineBridge {
+  constructor(state) {
+    this.state = state;
+    // Requests the agent has not collected yet.
+    this.pending = [];
+    // Browser calls waiting for an answer, by request id.
+    this.waiting = new Map();
+    // An agent sitting on a long poll with nothing to do yet.
+    this.collectors = [];
+    this.nextId = 1;
+  }
+
+  // The agent is only ever one long poll away, so a request usually leaves
+  // immediately; this only queues when the agent is between polls.
+  handOut() {
+    while (this.collectors.length && this.pending.length) {
+      const collector = this.collectors.shift();
+      const job = this.pending.shift();
+      clearTimeout(collector.timer);
+      collector.resolve(job);
+    }
+  }
+
+  async fetch(request) {
+    const url = new URL(request.url);
+
+    // From the browser, through the worker: one request to run over there.
+    if (url.pathname === "/request") {
+      const job = await request.json();
+      job.id = String(this.nextId++);
+      const answer = new Promise((resolve) => {
+        const timer = setTimeout(() => {
+          this.waiting.delete(job.id);
+          // A timeout here means the agent took the request and never came
+          // back, which is a different fault from never having collected it.
+          resolve(new Response(JSON.stringify({
+            bridgeError: "Book Studio on your computer did not answer in time."
+          }), { status: 504, headers: { "content-type": "application/json" } }));
+        }, 55000);
+        this.waiting.set(job.id, { resolve, timer });
+      });
+      this.pending.push(job);
+      this.handOut();
+      return await answer;
+    }
+
+    // The agent, asking for something to do. It waits rather than polling in a
+    // loop, so a designer's click is not held up by a polling interval.
+    if (url.pathname === "/next") {
+      if (this.pending.length) {
+        return jsonResponse(this.pending.shift());
+      }
+      const job = await new Promise((resolve) => {
+        const collector = { resolve };
+        collector.timer = setTimeout(() => {
+          this.collectors = this.collectors.filter((waiting) => waiting !== collector);
+          resolve(null);
+        }, 25000);
+        this.collectors.push(collector);
+      });
+      return job ? jsonResponse(job) : jsonResponse({ idle: true });
+    }
+
+    // The agent, with the answer.
+    if (url.pathname === "/reply") {
+      const reply = await request.json();
+      const waiting = this.waiting.get(reply.id);
+      if (!waiting) {
+        // The browser gave up first. Saying so keeps the agent from thinking it
+        // failed.
+        return jsonResponse({ delivered: false, reason: "nobody was still waiting" });
+      }
+      this.waiting.delete(reply.id);
+      clearTimeout(waiting.timer);
+      const headers = new Headers(reply.headers || {});
+      // The cloud decides caching and framing for its own origin; whatever the
+      // local server said about them does not apply here.
+      headers.delete("transfer-encoding");
+      headers.delete("content-encoding");
+      headers.delete("content-length");
+      waiting.resolve(new Response(reply.bodyBase64 ? base64ToBytes(reply.bodyBase64) : null, {
+        status: reply.status || 200,
+        headers
+      }));
+      return jsonResponse({ delivered: true });
+    }
+
+    return textResponse("Not found", { status: 404 });
+  }
+}
+
+// Which machine a person's browser is talking to: the one that reported most
+// recently. Designers have one; an id is carried so a second is a small change
+// rather than a redesign.
+async function resolveMachineForUser(env, email) {
+  const listed = await env.BOOK_STUDIO_KV.list({ prefix: "runner:status:" + email + ":" });
+  let newest = null;
+  for (const key of listed.keys) {
+    const record = await env.BOOK_STUDIO_KV.get(key.name, "json");
+    if (!record) continue;
+    if (!newest || String(record.seenAt || "") > String(newest.seenAt || "")) newest = record;
+  }
+  return newest;
+}
+
+function bridgeStub(env, owner, machineId) {
+  return env.MACHINE_BRIDGE.get(env.MACHINE_BRIDGE.idFromName("machine:" + owner + ":" + machineId));
+}
+
+// The page a designer sees when no computer of theirs is running. It is served
+// in place of Book Studio itself, because the alternative is a browser tab that
+// hangs for a minute and then says nothing useful.
+function noMachineHtml(email) {
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Your computer is not running</title>
+<style>
+ body { margin:0; min-height:100vh; display:grid; place-items:center; padding:24px;
+        font:16px/1.6 "Segoe UI",system-ui,sans-serif; color:#0d3553; background:#f9f9f9; }
+ @media (prefers-color-scheme: dark) { body { color:#eef4f8; background:#0f1a22; } .card { background:#16242f !important; border-color:#2b3d4c !important; } }
+ .card { max-width:520px; background:#fff; border:1px solid #dbdbdb; border-radius:12px; padding:28px; }
+ h1 { margin:0 0 10px; font-size:1.3rem; }
+ a { color:#0d6efd; }
+ code { background:rgba(127,127,127,.15); padding:2px 5px; border-radius:4px; }
+</style></head><body>
+<div class="card">
+  <h1>Book Studio is not running on your computer</h1>
+  <p>Signed in as <strong>${email}</strong>. Your books are written on your own PC, so that computer has to
+  be switched on with Book Studio running before this page has anything to show.</p>
+  <p>Open the minimised <code>Book Studio</code> PowerShell window on that computer, or set it up again from
+  <a href="https://ebook.vocate.app/connect">Your computer</a>.</p>
+  <p><a href="https://ebook.vocate.app/">Back to the cloud queue</a></p>
+</div>
+</body></html>`;
+}
+
+// Everything on the studio hostname belongs to the designer's own machine, so
+// the paths the local Book Studio uses -- /api/jobs, /app.js, /version.json --
+// arrive here exactly as that app expects them. Keeping it on its own hostname
+// is what makes that possible without rewriting the app's own URLs.
+async function forwardToMachine(request, env, url) {
+  const user = await requireUser(request, env);
+  if (user.response) {
+    // A page gets the sign-in screen; anything else gets the refusal, because
+    // only a script can read one.
+    return request.method === "GET" && (request.headers.get("accept") || "").includes("text/html")
+      ? new Response(null, { status: 302, headers: { location: "https://ebook.vocate.app/login?next=" + encodeURIComponent(url.pathname) } })
+      : user.response;
+  }
+  const machine = await resolveMachineForUser(env, user.email);
+  if (!machine) {
+    return (request.headers.get("accept") || "").includes("text/html")
+      ? new Response(noMachineHtml(user.email), { status: 503, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } })
+      : jsonResponse({ error: "No computer of yours is running Book Studio." }, { status: 503 });
+  }
+
+  const body = request.method === "GET" || request.method === "HEAD"
+    ? ""
+    : bytesToBase64(new Uint8Array(await request.arrayBuffer()));
+  const headers = {};
+  for (const [name, value] of request.headers) {
+    // Cookies are this site's, not the local server's, and hop-by-hop headers
+    // mean nothing on the other side of the bridge.
+    if (["cookie", "host", "connection", "content-length", "accept-encoding"].includes(name.toLowerCase())) continue;
+    headers[name] = value;
+  }
+
+  const stub = bridgeStub(env, machine.owner || user.email, machine.id || "legacy");
+  const response = await stub.fetch("https://bridge/request", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      method: request.method,
+      path: url.pathname + url.search,
+      headers,
+      bodyBase64: body
+    })
+  });
+  return response;
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const pathname = url.pathname.replace(/\/+$/, "") || "/";
 
     try {
+      // One hostname for the cloud, one for the designer's own machine. The
+      // local Book Studio asks for /api/jobs, /app.js and /version.json by
+      // those exact names, and so does the cloud, so they cannot share a
+      // hostname without one of them being rewritten. They do share the
+      // sign-in cookie, which is set for the whole domain.
+      if (url.hostname === (env.STUDIO_HOSTNAME || "studio.vocate.app")) {
+        return await forwardToMachine(request, env, url);
+      }
+
       // A page asked for while signed out goes to the sign-in screen. Only the
       // API answers 401, because only the API has a caller that can read one.
       if (request.method === "GET" && (pathname === "/connect" || pathname === "/" || pathname === "/index.html")) {
@@ -1678,6 +1932,27 @@ export default {
       // What a computer can ask about itself, using the token it already has.
       // The setup command uses this to tell a designer their machine arrived,
       // instead of leaving them to refresh a web page and hope.
+      // The agent, waiting for a designer to click something. It waits inside
+      // the request rather than polling in a loop, so a click is not held up
+      // by a polling interval.
+      if (request.method === "GET" && pathname === "/api/bridge/next") {
+        const auth = await requireRunner(request, env);
+        if (auth.response) return auth.response;
+        const stub = bridgeStub(env, auth.runner.owner || "shared", auth.runner.id || "legacy");
+        return await stub.fetch("https://bridge/next");
+      }
+
+      if (request.method === "POST" && pathname === "/api/bridge/reply") {
+        const auth = await requireRunner(request, env);
+        if (auth.response) return auth.response;
+        const stub = bridgeStub(env, auth.runner.owner || "shared", auth.runner.id || "legacy");
+        return await stub.fetch("https://bridge/reply", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: await request.text()
+        });
+      }
+
       if (request.method === "GET" && pathname === "/api/runner/self") {
         const auth = await requireRunner(request, env);
         if (auth.response) return auth.response;

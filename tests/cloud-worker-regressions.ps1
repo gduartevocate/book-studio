@@ -127,7 +127,9 @@ Check ($base64 -notmatch 'fromCharCode\.apply\(null, bytes\)') 'bytesToBase64 sp
 $used = @([regex]::Matches($worker, 'env\.([A-Z][A-Z0-9_]+)') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
 Check ($used.Count -ge 3) "Only $($used.Count) environment names were found; the scan pattern is wrong."
 foreach ($name in $used) {
-    Check ($wrangler -match "(?m)^\s*(binding\s*=\s*`"$name`"|$name\s*=)") "The worker reads env.$name, which wrangler.toml does not declare."
+    # A KV or R2 binding is declared with binding =, a Durable Object with
+    # name =, and a plain variable as itself.
+    Check ($wrangler -match "(?m)^\s*((binding|name)\s*=\s*`"$name`"|$name\s*=)") "The worker reads env.$name, which wrangler.toml does not declare."
 }
 Check ($wrangler -match '(?m)^\s*id\s*=\s*"[0-9a-f]{32}"') 'The KV namespace id is not a real namespace.'
 Check ($wrangler -match '(?m)^\s*bucket_name\s*=\s*"[a-z0-9-]+"') 'The R2 bucket is not named.'
