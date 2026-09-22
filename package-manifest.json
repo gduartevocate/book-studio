@@ -20,6 +20,10 @@
         "sha256":  "F03B3944C27ADDBF2690E245A604D5D9E07C8DB592A47B1AC46E34BC7D465C38"
     },
     {
+        "path":  "cloud-book-runner.ps1",
+        "sha256":  "E69453841AED13D137B6AC58829321525CF5783E26D10D9E598DB5A30A2BC2D4"
+    },
+    {
         "path":  "Cloudflare Setup Notes.txt",
         "sha256":  "C1C845FE1D863CEE19774B283222B4482119F47D725D248FFD2FA6520EFABC32"
     },
@@ -45,7 +49,7 @@
     },
     {
         "path":  "ID Quick Start.txt",
-        "sha256":  "39940199C68314DFC8C328D902F1F377CCD1A628DD2CF7A9DA8F5DBECEEE3557"
+        "sha256":  "EAD4BF715521CA56FC17A36D9560A6B102DF70FCB239F31B42A585349DF840E6"
     },
     {
         "path":  "Install Book Studio.cmd",
@@ -105,7 +109,7 @@
     },
     {
         "path":  "VERSION.txt",
-        "sha256":  "B5E1D0F66D89634ABC09B46FF41D79146AF2E3653FB7C825CBE3FA00C481231B"
+        "sha256":  "7339D2C0096550E5C10E84158A9349BCB1C51F993A74C990FBF8B21F5DE071AA"
     },
     {
         "path":  "book-studio/app.js",
@@ -133,15 +137,119 @@
     },
     {
         "path":  "book-studio/version.json",
-        "sha256":  "61FDE818CCF30D61D72A8AC53D91855B14F488F92C2299439DE64FCF5D5F6E14"
+        "sha256":  "940EB7B7214AED9AD0BBD6A42D586E8EEEDC0ECE551D32467AD5EBFABF302BBC"
     },
     {
         "path":  "cloudflare/ebook-generator-worker.js",
-        "sha256":  "966F12CDA0A660DC31F01A76B8D80A505C916BD346E4178D6A3B46AC82FE9920"
+        "sha256":  "C13E31C790078B2C085CEC20D5F335F8996CF43E10BCEBD9B162EAD6343B0E6D"
     },
     {
         "path":  "cloudflare/sme-review-worker.js",
         "sha256":  "D0D251A726E553AF1D99E8BECF6CFD129C683D37324A87D0CA02D0F46B63FB9A"
+    },
+    {
+        "path":  "cloudflare/wrangler.toml",
+        "sha256":  "E15B97E6078480874E242B0D20D8B9965E2482E92B9FC19FCE25A47724CA0CFF"
+    },
+    {
+        "path":  "cloudflare/.wrangler/state/v3/cache/miniflare-CacheObject/metadata.sqlite",
+        "sha256":  "4C34B48E33536BE849E9810707C97FF2B5625BB5CBF1637DBE384CFFFDDA3B9D"
+    },
+    {
+        "path":  "cloudflare/.wrangler/state/v3/cache/miniflare-CacheObject/metadata.sqlite-shm",
+        "sha256":  "5E0C95EC1CB4BCB79F714F22BB4F38E3BE643146D1FFC388DACC790E12C05D67"
+    },
+    {
+        "path":  "cloudflare/.wrangler/state/v3/cache/miniflare-CacheObject/metadata.sqlite-wal",
+        "sha256":  "29B60F9B6501D4B427BC8A3900187C28BCCEA72D787C3C9548C811E55EBE9986"
+    },
+    {
+        "path":  "cloudflare/.wrangler/state/v3/kv/miniflare-KVNamespaceObject/96f4172a1cf39a2435f7f8c06e117ff05f4aa7ef48d5b99a17d7419c8f5595e0.sqlite",
+        "sha256":  "4D5A37F7081970A64F9CCAF689637A6CF907721F8A964033996A809D6B255626"
+    },
+    {
+        "path":  "cloudflare/.wrangler/state/v3/kv/miniflare-KVNamespaceObject/96f4172a1cf39a2435f7f8c06e117ff05f4aa7ef48d5b99a17d7419c8f5595e0.sqlite-shm",
+        "sha256":  "F0DA83996968B183FD1DC3CBEB0E9C1549A8751E0D475036C204ED37E28ECA0B"
+    },
+    {
+        "path":  "cloudflare/.wrangler/state/v3/kv/miniflare-KVNamespaceObject/96f4172a1cf39a2435f7f8c06e117ff05f4aa7ef48d5b99a17d7419c8f5595e0.sqlite-wal",
+        "sha256":  "AFC29AF3673B041F730DCF1263F951BF7C02B0CCC4263C2CB3B6CAD6524114AE"
+    },
+    {
+        "path":  "cloudflare/.wrangler/state/v3/kv/miniflare-KVNamespaceObject/metadata.sqlite",
+        "sha256":  "4C34B48E33536BE849E9810707C97FF2B5625BB5CBF1637DBE384CFFFDDA3B9D"
+    },
+    {
+        "path":  "cloudflare/.wrangler/state/v3/kv/miniflare-KVNamespaceObject/metadata.sqlite-shm",
+        "sha256":  "E547C624CFEF9B68F016F237D7A9438FAB3C4E38F931F549F282438D9F98C731"
+    },
+    {
+        "path":  "cloudflare/.wrangler/state/v3/kv/miniflare-KVNamespaceObject/metadata.sqlite-wal",
+        "sha256":  "FA76E12AC061FDCDCCCBCA997432F3A944FFDF1E7B3C514CB3579E5066584392"
+    },
+    {
+        "path":  "cloudflare/.wrangler/state/v3/kv/REPLACE_WITH_KV_PREVIEW_ID/blobs/175de6a1e2346d7bfc46cc9ac2abb02b8c861de45db6b33119a33392b5497f90000001a0c9bcc0a8",
+        "sha256":  "2A8B768D190AD558A9D99902B93BC838BF8DC06AB97B31EC068FBEAC6ED6689E"
+    },
+    {
+        "path":  "cloudflare/.wrangler/state/v3/kv/REPLACE_WITH_KV_PREVIEW_ID/blobs/701f8810c4344eb3c9e6149ce5377bde5e87e062bf5d2ef27dade1831c944572000001a0c9bb42b3",
+        "sha256":  "F2DD830F642C039F69012F7C9E39CADE458623394564A8A74D5F9EB61B8CE3FB"
+    },
+    {
+        "path":  "cloudflare/.wrangler/state/v3/kv/REPLACE_WITH_KV_PREVIEW_ID/blobs/d76830b8a93e77777d2685ca0138d08b993a7943e87775ed8ac3c32b6fd240d4000001a0c9bcbfe0",
+        "sha256":  "243750AB329D8F81D67529DB61996C260B898CA4C1010BD319326AA48A3FEF73"
+    },
+    {
+        "path":  "cloudflare/.wrangler/state/v3/kv/REPLACE_WITH_KV_PREVIEW_ID/blobs/f019678c2dea1342a9e9c02aa2fc4ac03931b19c38927139010367d26970c159000001a0c9bc8d31",
+        "sha256":  "F20501BBDB0647E26107BC88A9B324A5ED8E26DA77263611F9AE19A5A6B9F1A3"
+    },
+    {
+        "path":  "cloudflare/.wrangler/state/v3/r2/book-studio-files-preview/blobs/7bda8f1580c1a2dd845d851f04837ec09a54bf04a435039e813af6c9db1d6fe2000001a0c9bb4288",
+        "sha256":  "069750240DA6465B4F23FAF9635C973F6CC7D85718AB784FD0A1172D49E4080B"
+    },
+    {
+        "path":  "cloudflare/.wrangler/state/v3/r2/book-studio-files-preview/blobs/d30ef0179410bba957ead73356033e2eefaeccd91005c0af03baf2b8de4b4b46000001a0c9bcc078",
+        "sha256":  "FD73500DA5C769A338C7F296D59880824B4CE26599CA097D2C858298FCBB0477"
+    },
+    {
+        "path":  "cloudflare/.wrangler/state/v3/r2/miniflare-R2BucketObject/9f153af590acd852b85e94498e5c8f714409d97710e0f1b6275c9dbf449e09fb.sqlite",
+        "sha256":  "600DF9B653C9F2BA708B0346CE0CA9AE56B5D9826AAFF8220787F3EC46860C33"
+    },
+    {
+        "path":  "cloudflare/.wrangler/state/v3/r2/miniflare-R2BucketObject/9f153af590acd852b85e94498e5c8f714409d97710e0f1b6275c9dbf449e09fb.sqlite-shm",
+        "sha256":  "7C4B6224EFBC5C10B38CB401627BFE56919830C73D39B4E31F0ACB80625DDFE0"
+    },
+    {
+        "path":  "cloudflare/.wrangler/state/v3/r2/miniflare-R2BucketObject/9f153af590acd852b85e94498e5c8f714409d97710e0f1b6275c9dbf449e09fb.sqlite-wal",
+        "sha256":  "7143159B5001DCA515300BB88533DD7D66E9E74FB69A0CEA2843C64F82D96222"
+    },
+    {
+        "path":  "cloudflare/.wrangler/state/v3/r2/miniflare-R2BucketObject/metadata.sqlite",
+        "sha256":  "4C34B48E33536BE849E9810707C97FF2B5625BB5CBF1637DBE384CFFFDDA3B9D"
+    },
+    {
+        "path":  "cloudflare/.wrangler/state/v3/r2/miniflare-R2BucketObject/metadata.sqlite-shm",
+        "sha256":  "1F7DA0C19A46E09DFCC383C577660B9BC34BF08D4EEEF79B9775B9527335F83F"
+    },
+    {
+        "path":  "cloudflare/.wrangler/state/v3/r2/miniflare-R2BucketObject/metadata.sqlite-wal",
+        "sha256":  "EF83F59FAE7857729C4258A30A7615F371A8934DCEF12DA9CF0A95FA9A7C67FE"
+    },
+    {
+        "path":  "cloudflare/.wrangler/tmp/bundle-dm7mhG/middleware-insertion-facade.js",
+        "sha256":  "D686104D4E7BE48EE802698D8A511D894639FC72DE5D46F5C714A146C7D8DB3A"
+    },
+    {
+        "path":  "cloudflare/.wrangler/tmp/bundle-dm7mhG/middleware-loader.entry.ts",
+        "sha256":  "06C70102651CC79ABFF0F548118D3D1AF445D8638F47B663119DD1FD00AE5C99"
+    },
+    {
+        "path":  "cloudflare/.wrangler/tmp/dev-jtWx6Z/ebook-generator-worker.js",
+        "sha256":  "9FC01AD9E94885F178A415AE412B9624A260341262159FC905019E4BA6E8DA66"
+    },
+    {
+        "path":  "cloudflare/.wrangler/tmp/dev-jtWx6Z/ebook-generator-worker.js.map",
+        "sha256":  "2B3FF6F9DC481DEA115A24AA17C7170ADFB9EE0084AFED938C64CA0A7C1695E3"
     },
     {
         "path":  "config/book-publication-template.json",
@@ -173,7 +281,7 @@
     },
     {
         "path":  "lib/BookStudio.psm1",
-        "sha256":  "D39EDB68974B48FEB81F4CF4E6B26E9ABB9E84B1A005CBD40AAAA7D2ACF5F2C3"
+        "sha256":  "DD98AF397943B0F82D3C97215AC327E6A0A1403D604144FC62F103C306C144A7"
     },
     {
         "path":  "lib/BookStudioChat.ps1",
@@ -222,6 +330,10 @@
     {
         "path":  "lib/EbookCitationIntegrity.ps1",
         "sha256":  "AC3C0D3D0734DCEFEBEED37C86B0B792C06CF6A63D1527756A0830804997B3ED"
+    },
+    {
+        "path":  "lib/EbookCloudRunner.ps1",
+        "sha256":  "7C6815968B293B5236FB94AFFBEBB9E4CA781710EC62FA3C7E7C00DE13D73B18"
     },
     {
         "path":  "lib/EbookCodexImages.ps1",
@@ -324,6 +436,30 @@
         "sha256":  "C11B687425BE930802BFD2029B72814A315CE64D21E61B864C13C6136607DC5E"
     },
     {
+        "path":  "tests/cloud-runner-connect-regressions.ps1",
+        "sha256":  "C426874DC29A3AD8CADE171684FF5CF1C08F40B906E1BFB435D10483FEE1B3B3"
+    },
+    {
+        "path":  "tests/cloud-worker-auth.mjs",
+        "sha256":  "E886AD3784B693BA3B0BE659D7970ABAE3DD8508596AA3CF8D4DABF8C0F9A79E"
+    },
+    {
+        "path":  "tests/cloud-worker-auth.ps1",
+        "sha256":  "215330C1B2F268307887C7FE06BA8263DD6D3E63415E2B688806A50E1AB2770D"
+    },
+    {
+        "path":  "tests/cloud-worker-pages.mjs",
+        "sha256":  "C50D71876E3A938C02899DD1D943B7941DA9F06F5944155A6B03936FE50E5AF2"
+    },
+    {
+        "path":  "tests/cloud-worker-pages.ps1",
+        "sha256":  "A1311851F2F8151AC418B4B3CA4D03E3A61578A208D4B8534568C135AE361060"
+    },
+    {
+        "path":  "tests/cloud-worker-regressions.ps1",
+        "sha256":  "4D4F553FBCC6AA54372C38738BAADA2E295ECA9BD8077C534F9B9C0103D3205D"
+    },
+    {
         "path":  "tests/codex-sandbox-regressions.ps1",
         "sha256":  "7AE12AF0EBF322CAA6B7DD86716E8A26C94DC319124F52E6EA369D6F3D757866"
     },
@@ -365,7 +501,7 @@
     },
     {
         "path":  "tests/repo-hygiene-regressions.ps1",
-        "sha256":  "61E79692C0A15E8397DF16852F2BF8D56512C47AA10A158CDD2F6E4ED0054954"
+        "sha256":  "53B3BE18DEC17AB17DC757C9BB65F1E4DB6D245C8C375B10135F66EB134F21F9"
     },
     {
         "path":  "tests/required-readings-regressions.ps1",

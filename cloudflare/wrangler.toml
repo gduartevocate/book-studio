@@ -1,0 +1,74 @@
+# Book Studio Cloud worker.
+#
+# The book is generated on the designer's own PC, because that is where Codex,
+# PowerShell, pdftotext and the Word/PDF exporters live. This worker holds the
+# job record, the files, and the identity of who owns what. The local agent
+# polls outward and claims work, so nothing has to reach into a designer's
+# machine and no firewall or certificate is involved.
+#
+# Local development needs no Cloudflare account:
+#   npx wrangler dev --local --config cloudflare/wrangler.toml
+# which simulates KV and R2 on disk.
+#
+# Deploying needs CLOUDFLARE_API_TOKEN in ..\.env, then:
+#   npx wrangler deploy --config cloudflare/wrangler.toml
+
+name = "ebook-generator"
+main = "ebook-generator-worker.js"
+compatibility_date = "2026-06-02"  # newest this wrangler binary supports; raise with the toolchain
+account_id = "28ef00da45ced8b73d59b430e94053de"
+
+# The address designers use. workers.dev stays reachable and is what the local
+# agent and these deploy checks talk to, but Cloudflare Access can only sit in
+# front of a hostname in the zone, so sign-in depends on this route existing.
+# Wrangler creates the proxied DNS record for it.
+# Declaring a route turns workers.dev off unless it is asked for. The agent on
+# a designer PC dials the workers.dev address, and Access does not sit in front
+# of it, so turning it off silently would disconnect every machine. It stays on
+# deliberately until the runner routes are covered another way.
+workers_dev = true
+
+routes = [
+  { pattern = "ebook.vocate.app", custom_domain = true }
+]
+
+# Job records, the job index, and runner tokens. Small values only.
+[[kv_namespaces]]
+binding = "BOOK_STUDIO_KV"
+id = "2cb4f825a82e4cefad5ba35ff267b7f8"
+preview_id = "2cb4f825a82e4cefad5ba35ff267b7f8"
+
+# Course documents in and finished books out. A KV value is capped at 25 MB and
+# base64 inflates by a third, which a package with chapter images passes
+# easily, so file bodies live here instead and KV keeps only their metadata.
+[[r2_buckets]]
+binding = "BOOK_STUDIO_FILES"
+bucket_name = "book-studio-files"
+preview_bucket_name = "book-studio-files"
+
+# Cloudflare Access authenticates the person in the browser. The worker does
+# not trust the email header Access adds, because the workers.dev hostname
+# stays reachable and anyone could send it; it verifies the signed assertion
+# against the team's published keys instead. These two values are what that
+# verification needs, and REQUIRE_ACCESS makes an unverified request a 401
+# rather than a fallback.
+#
+# The Access application "Book Studio" guards ebook.vocate.app: one policy,
+# allowing any vocate.org address, signing in with a one-time PIN. ACCESS_AUD is
+# that application's audience tag, and a token minted for any other application
+# fails the check. REQUIRE_ACCESS makes an unverified request a 401 instead of
+# falling back to a local-development identity, which is what closes the
+# workers.dev address to everyone but the agent and its runner token.
+[vars]
+ACCESS_TEAM_DOMAIN = "vocate.cloudflareaccess.com"
+ACCESS_AUD = "3c4b7945a2bc92f3bbf1de74eb387da91ccbe21d532d9052b0331ec2d016b034"
+REQUIRE_ACCESS = "true"
+# Book Studio also issues its own passwords, because the Access one-time PIN
+# arrives by email and Microsoft Safe Links opens the link before the designer
+# can. These addresses may add and remove people; everyone else can only
+# change their own password. Kept here rather than in the store, so losing the
+# store cannot promote anyone.
+ADMIN_EMAILS = "gduarte@vocate.org"
+
+[observability]
+enabled = true

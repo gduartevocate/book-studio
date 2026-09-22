@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.22.2 (2026-09-22)
+
+- Cloud sign-in with Book Studio accounts, and one command to connect a computer.
+
 ## v2026.09.22.1 (2026-09-22)
 
 - New: each book chooses its reading level. Pick it in step 3 of New book, or in Sources and image setting on an existing book. Grade 8 remains the default and stays selected unless you change it.

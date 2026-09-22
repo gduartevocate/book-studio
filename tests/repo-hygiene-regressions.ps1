@@ -26,7 +26,7 @@ $studio = Get-Content -LiteralPath (Join-Path $root 'lib/BookStudio.psm1') -Raw 
 $studioSide = @([regex]::Matches($studio, "(?m)^\.\s+\(Join-Path \`$PSScriptRoot '([A-Za-z0-9]+\.ps1)'\)") | ForEach-Object { $_.Groups[1].Value })
 Check ($studioSide.Count -gt 5) "Only $($studioSide.Count) dot-sourced Book Studio files were found."
 $offenders = New-Object System.Collections.ArrayList
-$rootScripts = @('ebook-generator.ps1', 'book-studio-runner.ps1', 'audit-ebook-output.ps1')
+$rootScripts = @('ebook-generator.ps1', 'book-studio-runner.ps1', 'audit-ebook-output.ps1', 'cloud-book-runner.ps1')
 foreach ($file in @($studioSide + 'BookStudio.psm1' + $rootScripts)) {
     $path = if ($rootScripts -contains $file) { Join-Path $root $file } else { Join-Path $root "lib/$file" }
     if (-not (Test-Path -LiteralPath $path)) { continue }
@@ -130,4 +130,33 @@ $generatorScript = Get-Content -LiteralPath (Join-Path $root 'ebook-generator.ps
 Check ($generatorScript -match 'Export-EbookPackage -Package \$package -OutputRoot \$OutputDir -DeferReleaseGate:\(\$UseCodexDrafting -ne 0\)') 'The generator defers the gate only when a drafting pass will follow.'
 Check ($generatorScript -match '(?s)Export-EbookPackage.*Invoke-EbookCodexDraftingPass.*Repair-EbookPackageOutputs') 'Drafting must run between the scaffold export and the final gate.'
 
-Write-Output "PASS: $checks repository hygiene assertions (module exports across the Book Studio boundary, CRLF and BOM preservation, client assets served and cache-busted, release gate after drafting)."
+# A packaged file that is never copied fails only on the designer's PC, where
+# there is no way to tell a missing file from a broken feature. The connect
+# page tells a designer to run cloud-book-runner.ps1 by name, and two of the
+# packaged suites are PowerShell wrappers around a Node harness; neither was in
+# the package, so the first was a file that did not exist and the second were
+# tests that could not run.
+$package = Get-Content -LiteralPath (Join-Path $root 'Build-BookStudioIdPackage.ps1') -Raw -Encoding UTF8
+$worker = Get-Content -LiteralPath (Join-Path $root 'cloudflare/ebook-generator-worker.js') -Raw -Encoding UTF8
+# One backslash or two: the page source doubles it, because a template literal
+# eats one level before the browser sees it.
+$namedScripts = @([regex]::Matches($worker, '\.\\{1,2}([a-z0-9-]+\.ps1)') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
+Check ($namedScripts.Count -ge 1) 'No script name was found in the cloud pages; the scan pattern is wrong.'
+foreach ($script in $namedScripts) {
+    Check ($package -match [regex]::Escape('"' + $script + '"')) "The cloud pages tell a designer to run $script, which the package does not ship."
+    Check (Test-Path -LiteralPath (Join-Path $root $script)) "The cloud pages tell a designer to run $script, which does not exist."
+}
+# Every suite the package names, found by its quoted file name rather than by
+# matching the loop around it: a pattern with two lazy quantifiers over a file
+# this size backtracks for minutes.
+foreach ($suite in [regex]::Matches($package, "'([a-z0-9-]+\.ps1)'")) {
+    $suitePath = Join-Path $root ("tests/" + $suite.Groups[1].Value)
+    if (-not (Test-Path -LiteralPath $suitePath)) { continue }
+    $text = Get-Content -LiteralPath $suitePath -Raw -Encoding UTF8
+    foreach ($companion in [regex]::Matches($text, "'([a-z0-9-]+\.mjs)'")) {
+        $name = $companion.Groups[1].Value
+        Check ($package -match [regex]::Escape("'" + $name + "'")) "$($suite.Groups[1].Value) runs $name, which the package does not ship."
+    }
+}
+
+"PASS: $checks repository hygiene assertions (module exports across the Book Studio boundary, CRLF and BOM preservation, client assets served and cache-busted, release gate after drafting)."
