@@ -76,6 +76,18 @@ try {
     Check ($shortcut.Arguments -match '-WindowStyle Minimized') 'The agent must not sit in front of the designer all day.'
     Check ($shortcut.Arguments -notmatch 'Token') 'The shortcut must not carry the token; that is what the saved file is for.'
 
+    # 7b. One agent per computer. Two of them poll the same queue and report
+    #     the same machine over each other, and the designer who started the
+    #     second one has no way to know.
+    $first = Enter-BookRunnerSingleInstance -Name 'Local\BookStudioRunnerTest'
+    Check ($first.acquired) 'The first agent on a computer must be allowed to run.'
+    $second = Enter-BookRunnerSingleInstance -Name 'Local\BookStudioRunnerTest'
+    Check (-not $second.acquired) 'A second agent on the same computer must stand down.'
+    $first.mutex.ReleaseMutex(); $first.mutex.Dispose()
+    $third = Enter-BookRunnerSingleInstance -Name 'Local\BookStudioRunnerTest'
+    Check ($third.acquired) 'Once the first agent stops, another must be able to start.'
+    $third.mutex.ReleaseMutex(); $third.mutex.Dispose()
+
     # 8. And it can be taken off again by the same person, without an installer.
     Uninstall-BookRunnerStartup -StartupFolder $startup | Out-Null
     Check (-not (Test-BookRunnerStartupInstalled -StartupFolder $startup)) 'Removing it must stop it starting with Windows.'
@@ -103,6 +115,8 @@ try {
     Check ($runner -match 'now visible in Book Studio') 'The agent must say when the cloud has accepted this computer.'
     Check ($runner -match 'could not report itself') 'The agent must say when it could not, rather than looking healthy.'
     Check ($runner -match 'reportedOnce') 'That confirmation must be said once, not on every poll.'
+    Check ($runner -match 'Enter-BookRunnerSingleInstance') 'The agent must refuse to be the second one on a computer.'
+    Check ($runner -match 'already running on this computer') 'A second start must say what happened, not fail silently.'
     # A function that returns a value prints it when the caller ignores it, so
     # the word True appeared in the middle of what a designer was reading.
     Check ($runner -notmatch '(?m)^\s*Publish-CodexStatus[^|
@@ -207,7 +221,20 @@ if ($node) {
     Check ($setup -match 'Set-ExecutionPolicy -Scope CurrentUser') 'The setup script should try to make this easier for the next time.'
     Check ($setup -match '(?s)try \{ Set-ExecutionPolicy.*?catch') 'A refused policy change must not stop the setup.'
     Check ($setup -notmatch 'Scope LocalMachine') 'Nothing may need an administrator.'
-    Check ($setup -match '-ProjectRoot \$folder') 'Run as a command, the agent cannot work out its own folder; it must be told.'
+    Check ($setup -match '-ProjectRoot') 'Run as a command, the agent cannot work out its own folder; it must be told.'
+    # Pasting the command into a window where Book Studio was already running
+    # did nothing at all: the text went to the running program as input. It now
+    # starts in its own window, so the paste always takes effect and closing
+    # the window a designer typed into does not take the connection with it.
+    Check ($setup -match 'Start-Process -FilePath .powershell\.exe.') 'The agent must start in its own window, not in the one the command was pasted into.'
+    Check ($setup -match '-ArgumentList \$arguments') 'The launch arguments must be a list, so a folder with a space in it survives.'
+    # And the answer to did that work belongs on the screen the designer is
+    # looking at, not on a web page they have to go and refresh.
+    Check ($setup -match '/api/runner/self') 'The setup command must ask the cloud whether this computer arrived.'
+    Check ($setup -match 'Connected as ') 'It must say so when the computer arrives.'
+    Check ($setup -match 'has not reached Book Studio') 'It must say so when the computer does not.'
+    Check ($setup -match 'You can close this window') 'A designer must be told they no longer have to keep a window open.'
+    Check ($setup -match 'npm install -g @openai/codex') 'A working connection with no Codex must say how to fix Codex.'
     # The cloud and the copy of Book Studio on a PC are released separately, so
     # the PC can legitimately be behind. Saying so is the difference between a
     # designer knowing to ask for a release and reading a binding error about

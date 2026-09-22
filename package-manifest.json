@@ -21,7 +21,7 @@
     },
     {
         "path":  "cloud-book-runner.ps1",
-        "sha256":  "DBB599751B8E487A9407E653128E5F5254D4C04840E0A9FAE9CBB65706EC4814"
+        "sha256":  "3B04A031AB320672135C564F70B8BEC743261359E9750D6DD176B3C404BB3EFB"
     },
     {
         "path":  "Cloudflare Setup Notes.txt",
@@ -49,7 +49,7 @@
     },
     {
         "path":  "ID Quick Start.txt",
-        "sha256":  "E130B5968224F5C94F2FE2A2E825170FC1B8804DDFF8170140657B3271102911"
+        "sha256":  "85873C894FE85D0F4733EB3E209E10D241B17E5368CCF40D727DA531A4377DA5"
     },
     {
         "path":  "Install Book Studio.cmd",
@@ -109,7 +109,7 @@
     },
     {
         "path":  "VERSION.txt",
-        "sha256":  "D33A1CD1E83E0DCF5A2C1FC73F4407C45A690D6196DA2C44BD8B4FBEE37A2C64"
+        "sha256":  "98F87181548DFA3CEAA0A12520B48E606CA8C2BB666B4F7C376D1B097E2BB696"
     },
     {
         "path":  "book-studio/app.js",
@@ -137,11 +137,11 @@
     },
     {
         "path":  "book-studio/version.json",
-        "sha256":  "11879C95E937AC2B8ABDE0CE57FEAF0B994C6938D6F1FB8BA9DF7FA6A94C0540"
+        "sha256":  "2CE49E566AD992D81F4F789F334CE1884AA1BAD46105C220BC01F049C5B35032"
     },
     {
         "path":  "cloudflare/ebook-generator-worker.js",
-        "sha256":  "74525384C74DFE30FE1A1C30396884DA4F5CF03CF8792DCD17A7995F5401F2F2"
+        "sha256":  "F7804C29A2FBFF1197C481FC2C547596E3CF048E43F7AFD982BC15BF4A9DE7D3"
     },
     {
         "path":  "cloudflare/sme-review-worker.js",
@@ -333,7 +333,7 @@
     },
     {
         "path":  "lib/EbookCloudRunner.ps1",
-        "sha256":  "7BCDB7FB71FEC45423CA2C5C4D338C562A44F99BA62A35B0C1A92F340B7F27FA"
+        "sha256":  "05AEEC96444996D806F7AFDAAF7156C90AD85CA26D779FB82D22F714CE721E04"
     },
     {
         "path":  "lib/EbookCodexImages.ps1",
@@ -437,11 +437,11 @@
     },
     {
         "path":  "tests/cloud-runner-connect-regressions.ps1",
-        "sha256":  "1BD670FEAB3645C18771D5362662E3C5509491F94AABA170C8305596C4631025"
+        "sha256":  "3FC7897C00AF195897353A129F9744D49097E40CC3313B650E1E78F03AC4C99F"
     },
     {
         "path":  "tests/cloud-worker-auth.mjs",
-        "sha256":  "A734EDAEE0E592F5427CB3DCB0C364ECA288220017E291A4F03D6E8123DE3309"
+        "sha256":  "6CD079070E76401945343DAE0E041D4E21FA42233A28AA154E9DA8DE2D03C0AB"
     },
     {
         "path":  "tests/cloud-worker-auth.ps1",

@@ -128,3 +128,25 @@ function Test-BookRunnerStartupInstalled {
 
     return Test-Path -LiteralPath (Get-BookRunnerStartupPath -StartupFolder $StartupFolder)
 }
+
+# Only one agent per computer. Two of them poll the same queue and report the
+# same machine over each other, and a designer who pastes the setup command
+# twice has no way to know they have done it.
+function Enter-BookRunnerSingleInstance {
+    param([string]$Name = 'Global\BookStudioCloudRunner')
+
+    $created = $false
+    try {
+        $mutex = New-Object System.Threading.Mutex($true, $Name, [ref]$created)
+    }
+    catch {
+        # A machine that will not give us a mutex is not a reason to refuse to
+        # run; it only means a second copy cannot be detected.
+        return [pscustomobject]@{ acquired = $true; mutex = $null }
+    }
+    if (-not $created) {
+        $mutex.Dispose()
+        return [pscustomobject]@{ acquired = $false; mutex = $null }
+    }
+    return [pscustomobject]@{ acquired = $true; mutex = $mutex }
+}

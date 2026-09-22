@@ -1277,6 +1277,7 @@ function setupScript(token, origin) {
     "$ErrorActionPreference = 'Stop'",
     "$token = '" + safeToken + "'",
     "$repository = 'https://github.com/gduartevocate/book-studio.git'",
+    "$cloud = '" + origin + "'",
     "",
     "Write-Host ''",
     "Write-Host 'Book Studio - connecting this computer' -ForegroundColor Cyan",
@@ -1369,7 +1370,55 @@ function setupScript(token, origin) {
     "",
     "Set-Location $folder",
     "$agent = Join-Path $folder 'cloud-book-runner.ps1'",
-    "& ([scriptblock]::Create((Get-Content -Raw -LiteralPath $agent))) -Token $token -StartWithWindows -ProjectRoot $folder",
+    "",
+    "# Started in its own window, minimised, rather than in this one. Pasting",
+    "# this command into a window where Book Studio was already running did",
+    "# nothing at all -- the text went to the running program as input -- and",
+    "# closing that window later took the connection down with it.",
+    "# Built as an argument list rather than as one string: Start-Process",
+    "# quotes each item itself, and a Book Studio folder can have a space in it.",
+    "$inner = '& ([scriptblock]::Create((Get-Content -Raw -LiteralPath ''' + $agent + '''))) ' +",
+    "    '-Token ' + $token + ' -StartWithWindows -ProjectRoot ''' + $folder + ''''",
+    "$arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Minimized', '-Command', $inner)",
+    "Start-Process -FilePath 'powershell.exe' -ArgumentList $arguments -WindowStyle Minimized | Out-Null",
+    "",
+    "# And then wait for the computer to appear in the cloud, so the answer to",
+    "# 'did that work?' is on this screen rather than on a web page somewhere.",
+    "Write-Host 'Connecting...' -NoNewline",
+    "$seen = $null",
+    "foreach ($attempt in 1..30) {",
+    "    Start-Sleep -Seconds 4",
+    "    Write-Host '.' -NoNewline",
+    "    try {",
+    "        $reply = Invoke-RestMethod -Uri ($cloud + '/api/runner/self') -Headers @{ 'x-book-runner-token' = $token }",
+    "        if ($reply.reported) { $seen = $reply; break }",
+    "    }",
+    "    catch { }",
+    "}",
+    "Write-Host ''",
+    "",
+    "if (-not $seen) {",
+    "    Write-Host 'This computer has not reached Book Studio.' -ForegroundColor Red",
+    "    Write-Host 'Book Studio is still trying in a minimised PowerShell window; open it from the taskbar to see why.'",
+    "    return",
+    "}",
+    "",
+    "$codexState = if ($seen.codex) { $seen.codex.status } else { 'unknown' }",
+    "Write-Host ('Connected as ' + $seen.runnerName) -ForegroundColor Green",
+    "if ($codexState -eq 'Connected') {",
+    "    Write-Host ('Codex is working here: ' + $seen.codex.version)",
+    "    Write-Host 'You can close this window. Book Studio keeps running, and starts again when you sign in to Windows.'",
+    "}",
+    "elseif ($codexState -eq 'Unknown') {",
+    "    Write-Host 'Codex did not answer in time; Book Studio checks again every ten minutes.' -ForegroundColor Yellow",
+    "    Write-Host 'You can close this window.'",
+    "}",
+    "else {",
+    "    Write-Host 'Codex is not working on this computer, so books cannot be written here yet.' -ForegroundColor Yellow",
+    "    Write-Host ('  ' + $seen.codex.detail)",
+    "    Write-Host 'Install Node.js from https://nodejs.org, run:  npm install -g @openai/codex  then:  codex login'",
+    "    Write-Host 'The connection itself is fine; nothing here has to be done again afterwards.'",
+    "}",
     ""
   ].join("\n");
 }
@@ -1624,6 +1673,19 @@ export default {
         // connected and the first machine stay in the reply so an older page
         // still shows something sensible.
         return jsonResponse({ connected: true, machines, ...machines[0] });
+      }
+
+      // What a computer can ask about itself, using the token it already has.
+      // The setup command uses this to tell a designer their machine arrived,
+      // instead of leaving them to refresh a web page and hope.
+      if (request.method === "GET" && pathname === "/api/runner/self") {
+        const auth = await requireRunner(request, env);
+        if (auth.response) return auth.response;
+        const key = auth.runner.id
+          ? "runner:status:" + (auth.runner.owner || "shared") + ":" + auth.runner.id
+          : "runner:status:" + (auth.runner.owner || "shared");
+        const record = await env.BOOK_STUDIO_KV.get(key, "json");
+        return jsonResponse(record ? { reported: true, ...record } : { reported: false });
       }
 
       if (request.method === "GET" && pathname === "/api/runner/jobs") {

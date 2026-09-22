@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.22.6 (2026-09-22)
+
+- Book Studio starts in its own window, confirms it connected, and refuses to run twice.
+
 ## v2026.09.22.5 (2026-09-22)
 
 - A Codex check that times out is reported as unknown rather than broken.

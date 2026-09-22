@@ -309,4 +309,16 @@ check(afterUpgrade.json.machines.length === 3, "The upgraded machine must be lis
 const older = afterUpgrade.json.machines.filter((machine) => machine.runnerName === "OLDER / gio");
 check(older.length === 1, "The upgraded machine must appear once, not twice; saw " + older.length);
 
+// 18. A computer has no browser session, so it cannot ask the page whether it
+//     arrived. It asks with the credential it already has, which is what lets
+//     the setup command answer "did that work?" on the screen the designer is
+//     looking at.
+const selfBefore = await call("GET", "/api/runner/self", { headers: { "x-book-runner-token": "machine-token" } });
+check(selfBefore.status === 200 && selfBefore.json.reported === false, "A machine that has not reported must be told so, not refused.");
+await report("machine-token", "SELFCHECK / gio", "Connected");
+const selfAfter = await call("GET", "/api/runner/self", { headers: { "x-book-runner-token": "machine-token" } });
+check(selfAfter.json.reported === true, "A machine that has reported must be able to see itself.");
+check(selfAfter.json.runnerName === "SELFCHECK / gio", "It must see its own record, not another machine's.");
+check((await call("GET", "/api/runner/self")).status === 401, "Asking without a token must be refused.");
+
 console.log("PASS: " + checks + " sign-in checks (sessions, password storage, lockout, administration, runner tokens)");

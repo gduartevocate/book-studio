@@ -417,6 +417,18 @@ if ($Token) {
     Write-Host "Token saved for this computer. You will not have to paste it again ($savedTo)."
 }
 
+# One agent per computer. A second one polls the same queue and reports the
+# same machine over the first, and the designer who started it twice cannot
+# tell. -Once is exempt: it is a check, not a second agent.
+if (-not $Once) {
+    $instance = Enter-BookRunnerSingleInstance
+    if (-not $instance.acquired) {
+        Write-Host "Book Studio is already running on this computer, so this window has nothing to do."
+        Write-Host "Its connection is unaffected. Close this window."
+        return
+    }
+}
+
 if ($StartWithWindows) {
     $link = Install-BookRunnerStartup -ScriptPath (Join-Path $ProjectRoot 'cloud-book-runner.ps1')
     Write-Host "This computer will connect to Book Studio whenever you sign in to Windows ($link)."
