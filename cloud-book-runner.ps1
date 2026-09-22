@@ -121,10 +121,15 @@ function Publish-CodexStatus {
     param([object]$Status)
 
     $machineName = "$env:COMPUTERNAME / $env:USERNAME"
+    # A computer that cannot update itself must say so here rather than quietly
+    # falling behind: the refusal is deliberate, but silence about it is not.
+    $updatable = Test-BookStudioSelfUpdatable -ProjectRoot $ProjectRoot
     try {
         Invoke-RunnerApi -Method Post -Path '/api/runner/status' -Body @{
             codex = $Status
             runnerName = $machineName
+            version = (Get-BookStudioInstalledVersion -ProjectRoot $ProjectRoot)
+            updates = @{ automatic = [bool]$updatable.updatable; reason = [string]$updatable.reason }
         } | Out-Null
         # Said once, on the first success. Without it a designer has no way to
         # tell a machine that reported itself from one that quietly could not,

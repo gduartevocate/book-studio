@@ -155,4 +155,10 @@ for (const control of ["readingLevel", "sourceMode", "imageContext", "allowAddit
 }
 check(/Grade 8 \(default\)/.test(app), "Grade 8 must be the reading level a designer gets without choosing.");
 
+// A computer that has stopped updating itself must say so on the page where
+// someone would look, not only in the record behind it.
+check(/machine\.version/.test(script), "The connect page must show which Book Studio each computer runs.");
+check(/not updating itself/.test(script), "The connect page must say when a computer has stopped updating itself.");
+check(/keeps itself up to date/.test(script), "And say when it has not.");
+
 console.log("PASS: " + checks + " page checks (delivered scripts parse, ids exist, connect command survives minting)");

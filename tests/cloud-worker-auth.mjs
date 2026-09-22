@@ -291,9 +291,9 @@ const laptopToken = await call("POST", "/api/runner-tokens", { cookie: admin, bo
 const deskToken = await call("POST", "/api/runner-tokens", { cookie: admin, body: { label: "Desk" } });
 check(laptopToken.json.token !== deskToken.json.token, "Two machines must get two tokens.");
 
-const report = (token, name, codexStatus) => call("POST", "/api/runner/status", {
+const report = (token, name, codexStatus, extra = {}) => call("POST", "/api/runner/status", {
   headers: { "x-book-runner-token": token },
-  body: { runnerName: name, codex: { status: codexStatus, version: "codex-cli 0.154.0" } }
+  body: { runnerName: name, codex: { status: codexStatus, version: "codex-cli 0.154.0" }, ...extra }
 });
 check((await report(laptopToken.json.token, "LAPTOP / gio", "Connected")).status === 200, "A machine must be able to report itself.");
 check((await report(deskToken.json.token, "NEWKING / gio", "Unavailable")).status === 200, "A second machine must be able to report itself too.");
@@ -407,5 +407,22 @@ check(finished.headers.get("content-type") === "application/json", "The local co
 // And the bridge is a runner route: it needs the machine credential.
 check((await call("GET", "/api/bridge/next")).status === 401, "Collecting work must require a runner token.");
 check((await call("POST", "/api/bridge/reply", { body: { id: "1" } })).status === 401, "Answering must require a runner token.");
+
+// 21. Which Book Studio each computer is running, and whether it can fetch the
+//     next one by itself. A machine that has quietly stopped updating is the
+//     reason a fix that shipped weeks ago never reached the person using it.
+await report(deskToken.json.token, "DESK / gio", "Connected", {
+  version: "2026.09.22.8", updates: { automatic: true, reason: "" }
+});
+await report(laptopToken.json.token, "LAPTOP / gio", "Connected", {
+  version: "2026.09.20.1", updates: { automatic: false, reason: "there are unsaved changes in this folder" }
+});
+const fleet = await call("GET", "/api/runner/status", { cookie: admin });
+const desk = fleet.json.machines.find((machine) => machine.runnerName === "DESK / gio");
+const laptop = fleet.json.machines.find((machine) => machine.runnerName === "LAPTOP / gio");
+check(desk.version === "2026.09.22.8", "Each machine must report which Book Studio it runs, got " + desk.version);
+check(desk.updates.automatic === true, "A machine that keeps itself current must say so.");
+check(laptop.updates.automatic === false, "A machine that has stopped updating must say so.");
+check(/unsaved changes/.test(laptop.updates.reason), "It must say why it stopped: " + laptop.updates.reason);
 
 console.log("PASS: " + checks + " sign-in checks (sessions, password storage, lockout, administration, runner tokens)");

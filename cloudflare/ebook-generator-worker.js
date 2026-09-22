@@ -173,10 +173,16 @@ el("check").addEventListener("click", async () => {
       // as one: it sends a designer hunting for a problem that is not there.
       const unknown = (codex.status || "") === "Unknown";
       const state = good ? "Ready" : (unknown ? "Codex not checked yet" : "Codex " + (codex.status || "unknown").toLowerCase());
+      const updates = machine.updates || {};
+      // Said plainly, because a computer that has stopped updating itself is
+      // the reason a fix that shipped weeks ago has not reached this designer.
+      const updateNote = machine.version
+        ? "<br>Book Studio " + machine.version + (updates.automatic === false ? " - not updating itself: " + (updates.reason || "unknown reason") : " - keeps itself up to date")
+        : "";
       return "<dt>" + name + "</dt><dd>" + state +
         (codex.version ? " - " + codex.version : "") +
         " - last heard from " + describeAge(machine.seenAt) +
-        (good ? "" : "<br>" + (codex.detail || "")) + "</dd>";
+        (good ? "" : "<br>" + (codex.detail || "")) + updateNote + "</dd>";
     }).join("");
   } catch (error) {
     el("state").textContent = "Error"; el("state").className = "pill bad";
@@ -1879,6 +1885,11 @@ export default {
           label: auth.runner.label || "",
           runnerName: String(payload.runnerName || "").slice(0, 120),
           codex: payload.codex || null,
+          // Which Book Studio is on that computer, and whether it can fetch the
+          // next one by itself. A machine that has stopped updating is a
+          // machine that will fail in a way nobody can explain later.
+          version: String(payload.version || "").slice(0, 40),
+          updates: payload.updates || null,
           seenAt: nowIso()
         };
         // One key per machine, under its owner. A token minted before ids

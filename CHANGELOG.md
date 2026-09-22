@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.22.9 (2026-09-22)
+
+- Each computer reports which Book Studio it runs and whether it keeps itself up to date.
+
 ## v2026.09.22.8 (2026-09-22)
 
 - Book Studio keeps itself up to date on every connected computer.
