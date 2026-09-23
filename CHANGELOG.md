@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.23.14 (2026-09-23)
+
+- Book Studio's local server is now restarted after an update even when it was started before the update; before, it could keep running old code for hours.
+
 ## v2026.09.23.13 (2026-09-23)
 
 - Steps that use Codex now test the connection themselves when needed, instead of asking you to run Test connection first; a slow background check no longer undoes a successful test.

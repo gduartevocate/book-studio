@@ -5155,6 +5155,12 @@ function Start-BookStudioServer {
     $ProjectRoot = (Resolve-Path $ProjectRoot).ProviderPath
     $DatabasePath = Initialize-BookStudioDatabase -ProjectRoot $ProjectRoot -DatabasePath $DatabasePath
     $webRoot = Join-Path $ProjectRoot "book-studio"
+    # The release this process loaded, kept apart from version.json: that file
+    # is read from disk on every request, so after an update it named the new
+    # release while this process still ran the old code, and the agent's check
+    # for an out-of-date server always saw it as current.
+    $runningVersion = ''
+    try { $runningVersion = [string](Get-Content -LiteralPath (Join-Path $webRoot 'version.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version } catch { }
 
     $listener = New-Object System.Net.HttpListener
     $prefix = "http://localhost:$Port/"
@@ -5191,6 +5197,7 @@ function Start-BookStudioServer {
                 Send-BookStudioResponse -Context $context -Body (ConvertTo-BookStudioJson ([pscustomobject]@{
                     status = "ok"
                     service = "book-studio"
+                    runningVersion = $runningVersion
                     port = $Port
                     installPath = $installStatus.installPath
                     installPathLength = $installStatus.installPathLength

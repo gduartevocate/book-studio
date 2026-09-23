@@ -219,7 +219,16 @@ function Update-StaleLocalStudioServer {
         [int]$Port = 8790,
         # The three things this decides on, as parameters so the rule can be
         # tested without a server; the agent uses the defaults.
-        [scriptblock]$ServedVersion = { param($port) try { (Invoke-RestMethod -Uri "http://localhost:$port/version.json" -TimeoutSec 4).version } catch { $null } },
+        # The release the server loaded, from its health check. version.json
+        # cannot say: it is read from disk per request, so an old server named
+        # the new release. A server from before this reports no version at all,
+        # which is itself proof it predates the files on disk.
+        [scriptblock]$ServedVersion = {
+            param($port)
+            try { $health = Invoke-RestMethod -Uri "http://localhost:$port/api/health" -TimeoutSec 4 } catch { return $null }
+            if ($health.runningVersion) { return [string]$health.runningVersion }
+            return 'an earlier release'
+        },
         [scriptblock]$Busy = {
             param($root)
             Import-Module (Join-Path $root 'lib/BookStudio.psm1') -DisableNameChecking -ErrorAction Stop

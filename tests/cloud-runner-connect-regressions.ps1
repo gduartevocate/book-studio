@@ -166,6 +166,32 @@ try {
     Check ($restart.status -eq 'restarted' -and $oldServer.HasExited) 'An idle server on an older release is stopped so the current one can start.'
     Check ($restart.served -eq '2026.09.17.3' -and $restart.installed -eq '2026.09.23.12') 'And the agent is told which release it replaced with which.'
 
+    # The version must come from what the server loaded (its health check),
+    # never from version.json, which is the file on disk. Served by a real
+    # stand-in HTTP server so the default reading is the one tested.
+    $healthPort = ([Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)); $healthPort.Start(); $port = $healthPort.LocalEndpoint.Port; $healthPort.Stop()
+    $standInServer = Start-Job -ArgumentList $port -ScriptBlock {
+        param($port)
+        $listener = New-Object System.Net.HttpListener; $listener.Prefixes.Add("http://localhost:$port/"); $listener.Start()
+        $answers = @('{"status":"ok","runningVersion":"2026.09.17.3"}', '{"version":"2026.09.23.12"}', '{"status":"ok"}')
+        $served = 0
+        while ($served -lt 6) {
+            $context = $listener.GetContext(); $served++
+            $body = if ($context.Request.Url.AbsolutePath -eq '/version.json') { '{"version":"2026.09.23.12"}' } elseif ($served -le 2) { $answers[0] } else { $answers[2] }
+            $bytes = [Text.Encoding]::UTF8.GetBytes($body); $context.Response.ContentType = 'application/json'
+            $context.Response.OutputStream.Write($bytes, 0, $bytes.Length); $context.Response.Close()
+        }
+        $listener.Stop()
+    }
+    try {
+        foreach ($wait in 1..40) { try { $null = Invoke-RestMethod "http://localhost:$port/version.json" -TimeoutSec 2; break } catch { Start-Sleep -Milliseconds 250 } }
+        $old = Update-StaleLocalStudioServer -ProjectRoot $project -Port $port -Busy { param($r) 'a book is being written' } -FindServers $never
+        Check ($old.status -eq 'busy' -and $old.served -eq '2026.09.17.3') 'An old server whose version.json names the new release must still be seen as old.'
+        $older = Update-StaleLocalStudioServer -ProjectRoot $project -Port $port -Busy { param($r) 'a book is being written' } -FindServers $never
+        Check ($older.status -eq 'busy' -and $older.served -eq 'an earlier release') 'A server too old to report its version must be treated as out of date.'
+    }
+    finally { Stop-Job $standInServer -ErrorAction SilentlyContinue; Remove-Job $standInServer -Force -ErrorAction SilentlyContinue }
+
     # 8. And it can be taken off again by the same person, without an installer.
     Uninstall-BookRunnerStartup -StartupFolder $startup | Out-Null
     Check (-not (Test-BookRunnerStartupInstalled -StartupFolder $startup)) 'Removing it must stop it starting with Windows.'
