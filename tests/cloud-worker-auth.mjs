@@ -635,4 +635,79 @@ for (const open of ["/cloud/guide", "/cloud/signup"]) {
   check(openPage.status === 200, open + " must be readable without signing in, got " + openPage.status);
 }
 
+// 27. Sharing a Book Studio book with everyone at Vocate. The book lives on
+//     the designer's computer; a read-only copy of its files is listed in
+//     Everyone's books under their name. Only that designer's computer can
+//     share, update or withdraw it.
+{
+const r2 = new Map();
+env.BOOK_STUDIO_FILES = {
+  async put(key, bytes) { r2.set(key, Buffer.from(bytes)); },
+  async get(key) {
+    if (!r2.has(key)) return null;
+    const bytes = r2.get(key);
+    return { body: new Blob([bytes]).stream(), async arrayBuffer() { return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.length); } };
+  },
+  async delete(key) { r2.delete(key); }
+};
+const ownComputer = { "x-book-runner-token": laptopToken.json.token };
+const share = (headers, body) => call("POST", "/api/runner/shares", { headers, body });
+const upload = (headers, id, fileName, text) => call("POST", "/api/runner/jobs/" + id + "/artifacts", { headers, body: {
+  fileName, contentType: "application/octet-stream", contentBase64: Buffer.from(text).toString("base64") } });
+
+check((await share({}, { localId: "d2b70817999d", title: "x" })).status === 401, "Sharing must need a computer's credential.");
+check((await share(ownComputer, { localId: "../../etc", title: "x" })).status === 400, "A book id that is not an id must be refused.");
+const firstShare = await share(ownComputer, { localId: "d2b70817999d", title: "RB1000 Revenue Cycle", courseCode: "RB1000", workflowStatus: "ID review" });
+check(firstShare.status === 200 && firstShare.json.status === "Shared", "A computer must be able to share one of its owner's books, got " + firstShare.status);
+check(firstShare.json.owner === "boss@vocate.org", "A shared book belongs to the computer's owner, got " + firstShare.json.owner);
+const sharedId = firstShare.json.id;
+check(/^share-[0-9a-f]{20}$/.test(sharedId) && !sharedId.includes("d2b70817999d"), "The shared id must not expose the owner or the book id: " + sharedId);
+check((await upload(ownComputer, sharedId, "RB1000 - E-Book.docx", "WORD-VERSION-1")).status === 200, "The shared book's files must upload.");
+
+// Everyone signed in sees it, with its owner and stage, and can download it.
+const everyone = await call("GET", "/api/jobs?scope=everyone", { cookie: designerAgain });
+const listed = (everyone.json.jobs || []).find((job) => job.id === sharedId);
+check(Boolean(listed) && listed.owner === "boss@vocate.org" && listed.status === "Shared", "Another designer must see the shared book in Everyone's books, with its owner.");
+check(listed.shared && listed.shared.stage === "ID review", "The listing must say what stage the book is at.");
+check(!(await call("GET", "/api/jobs?scope=mine", { cookie: designerAgain })).json.jobs.some((job) => job.id === sharedId), "A shared book is not in anyone else's own list.");
+const fileUrl = listed.artifacts[0].url;
+const downloaded = await call("GET", fileUrl.replace(/^\/cloud/, ""), { cookie: designerAgain });
+check(downloaded.status === 200 && downloaded.text === "WORD-VERSION-1", "Another designer must be able to download the shared file, got " + downloaded.status);
+check(/attachment/.test(downloaded.headers.get("content-disposition") || ""), "A shared file downloads; it is never opened inside the site.");
+check((await call("GET", fileUrl.replace(/^\/cloud/, ""))).status === 401, "Nobody signed out may download a shared book.");
+
+// Sharing again replaces the copy: one entry, only the new files, old ones gone.
+const oldKeys = [...r2.keys()];
+const again = await share(ownComputer, { localId: "d2b70817999d", title: "RB1000 Revenue Cycle", courseCode: "RB1000", workflowStatus: "Delivery" });
+check(again.json.id === sharedId && again.json.artifacts.length === 0, "Sharing again must update the same entry and clear its old files.");
+check(oldKeys.every((key) => !r2.has(key)), "The previous version's files must be deleted, not left downloadable.");
+await upload(ownComputer, sharedId, "RB1000 - E-Book.docx", "WORD-VERSION-2");
+const relisted = (await call("GET", "/api/jobs?scope=everyone", { cookie: designerAgain })).json.jobs.filter((job) => job.id === sharedId);
+check(relisted.length === 1 && relisted[0].artifacts.length === 1, "Sharing again must not list the book twice or keep old files.");
+check((await call("GET", relisted[0].artifacts[0].url.replace(/^\/cloud/, ""), { cookie: designerAgain })).text === "WORD-VERSION-2", "Everyone must now get the new version.");
+
+// Another designer's computer cannot touch it, even with the same book id.
+const theirToken = await call("POST", "/api/runner-tokens", { cookie: designerAgain, body: { label: "Their laptop" } });
+const theirComputer = { "x-book-runner-token": theirToken.json.token };
+check((await upload(theirComputer, sharedId, "replaced.docx", "NOT YOURS")).status === 403, "Another designer's computer must not add files to someone else's shared book.");
+const theirShare = await share(theirComputer, { localId: "d2b70817999d", title: "Their own book" });
+check(theirShare.json.id !== sharedId && theirShare.json.owner === "reader@vocate.org", "The same book id from someone else is a different shared book.");
+check((await call("DELETE", "/api/runner/shares/d2b70817999d", { headers: theirComputer })).json.removed === true, "They can withdraw their own share.");
+check(Boolean(await kv.get("job:" + sharedId, "json")), "Withdrawing theirComputer must not touch someone else's shared book.");
+
+// Withdrawing: gone from the list, and its files with it.
+const keysBefore = [...r2.keys()];
+check((await call("DELETE", "/api/runner/shares/d2b70817999d", { headers: ownComputer })).json.removed === true, "The owner's computer must be able to stop sharing.");
+check(!(await call("GET", "/api/jobs?scope=everyone", { cookie: designerAgain })).json.jobs.some((job) => job.id === sharedId), "A withdrawn book must leave Everyone's books.");
+check(keysBefore.every((key) => !r2.has(key)), "A withdrawn book's files must be deleted.");
+check(!(await kv.get("job:" + sharedId, "json")) && (await call("GET", "/api/jobs/" + sharedId, { cookie: designerAgain })).status === 404, "A withdrawn book must be gone, not merely unlisted.");
+check((await call("DELETE", "/api/runner/shares/d2b70817999d")).status === 401, "Withdrawing must need a computer's credential.");
+// An entry under the same id that belongs to someone else is never taken over.
+const plantedId = "share-" + [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode("boss@vocate.org|planted-book")))].slice(0, 10).map((b) => b.toString(16).padStart(2, "0")).join("");
+await kv.put("job:" + plantedId, JSON.stringify({ id: plantedId, owner: "reader@vocate.org", title: "Theirs", status: "Shared", artifacts: [] }));
+check((await share(ownComputer, { localId: "planted-book", title: "Mine now" })).status === 403, "Sharing must never overwrite an entry that belongs to another designer.");
+check((await call("DELETE", "/api/runner/shares/planted-book", { headers: ownComputer })).status === 403, "Nor withdraw one.");
+check((await kv.get("job:" + plantedId, "json")).owner === "reader@vocate.org", "The other designer's entry must be untouched.");
+}
+
 console.log("PASS: " + checks + " sign-in checks (sessions, password storage, lockout, administration, runner tokens)");

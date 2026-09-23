@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.23.15 (2026-09-23)
+
+- Share with Vocate: a finished book can be shared read-only with everyone at Vocate, who can view and download it from Everyone's books on ebookstudio.vocate.app. Share again updates it; Stop sharing removes it.
+
 ## v2026.09.23.14 (2026-09-23)
 
 - Book Studio's local server is now restarted after an update even when it was started before the update; before, it could keep running old code for hours.

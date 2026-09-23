@@ -27,7 +27,7 @@ try {
   const source = new TextDecoder().decode(Uint8Array.from(atob('__APP__'), c => c.charCodeAt(0)));
   new Function(source); // Parse the entire real application, without booting it.
   const deletionSource = source.match(/function isBookDeletionBlocked\(job\) \{[\s\S]*?(?=\r?\nfunction renderPackageMeta)/);
-  if (!deletionSource || !/\}\s*appendDeleteBookAction\(actions, job\);/.test(source)) throw new Error('Delete action must be outside workflow branches');
+  if (!deletionSource || !/\}\s*(?:if \(!isJobProcessing\(job\)\) appendShareAction\(actions, job\);\s*)?appendDeleteBookAction\(actions, job\);/.test(source)) throw new Error('Delete action must be outside workflow branches');
   let promptReply = null, promptText = '', alerts = [], calls = [], loads = 0, focus = 'fixture', release;
   const deletion = new Function('document','window','isJobProcessing','activeStatuses','api','loadJobs','setFocusedJob','visualManifestCache','codexPromptCache','chapterManifestCache','aiRequestCache',
     'let focusedJobId="fixture";'+deletionSource[0]+'; return {appendDeleteBookAction, deleteBookJob};')(

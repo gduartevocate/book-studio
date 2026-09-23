@@ -1327,7 +1327,9 @@ function shouldPauseJobAutoRefresh() {
 
 function shouldAutoRefreshJobs() {
   if (shouldPauseJobAutoRefresh()) return false;
-  return currentJobs.some(isJobProcessing) || bookChatHasRunningRequests;
+  // A share uploads in the background; keep refreshing until it says Shared
+  // or Failed, or the page would say "Sharing..." until someone clicked.
+  return currentJobs.some(isJobProcessing) || currentJobs.some((job) => job.shared?.status === "Sharing") || bookChatHasRunningRequests;
 }
 
 function renderAssetLink(container, asset, label) {
@@ -2458,6 +2460,53 @@ function findRenderedJobNode(jobId) {
   return Array.from(jobsList.children).find((child) => child.dataset?.jobId === jobId) || null;
 }
 
+// Sharing a finished book with everyone at Vocate: a read-only copy of its
+// Word book, HTML book and interactive study page, listed under your name in
+// Everyone's books on the web site. The book itself stays on this computer;
+// sharing again replaces the copy, and Stop sharing removes it.
+function describeSharing(job) {
+  const shared = job.shared || {};
+  if (shared.status === "Shared") return ` | Shared with Vocate ${formatDate(shared.sharedAt)}`;
+  if (shared.status === "Sharing") return " | Sharing with Vocate...";
+  if (shared.status === "Failed") return ` | Sharing failed: ${shared.error || "see the log"}`;
+  return "";
+}
+
+function appendShareAction(actions, job) {
+  const shared = job.shared || {};
+  const hasWord = (job.artifacts || []).some((artifact) => artifact.fileName?.endsWith(" - E-Book.docx"));
+  if (!hasWord || shared.status === "Sharing") return;
+  const share = makeElement("button", "secondary", shared.status === "Shared" ? "Share again" : "Share with Vocate");
+  share.type = "button";
+  share.title = "Everyone signed in at Vocate will be able to see and download this book's Word, HTML and interactive study files. The book stays on this computer.";
+  share.addEventListener("click", async () => {
+    share.disabled = true;
+    try {
+      await api(`/api/jobs/${job.id}/share`, { method: "POST", body: "{}" });
+      await loadJobs();
+    } catch (error) {
+      share.disabled = false;
+      reportJobActionError(job, error.message);
+    }
+  });
+  actions.append(share);
+  if (shared.status !== "Shared") return;
+  const stop = makeElement("button", "secondary", "Stop sharing");
+  stop.type = "button";
+  stop.addEventListener("click", async () => {
+    if (!window.confirm("Remove the shared copy of this book from the web site? The book itself stays here.")) return;
+    stop.disabled = true;
+    try {
+      await api(`/api/jobs/${job.id}/unshare`, { method: "POST", body: "{}" });
+      await loadJobs();
+    } catch (error) {
+      stop.disabled = false;
+      reportJobActionError(job, error.message);
+    }
+  });
+  actions.append(stop);
+}
+
 function appendPackageRebuildAction(actions, job) {
   const hasManuscript = (job.artifacts || []).some(artifact => artifact.name === "Markdown ebook");
   if (!job.outputFolder || isJobProcessing(job)
@@ -2541,7 +2590,7 @@ function renderJobs(jobs, options = {}) {
     title.textContent = `${job.courseCode ? `${job.courseCode}: ` : ""}${job.title || "Untitled Book"}`;
     const packageFormat = job.packageFormat?.status ? ` | ${job.packageFormat.status} package` : "";
     const lifecycle = job.lifecycleStatus && job.lifecycleStatus !== "Active" ? ` | ${job.lifecycleStatus}${job.publishedAt ? ` ${formatDate(job.publishedAt)}` : ""}` : "";
-    meta.textContent = `${getWorkflowStatus(job)} | Created ${formatDate(job.createdAt)} | ${job.uploadedFiles?.length || 0} source file(s)${packageFormat}${lifecycle}`;
+    meta.textContent = `${getWorkflowStatus(job)} | Created ${formatDate(job.createdAt)} | ${job.uploadedFiles?.length || 0} source file(s)${packageFormat}${lifecycle}${describeSharing(job)}`;
     status.textContent = job.status || "Unknown";
     status.classList.add(String(job.status || "").toLowerCase());
     if (job.lifecycleStatus && job.lifecycleStatus !== "Active") {
@@ -2664,6 +2713,7 @@ function renderJobs(jobs, options = {}) {
       }
 
     }
+    if (!isJobProcessing(job)) appendShareAction(actions, job);
     appendDeleteBookAction(actions, job);
 
     renderArtifactLinks(artifacts, job.artifacts || []);

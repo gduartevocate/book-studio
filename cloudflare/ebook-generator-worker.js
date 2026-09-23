@@ -977,10 +977,18 @@ const APP_HTML = `<!doctype html>
         title.textContent = (job.courseCode ? job.courseCode + ": " : "") + (job.title || "Untitled Book");
         var owner = job.owner || "unclaimed";
         var who = scope === "everyone" ? owner + " | " : "";
-        meta.textContent = who + "Created " + formatDate(job.createdAt) + " | " + ((job.uploadedFiles || []).length) + " source file(s)";
+        // A shared book is a read-only copy from someone's Book Studio: when
+        // it was shared says more than a source count it does not have.
+        var when = job.status === "Shared"
+          ? "Shared " + formatDate(job.sharedAt || job.updatedAt) + " from Book Studio"
+          : "Created " + formatDate(job.createdAt) + " | " + ((job.uploadedFiles || []).length) + " source file(s)";
+        meta.textContent = who + when;
         status.textContent = job.status || "Unknown";
         status.classList.add(String(job.status || "").toLowerCase());
-        log.textContent = job.error ? job.error : lastLogLine(job);
+        // For a shared book, where it is in its workflow; its log only
+        // records the files arriving.
+        log.textContent = job.error ? job.error
+          : (job.status === "Shared" && job.shared && job.shared.stage ? "Stage: " + job.shared.stage : lastLogLine(job));
         (job.uploadedFiles || []).forEach(function(file) {
           var chip = document.createElement("span");
           chip.className = "file-chip";
@@ -989,7 +997,9 @@ const APP_HTML = `<!doctype html>
         });
         (job.artifacts || []).forEach(function(artifact) {
           var link = document.createElement("a");
-          link.href = artifact.url;
+          // Stored as /api/..., which on the one site belongs to the viewer's
+          // own computer: without the prefix every download went there.
+          link.href = (String(artifact.url || "").indexOf("/api/") === 0 ? "__CLOUD__" : "") + artifact.url;
           link.textContent = artifact.name + " (" + formatBytes(artifact.size) + ")";
           artifactList.append(link);
         });
@@ -1416,6 +1426,13 @@ async function requireRunner(request, env) {
 // A machine works only on its own person's books. A book with no owner dates
 // from before accounts existed; letting any machine claim those was a way to
 // read someone's upload without being them.
+// One shared copy per book per owner, found again by the same pair so sharing
+// again updates it. Hashed so the id says nothing about either.
+async function sharedBookId(owner, localId) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(owner + "|" + localId));
+  return "share-" + [...new Uint8Array(digest)].slice(0, 10).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 function runnerMayTouch(runner, job) {
   if (!job || !job.owner) return false;
   return job.owner === runner.owner;
@@ -2414,6 +2431,70 @@ async function handleRequest(request, env) {
         if (auth.response) return auth.response;
         const jobs = await listJobs(env);
         return jsonResponse({ jobs: jobs.filter((job) => job.status === "Queued" && runnerMayTouch(auth.runner, job)) });
+      }
+
+      // Sharing a book made in Book Studio with everyone at Vocate. The book
+      // lives on the designer's computer; what is shared is a read-only copy
+      // of its finished files, listed in Everyone's books under their name and
+      // downloadable by anyone signed in. Only that computer's owner can share,
+      // update or withdraw it, using the credential the computer already has.
+      if (pathname === "/api/runner/shares" && request.method === "POST") {
+        const auth = await requireRunner(request, env);
+        if (auth.response) return auth.response;
+        if (!auth.runner.owner) return textResponse("Connect this computer to your own account before sharing books.", { status: 403 });
+        const payload = await request.json().catch(() => ({}));
+        const localId = String(payload.localId || "").trim();
+        if (!/^[A-Za-z0-9_-]{1,64}$/.test(localId)) return textResponse("A book id is required.", { status: 400 });
+        const id = await sharedBookId(auth.runner.owner, localId);
+        const existing = await readJob(env, id);
+        if (existing && existing.owner !== auth.runner.owner) return textResponse("This book belongs to another designer.", { status: 403 });
+        // Sharing again replaces the copy: the old files go, so nobody
+        // downloads last week's version beside this week's.
+        for (const artifact of (existing && existing.artifacts) || []) {
+          if (artifact.key) await env.BOOK_STUDIO_FILES.delete(artifact.key);
+        }
+        const job = {
+          id,
+          owner: auth.runner.owner,
+          title: String(payload.title || "Untitled Book").slice(0, 200),
+          courseCode: String(payload.courseCode || "").slice(0, 40),
+          status: "Shared",
+          createdAt: (existing && existing.createdAt) || nowIso(),
+          sharedAt: nowIso(),
+          shared: {
+            localId,
+            stage: String(payload.workflowStatus || payload.stage || "").slice(0, 120),
+            from: String(payload.runnerName || "").slice(0, 120)
+          },
+          uploadedFiles: [],
+          artifacts: [],
+          log: []
+        };
+        appendJobLog(job, "Shared from Book Studio" + (job.shared.stage ? ": " + job.shared.stage : "") + ".");
+        await writeJob(env, job);
+        if (!existing) {
+          const ids = await readIndex(env);
+          await writeIndex(env, [id, ...ids.filter((entry) => entry !== id)]);
+        }
+        return jsonResponse(publicJob(job));
+      }
+
+      const unshareLocalId = pathname.startsWith("/api/runner/shares/") && request.method === "DELETE"
+        ? decodeURIComponent(pathname.slice("/api/runner/shares/".length)) : "";
+      if (unshareLocalId) {
+        const auth = await requireRunner(request, env);
+        if (auth.response) return auth.response;
+        if (!auth.runner.owner) return textResponse("Connect this computer to your own account first.", { status: 403 });
+        const id = await sharedBookId(auth.runner.owner, unshareLocalId);
+        const job = await readJob(env, id);
+        if (!job) return jsonResponse({ removed: false });
+        if (job.owner !== auth.runner.owner) return textResponse("This book belongs to another designer.", { status: 403 });
+        for (const artifact of job.artifacts || []) {
+          if (artifact.key) await env.BOOK_STUDIO_FILES.delete(artifact.key);
+        }
+        await env.BOOK_STUDIO_KV.delete("job:" + id);
+        await writeIndex(env, (await readIndex(env)).filter((entry) => entry !== id));
+        return jsonResponse({ removed: true });
       }
 
       let runnerJobId = getRunnerRouteId(pathname, "/claim");

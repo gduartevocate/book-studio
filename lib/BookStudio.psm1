@@ -10,6 +10,7 @@
 . (Join-Path $PSScriptRoot 'BookStudioQa.ps1')
 . (Join-Path $PSScriptRoot 'BookStudioOutline.ps1')
 . (Join-Path $PSScriptRoot 'BookStudioOutcomeAnalysis.ps1')
+. (Join-Path $PSScriptRoot 'BookStudioShare.ps1')
 
 function Get-BookStudioInstallPathStatus {
     # Windows PowerShell cannot write paths longer than 259 characters, and a
@@ -5810,6 +5811,18 @@ function Start-BookStudioServer {
                 catch { Send-BookStudioResponse -Context $context -StatusCode 400 -ContentType 'text/plain; charset=utf-8' -Body $_.Exception.Message }
                 continue
             }
+            # Sharing a book with everyone at Vocate: a read-only copy of its
+            # files on the web site. See lib/BookStudioShare.ps1.
+            if ($path -match '^/api/jobs/([^/]+)/share$' -and $request.HttpMethod -eq 'POST') {
+                try { $result=Start-BookStudioShare -DatabasePath $DatabasePath -JobId $Matches[1] -ProjectRoot $ProjectRoot; Send-BookStudioResponse -Context $context -Body (ConvertTo-BookStudioJson $result) }
+                catch { Send-BookStudioResponse -Context $context -StatusCode 400 -ContentType 'text/plain; charset=utf-8' -Body $_.Exception.Message }
+                continue
+            }
+            if ($path -match '^/api/jobs/([^/]+)/unshare$' -and $request.HttpMethod -eq 'POST') {
+                try { $result=Stop-BookStudioShare -DatabasePath $DatabasePath -JobId $Matches[1]; Send-BookStudioResponse -Context $context -Body (ConvertTo-BookStudioJson $result) }
+                catch { Send-BookStudioResponse -Context $context -StatusCode 400 -ContentType 'text/plain; charset=utf-8' -Body $_.Exception.Message }
+                continue
+            }
             if ($path -match '^/api/jobs/([^/]+)/generate-images$' -and $request.HttpMethod -eq 'POST') {
                 try { $result=Start-BookStudioSavedImageGeneration -DatabasePath $DatabasePath -JobId $Matches[1] -ProjectRoot $ProjectRoot; Send-BookStudioResponse -Context $context -Body (ConvertTo-BookStudioJson $result) }
                 catch { Send-BookStudioResponse -Context $context -StatusCode 400 -ContentType 'text/plain; charset=utf-8' -Body $_.Exception.Message }
@@ -5913,6 +5926,7 @@ function Start-BookStudioServer {
 }
 
 Export-ModuleMember -Function Test-BookStudioCodexConnection
+Export-ModuleMember -Function Invoke-BookStudioShare, Start-BookStudioShare, Stop-BookStudioShare
 Export-ModuleMember -Function Update-BookStudioBlueprintReadings
 Export-ModuleMember -Function Set-BookStudioJobSetup, Get-BookStudioSetupSummary, Assert-BookStudioSetupChangeAllowed, Get-BookStudioSetupStageReset
 Export-ModuleMember -Function Repair-BookStudioParkedJobs

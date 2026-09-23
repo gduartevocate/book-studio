@@ -294,4 +294,11 @@ const onThePc = makeNotices("localhost", 401);
 await onThePc.api("/api/jobs").catch(() => {});
 check(onThePc.added.length === 0, "Book Studio opened on the PC itself has no sign-in to lose.");
 
+// Download links on the books page. Stored as /api/jobs/..., which on the one
+// site belongs to the viewer's own computer, so every download went there.
+const booksPage = pages["/cloud/"] || await page("/cloud/");
+check(booksPage.includes('indexOf("/api/") === 0 ? "/cloud" : ""'), "Download links on the books page must carry the /cloud prefix on the one site.");
+check(/Shared " \+ formatDate\(job\.sharedAt/.test(booksPage), "A shared book must say when it was shared, not how many source files it has.");
+check(booksPage.includes('"Stage: " + job.shared.stage'), "A shared book must show its stage, not the last file upload.");
+
 console.log("PASS: " + checks + " page checks (delivered scripts parse, ids exist, connect command survives minting)");
