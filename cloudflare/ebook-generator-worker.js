@@ -1867,14 +1867,31 @@ function versionNumber(version) {
 // and cannot serve a page is worse than a desktop that reported a minute ago
 // and can. A machine that is too old is still returned, separately, so the
 // designer can be told which computer is holding them up and why.
+// One entry per computer, the most recent. Running the setup command again
+// gives a computer a new id, and the record under its old one lingers until it
+// expires: the Vocate laptop was listed twice, counted as two computers ("1 of
+// 3 ready" with two machines), and the stale copy still said "Ready" when the
+// running agent had not yet checked Codex. Only one agent runs per computer,
+// so the newest record for a computer is the one that is true.
+function latestPerComputer(machines) {
+  const sorted = [...machines].sort((left, right) => String(right.seenAt || "").localeCompare(String(left.seenAt || "")));
+  const kept = new Set();
+  return sorted.filter((machine) => {
+    const computer = String(machine.runnerName || "").trim().toLowerCase() || "id:" + machine.id;
+    if (kept.has(computer)) return false;
+    kept.add(computer);
+    return true;
+  });
+}
+
 async function resolveMachineForUser(env, email) {
   const listed = await env.BOOK_STUDIO_KV.list({ prefix: "runner:status:" + email + ":" });
-  const machines = [];
+  const found = [];
   for (const key of listed.keys) {
     const record = await env.BOOK_STUDIO_KV.get(key.name, "json");
-    if (record) machines.push(record);
+    if (record) found.push(record);
   }
-  machines.sort((left, right) => String(right.seenAt || "").localeCompare(String(left.seenAt || "")));
+  const machines = latestPerComputer(found);
   const capable = machines.filter((machine) => versionNumber(machine.version) >= versionNumber(MINIMUM_BRIDGE_VERSION));
   return { machine: capable[0] || null, tooOld: capable.length ? null : machines[0] || null };
 }
@@ -2343,7 +2360,9 @@ async function handleRequest(request, env) {
           const shared = await env.BOOK_STUDIO_KV.get("runner:status:shared", "json");
           if (shared) machines.push(shared);
         }
-        machines.sort((left, right) => String(right.seenAt || "").localeCompare(String(left.seenAt || "")));
+        const computers = latestPerComputer(machines);
+        machines.length = 0;
+        machines.push(...computers);
         if (!machines.length) {
           return jsonResponse({
             connected: false,

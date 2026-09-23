@@ -98,7 +98,9 @@ function Test-LocalCodexConnection {
         # The connection test reports connectionStatus/connectionMessage, not
         # status/message; reading the wrong pair reported every healthy Codex
         # as unavailable with no explanation.
-        $connection = Test-BookStudioCodexConnection -ProjectRoot $ProjectRoot
+        # The longest the test allows: a slow first answer on a laptop is not a
+        # broken Codex, and a timeout here used to be reported as one.
+        $connection = Test-BookStudioCodexConnection -ProjectRoot $ProjectRoot -TimeoutSeconds 45
         # A check that timed out is not a Codex that is missing or signed out.
         # Reporting the two the same way told a designer their Codex was broken
         # when the only thing that had happened was a slow answer, and sent them

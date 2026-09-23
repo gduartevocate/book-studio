@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.23.13 (2026-09-23)
+
+- Steps that use Codex now test the connection themselves when needed, instead of asking you to run Test connection first; a slow background check no longer undoes a successful test.
+
 ## v2026.09.23.12 (2026-09-23)
 
 - Running the setup command again now replaces a Book Studio agent that is already running, and an out-of-date local Book Studio server is restarted when nothing is being written. No administrator rights needed.

@@ -55,6 +55,31 @@ function Get-BookStudioConnectionResult {
     }catch{return $null}
 }
 
+# A working connection, tested now if the last test is not a recent pass.
+# Designers were told "Run Test connection successfully" moments after doing
+# exactly that: the proof lasts ten minutes, and the agent's own ten-minute
+# check writes to the same record, so a slow check on the Vocate laptop left a
+# timeout where their pass had been. Testing here costs one short Codex reply
+# and answers the question the step is really asking. The time limit leaves
+# room inside the 50 seconds a request carried from the web site is given.
+function Get-BookStudioWorkingConnection {
+    param([string]$ProjectRoot,[string]$CommandPath,[ValidateRange(1,45)][int]$TimeoutSeconds=40)
+    $connection=Get-BookStudioConnectionResult -ProjectRoot $ProjectRoot -CommandPath $CommandPath
+    if($connection -and $connection.status -eq 'PASS'){return $connection}
+    try{$null=Test-BookStudioCodexConnection -ProjectRoot $ProjectRoot -TimeoutSeconds $TimeoutSeconds}catch{}
+    $tested=Get-BookStudioConnectionResult -ProjectRoot $ProjectRoot -CommandPath $CommandPath
+    if($tested){return $tested}
+    return $connection
+}
+
+# Why a step cannot use Codex, in the words of the test that just ran, rather
+# than an instruction to go and run that test again.
+function Get-BookStudioConnectionRefusal {
+    param([object]$Connection,[string]$Action)
+    $reason=if($Connection -and $Connection.message){[string]$Connection.message}else{'Codex did not answer the connection test.'}
+    "Codex is not working on this computer right now, so $Action cannot start. $reason"
+}
+
 function Test-BookStudioCodexConnection {
     param([Parameter(Mandatory)][string]$ProjectRoot,[ValidateRange(1,45)][int]$TimeoutSeconds=25)
     $command=Resolve-BookStudioCodexCommand -ProjectRoot $ProjectRoot
@@ -83,6 +108,10 @@ function Test-BookStudioCodexConnection {
         $failure=[pscustomobject]@{kind='sandbox';message="Codex answered, but it did not confirm file-editing access (reported sandbox: '$sandboxMode'). Book Studio needs workspace-write to draft and repair books. Update Codex CLI with 'codex update' and test again.";exitCode=$process.ExitCode}
     }
     $result=[pscustomobject]@{status=$(if($pass){'PASS'}else{'FAIL'});checkedAt=(Get-Date).ToString('o');identity=(Get-BookStudioConnectionIdentity $command.Source);kind=$(if($pass){''}else{$failure.kind});message=$(if($pass){'Connection tested: a real Codex final response was received and file editing (workspace-write, non-admin sandbox) is available.'}else{$failure.message});exitCode=$process.ExitCode;logPath=$errorPath;sandbox=$sandboxMode}
-    Set-BookStudioConnectionResult -ProjectRoot $ProjectRoot -Result $result
+    # A test that ran out of time learned nothing about the connection, so it
+    # never replaces a recent pass: the agent's background check timing out on
+    # a slow laptop was undoing the designer's own successful test.
+    $keep=if(-not $pass -and $result.kind -eq 'timeout'){Get-BookStudioConnectionResult -ProjectRoot $ProjectRoot -CommandPath $command.Source}
+    if(-not ($keep -and $keep.status -eq 'PASS')){Set-BookStudioConnectionResult -ProjectRoot $ProjectRoot -Result $result}
     Get-BookStudioCodexStatus -ProjectRoot $ProjectRoot
 }

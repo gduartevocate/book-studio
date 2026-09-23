@@ -327,6 +327,29 @@ check(afterUpgrade.json.machines.length === 3, "The upgraded machine must be lis
 const older = afterUpgrade.json.machines.filter((machine) => machine.runnerName === "OLDER / gio");
 check(older.length === 1, "The upgraded machine must appear once, not twice; saw " + older.length);
 
+// 17b. Running the setup command again gives a computer a new token and id,
+//      while the record under its old id lingers until it expires. The Vocate
+//      laptop was then listed twice and counted twice ("1 of 3 ready" with two
+//      computers), and its stale copy still said Ready.
+const firstSetup = await call("POST", "/api/runner-tokens", { cookie: admin, body: { label: "Laptop, first setup" } });
+const secondSetup = await call("POST", "/api/runner-tokens", { cookie: admin, body: { label: "Laptop, setup run again" } });
+await report(firstSetup.json.token, "VES-1H84211Y80 / GiovanniDuarte", "Connected", { version: "" });
+await new Promise((resolve) => setTimeout(resolve, 5));
+await report(secondSetup.json.token, "VES-1H84211Y80 / GiovanniDuarte", "Unknown", { version: "2026.09.23.12" });
+const afterSetupAgain = await call("GET", "/api/runner/status", { cookie: admin });
+const laptopRows = afterSetupAgain.json.machines.filter((machine) => machine.runnerName === "VES-1H84211Y80 / GiovanniDuarte");
+check(laptopRows.length === 1, "A computer set up twice must be listed once, saw " + laptopRows.length);
+check(laptopRows[0].version === "2026.09.23.12" && laptopRows[0].codex.status === "Unknown", "And as its running agent reports it, not as the stale copy.");
+// Case and spacing in the name do not make a second computer.
+await new Promise((resolve) => setTimeout(resolve, 5));
+await report(firstSetup.json.token, " ves-1h84211y80 / giovanniduarte ", "Connected", { version: "2026.09.23.12" });
+const recased = (await call("GET", "/api/runner/status", { cookie: admin })).json.machines.filter((machine) => /ves-1h84211y80/i.test(machine.runnerName));
+check(recased.length === 1 && recased[0].codex.status === "Connected", "The newest report for a computer wins, however its name is cased.");
+// Two different computers are still two.
+check(afterSetupAgain.json.machines.some((machine) => machine.runnerName === "LAPTOP / gio") && afterSetupAgain.json.machines.some((machine) => machine.runnerName === "NEWKING / gio"), "Different computers must still each be listed.");
+await kv.delete("runner:status:boss@vocate.org:" + (await kv.get("runner:token:" + firstSetup.json.token, "json")).id);
+await kv.delete("runner:status:boss@vocate.org:" + (await kv.get("runner:token:" + secondSetup.json.token, "json")).id);
+
 // 18. A computer has no browser session, so it cannot ask the page whether it
 //     arrived. It asks with the credential it already has, which is what lets
 //     the setup command answer "did that work?" on the screen the designer is

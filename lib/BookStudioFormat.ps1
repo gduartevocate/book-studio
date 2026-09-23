@@ -44,7 +44,8 @@ function Assert-BookStudioGenerationReady {
     $drafting = $null -eq $Job.options.useCodexDrafting -or [bool]$Job.options.useCodexDrafting
     if ($drafting -or $Job.options.useCodexImages) {
         $command = Resolve-BookStudioCodexCommand -ProjectRoot $ProjectRoot
-        $connection = if ($command) { Get-BookStudioConnectionResult -ProjectRoot $ProjectRoot -CommandPath $command.Source }
-        if (-not $connection -or $connection.status -ne 'PASS') { throw 'Run Test connection successfully before starting AI generation. Cached sign-in is not a working-connection check.' }
+        if (-not $command) { throw 'Codex is not installed on this computer, or Book Studio cannot find codex.exe. Set the path in Settings, then try again.' }
+        $connection = Get-BookStudioWorkingConnection -ProjectRoot $ProjectRoot -CommandPath $command.Source
+        if (-not $connection -or $connection.status -ne 'PASS') { throw (Get-BookStudioConnectionRefusal -Connection $connection -Action 'AI generation') }
     }
 }

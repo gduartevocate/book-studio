@@ -245,6 +245,58 @@ Check (-not (& $studio {param($r) Get-BookStudioConnectionResult $r 'different.e
 $record.checkedAt=(Get-Date).AddMinutes(-11).ToString('o')
 & $studio {param($r,$v) Set-BookStudioConnectionResult $r $v} $fixture $record
 Check (-not (& $studio {param($r,$c) Get-BookStudioConnectionResult $r $c} $fixture $command)) 'Expired probe still reported connected.'
+
+# A designer was told "Run Test connection successfully" moments after doing
+# it: the proof lasts ten minutes, and the agent's background check shares the
+# record, so a slow check on the laptop replaced their pass with a timeout.
+# Steps now test for themselves when there is no recent pass, and a timeout
+# never replaces one. Codex itself is never called: the process is a stand-in.
+$fresh=[pscustomobject]@{status='PASS';checkedAt=(Get-Date).ToString('o');identity=$identity;message='ok'}
+& $studio {param($r,$v) Set-BookStudioConnectionResult $r $v} $fixture $fresh
+$afterTimeout=& $studio {
+    param($r,$c)
+    function Resolve-BookStudioCodexCommand { [pscustomobject]@{Source=$c} }
+    function Get-BookStudioCodexStatus { 'status' }
+    # Stands in for a Codex that does not answer within the limit.
+    function Start-Process { [Diagnostics.Process]::Start((New-Object Diagnostics.ProcessStartInfo -Property @{FileName='powershell.exe';Arguments='-NoProfile -Command Start-Sleep -Seconds 20';WindowStyle='Hidden';UseShellExecute=$false;RedirectStandardError=$false})) }
+    $null=Test-BookStudioCodexConnection -ProjectRoot $r -TimeoutSeconds 1
+    Get-BookStudioConnectionResult $r $c
+} $fixture $command
+Check ($afterTimeout.status -eq 'PASS' -and $afterTimeout.message -eq 'ok') 'A connection test that timed out replaced a recent pass.'
+$stale=[pscustomobject]@{status='FAIL';kind='timeout';checkedAt=(Get-Date).ToString('o');identity=$identity;message='timed out'}
+& $studio {param($r,$v) Set-BookStudioConnectionResult $r $v} $fixture $stale
+$afterSecondTimeout=& $studio {
+    param($r,$c)
+    function Resolve-BookStudioCodexCommand { [pscustomobject]@{Source=$c} }
+    function Get-BookStudioCodexStatus { 'status' }
+    function Start-Process { [Diagnostics.Process]::Start((New-Object Diagnostics.ProcessStartInfo -Property @{FileName='powershell.exe';Arguments='-NoProfile -Command Start-Sleep -Seconds 20';WindowStyle='Hidden';UseShellExecute=$false})) }
+    $null=Test-BookStudioCodexConnection -ProjectRoot $r -TimeoutSeconds 1
+    Get-BookStudioConnectionResult $r $c
+} $fixture $command
+Check ($afterSecondTimeout.status -eq 'FAIL' -and $afterSecondTimeout.kind -eq 'timeout') 'Without a pass to protect, a timeout must still be recorded.'
+
+# With no recent pass the step tests for itself, once, and goes ahead on a pass.
+$working=& $studio {
+    param($r,$c,$id)
+    $script:tests=0
+    function Test-BookStudioCodexConnection { param($ProjectRoot,$TimeoutSeconds) $script:tests++; Set-BookStudioConnectionResult $ProjectRoot ([pscustomobject]@{status='PASS';checkedAt=(Get-Date).ToString('o');identity=$id;message='tested now'}) }
+    $got=Get-BookStudioWorkingConnection -ProjectRoot $r -CommandPath $c
+    $again=Get-BookStudioWorkingConnection -ProjectRoot $r -CommandPath $c
+    [pscustomobject]@{first=$got;tests=$script:tests;again=$again}
+} $fixture $command $identity
+Check ($working.first.status -eq 'PASS' -and $working.first.message -eq 'tested now') 'A step with no recent pass must test the connection itself and go ahead.'
+Check ($working.tests -eq 1 -and $working.again.status -eq 'PASS') 'A recent pass must be used as it is, not tested again.'
+# And when the test fails, the step says why, not "run Test connection".
+$quota=[pscustomobject]@{status='FAIL';kind='quota';checkedAt=(Get-Date).ToString('o');identity=$identity;message='Codex reported a usage or rate limit.'}
+$refusal=& $studio {param($v) Get-BookStudioConnectionRefusal -Connection $v -Action 'AI generation'} $quota
+Check ($refusal -match 'usage or rate limit' -and $refusal -notmatch 'Run Test connection') 'A refusal must give the reason from the test that just ran.'
+foreach($file in @('lib/BookStudioFormat.ps1','lib/BookStudioOutcomeAnalysis.ps1','lib/BookStudio.psm1')){
+    $text=Get-Content -LiteralPath (Join-Path $root $file) -Raw -Encoding UTF8
+    Check ($text -notmatch 'Run Test connection successfully|Test the Codex connection successfully') "$file still sends the designer to test the connection by hand."
+    Check ($text -notmatch 'Get-BookStudioConnectionResult -ProjectRoot \$ProjectRoot -CommandPath \$(command|codexCommand)\.Source\s*\r?\n\s*if ?\(') "$file still gates on the stored result without testing."
+}
+Check ((Get-Content -LiteralPath (Join-Path $root 'cloud-book-runner.ps1') -Raw) -match 'Test-BookStudioCodexConnection -ProjectRoot \$ProjectRoot -TimeoutSeconds 45') 'The agent''s background check must allow the longest test time.'
+Remove-Item -LiteralPath (Join-Path $fixture '.bookstudio/codex-connection.json') -Force -ErrorAction SilentlyContinue
 $configured=Join-Path $fixture 'override.exe';Copy-Item -LiteralPath (Join-Path $PSHOME 'powershell.exe') -Destination $configured
 $configured | Set-Content -LiteralPath (Join-Path $fixture 'codex-path.txt') -Encoding UTF8
 Check ((Resolve-BookStudioCodexCommand -ProjectRoot $fixture).Source -eq $configured) 'Saved executable override did not take precedence.'

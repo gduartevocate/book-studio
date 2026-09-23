@@ -108,9 +108,9 @@ function Start-BookStudioOutcomeAnalysis {
     if (-not $codexCommand) {
         throw 'The optional Codex assistant is not available on this computer, so the analysis cannot run. Write the outcomes yourself in the editor below and approve them, or install Codex CLI and sign in.'
     }
-    $connection = Get-BookStudioConnectionResult -ProjectRoot $ProjectRoot -CommandPath $codexCommand.Source
+    $connection = Get-BookStudioWorkingConnection -ProjectRoot $ProjectRoot -CommandPath $codexCommand.Source
     if (-not $connection -or $connection.status -ne 'PASS') {
-        throw 'Test the Codex connection successfully before running the analysis. You can also write the outcomes yourself in the editor below and approve them.'
+        throw ((Get-BookStudioConnectionRefusal -Connection $connection -Action 'the analysis') + ' You can also write the outcomes yourself in the editor below and approve them.')
     }
 
     $requestId = 'outcomes-{0}-{1}' -f (Get-Date).ToString('yyyyMMdd-HHmmss'), ([guid]::NewGuid().ToString('N').Substring(0, 6))

@@ -4357,8 +4357,8 @@ function New-BookStudioAiRequest {
     if (-not $codexCommand) {
         throw "Optional Codex assistant is not available on this computer. Book generation and Word export can still work, but Book Chat edits require Codex CLI. Install Codex and sign in, or create codex-path.txt beside Start Book Studio.cmd with the full path to codex.exe."
     }
-    $connection=Get-BookStudioConnectionResult -ProjectRoot $ProjectRoot -CommandPath $codexCommand.Source
-    if(-not $connection -or $connection.status -ne 'PASS'){throw 'Test the Codex connection successfully before sending a chat or edit request. If sign-in failed, sign in again first.'}
+    $connection=Get-BookStudioWorkingConnection -ProjectRoot $ProjectRoot -CommandPath $codexCommand.Source
+    if(-not $connection -or $connection.status -ne 'PASS'){throw (Get-BookStudioConnectionRefusal -Connection $connection -Action 'this chat or edit request')}
 
     $requestId = "ai-{0}-{1}" -f (Get-Date).ToString("yyyyMMdd-HHmmss"), ([guid]::NewGuid().ToString("N").Substring(0, 6))
     $requestRelativeFolder = "codex-requests/$requestId"
