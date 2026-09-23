@@ -184,4 +184,75 @@ check(/machine\.version/.test(script), "The connect page must show which Book St
 check(/not updating itself/.test(script), "The connect page must say when a computer has stopped updating itself.");
 check(/keeps itself up to date/.test(script), "And say when it has not.");
 
+// Found by the security audit of 2026-09-23: values from other machines and
+// other people were written into this page as markup. A computer names itself
+// and an administrator types an address; either could carry a script.
+const markupWrites = [...script.matchAll(/innerHTML\s*=([\s\S]*?);\s*$/gm)].map((match) => match[1]);
+check(markupWrites.length > 3, "The markup scan found too few writes; the pattern is wrong.");
+for (const write of markupWrites) {
+  const risky = [...write.matchAll(/\+\s*([A-Za-z_][\w.]*(?:\.(?:message|email|detail|token|password|version|reason|runnerName|label))[\w.]*)/g)].map((m) => m[1]);
+  for (const value of risky) check(false, "The connect page writes " + value + " as markup without esc().");
+}
+check(/function esc\(/.test(script), "The connect page must have an escaping helper.");
+check(!script.includes('"""'), "The escaping helper must survive the template literal it lives in.");
+
+// Chapter links. A manuscript link became <a href> with whatever it said, so
+// [see this](javascript:...) ran script when clicked, on a site that shares an
+// origin with the cloud's own account pages.
+const client = readFileSync(new URL("../book-studio/app.js", import.meta.url), "utf8");
+const helpers = client.slice(client.indexOf("function escapeHtml"), client.indexOf("function markdownTableToHtml"));
+const linkApi = new Function(helpers + "; return { inlineMarkdownToHtml, isSafeLinkTarget };")();
+for (const bad of ["javascript:alert(1)", " JavaScript:alert(1)", "data:text/html,x", "vbscript:x", "//elsewhere.example"]) {
+  check(!linkApi.isSafeLinkTarget(bad), "A chapter link to " + bad + " must not become a link.");
+  check(!/<a /.test(linkApi.inlineMarkdownToHtml("[x](" + bad + ")")), "A chapter link to " + bad + " must render as plain text.");
+}
+for (const good of ["https://example.org/a", "http://example.org", "mailto:a@b.co", "#chapter-1-note-1", "/relative/path"]) {
+  check(linkApi.isSafeLinkTarget(good), "A chapter link to " + good + " must still work.");
+}
+
+// The guide for instructional designers. A guide that names a button
+// slightly differently from the button sends people looking for something that
+// is not there, so every control it names in bold must exist, word for word, in
+// Book Studio itself.
+const guide = await page("/cloud/guide");
+const signupPage = await page("/cloud/signup");
+const studioText = ["app.js", "production.js", "setup-change.js", "outcome-analysis.js", "index.html"]
+  .map((file) => readFileSync(new URL("../book-studio/" + file, import.meta.url), "utf8")).join("\n");
+const decode = (text) => text.replace(/&amp;/g, "&");
+const named = [...guide.matchAll(/<strong>([^<]{3,60})<\/strong>/g)].map((m) => decode(m[1]))
+  .filter((label) => /^[A-Z]/.test(label) && !/[.?:]$/.test(label) && label.split(" ").length <= 8);
+// Checked from both ends. Each control a designer is sent to must be named in
+// the guide exactly, and must exist in Book Studio: a label that only matched
+// a pattern let a renamed button slip out of the check unnoticed.
+const requiredControls = ["Change setup", "Read readings from the document again", "Remove entries with no URL", "Fix QA with Codex",
+  "Delete book", "Approve format & generate book", "Save changes & update preview", "Sources and image setting"];
+for (const label of requiredControls) {
+  check(named.includes(label), "The guide must name the control '" + label + "' exactly as Book Studio shows it.");
+}
+const controls = named.filter((label) => requiredControls.includes(label));
+check(controls.length >= 6, "The guide should name the controls a designer uses; found " + controls.length);
+for (const label of controls) {
+  check(studioText.includes(label), "The guide names '" + label + "', which Book Studio does not show.");
+}
+for (const option of ["Uploaded teaching documents only", "Required readings from blueprint and links below", "Discover additional sources (advanced)", "Also research additional sources beyond the required readings"]) {
+  check(guide.includes(option), "The guide must use the source option wording Book Studio shows: " + option);
+  check(studioText.includes(option), "Book Studio no longer shows '" + option + "', so the guide is out of date.");
+}
+for (const section of ['id="new"', 'id="steps"', 'id="sources"', 'id="change"', 'id="fix"', 'id="safe"']) {
+  check(guide.includes(section), "The guide is missing its section " + section + ".");
+}
+check(/href="\/cloud\/signup"/.test(guide) && /href="\/cloud\/connect"/.test(guide), "The guide must link to asking for an account and to connecting a computer.");
+check(/<html lang="en">/.test(guide) && /class="skip"/.test(guide), "The guide must declare its language and let a keyboard user skip to it.");
+
+// The request form: labelled fields, an announced result, and a way back.
+for (const field of ['for="name"', 'for="email"', 'for="note"']) check(signupPage.includes(field), "The request form must label " + field + ".");
+check(/role="status"[^>]*aria-live="polite"|aria-live="polite"[^>]*role="status"/.test(signupPage), "The request form must announce its result.");
+check(!/var status\s*=/.test(signupPage), "A top-level 'status' is window.status, a string; the form must not use it.");
+check(signupPage.includes("/cloud/login") && signupPage.includes("/cloud/guide"), "The request form must link to signing in and to the guide.");
+
+// And the sign-in page tells a new person where to go.
+const loginPage = pages["/cloud/login"];
+check(loginPage.includes("/cloud/signup") && loginPage.includes("/cloud/guide"), "The sign-in page must point a new person at the request form and the guide.");
+check(/id="note"[^>]*aria-live="polite"/.test(loginPage), "The sign-in page must announce why a sign-in failed.");
+
 console.log("PASS: " + checks + " page checks (delivered scripts parse, ids exist, connect command survives minting)");

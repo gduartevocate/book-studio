@@ -491,4 +491,125 @@ check(waited < 5000, "It must be reported at once, not after the timeout; waited
 check(/not listening/i.test(quiet.text), "It must say nobody is listening there: " + quiet.text.slice(0, 120));
 check(/within the hour|not be running/i.test(quiet.text), "And what to do about it.");
 
+// 25. Found by the security audit of 2026-09-23. Each check stands for a hole
+//     that was open on the live site.
+
+// A single book and its Word file were answered to anyone with the id, signed
+// in or not: the audit downloaded a finished 6 MB book with no session at all.
+await kv.put("job:private-1", JSON.stringify({ id: "private-1", owner: "reader@vocate.org", status: "Completed", title: "Private", createdAt: new Date().toISOString(), log: [], artifacts: [] }));
+const strangerBook = await worker.fetch(new Request("https://ebookstudio.vocate.app/cloud/api/jobs/private-1"), env);
+check(strangerBook.status === 401, "A book must not be readable without signing in, got " + strangerBook.status);
+const strangerFile = await worker.fetch(new Request("https://ebookstudio.vocate.app/cloud/api/jobs/private-1/artifact?name=x.docx"), env);
+check(strangerFile.status === 401, "A book's files must not be downloadable without signing in, got " + strangerFile.status);
+const memberBook = await call("GET", "/api/jobs/private-1", { cookie: designerAgain });
+check(memberBook.status === 200, "A signed-in designer can still read a book, got " + memberBook.status);
+
+// The session cookie was set for the whole vocate.app domain, handing every
+// designer's session to every other app on it.
+const freshLogin = await call("POST", "/api/login", { body: { email: "reader@vocate.org", password: "a-reader-password-12" } });
+const cookieHeader = freshLogin.headers.get("set-cookie") || "";
+check(cookieHeader.startsWith("__Host-"), "The session cookie must carry the __Host- prefix, got " + cookieHeader.split("=")[0]);
+check(!/Domain=/i.test(cookieHeader), "The session cookie must not be set for a whole domain.");
+check(/Path=\//.test(cookieHeader) && /Secure/.test(cookieHeader) && /HttpOnly/.test(cookieHeader), "And it must stay Secure, HttpOnly and site-wide.");
+
+// The shared token from the first spike could claim anyone's book.
+await kv.put("runner:token", "shared-spike-token");
+const legacyTry = await call("GET", "/api/runner/jobs", { headers: { "x-book-runner-token": "shared-spike-token" } });
+check(legacyTry.status === 401, "The old shared runner token must no longer be honoured, got " + legacyTry.status);
+
+// A book with no owner dates from before accounts; no machine may claim it.
+await kv.put("job:ownerless-1", JSON.stringify({ id: "ownerless-1", owner: "", status: "Queued", title: "Ownerless", createdAt: new Date().toISOString(), log: [] }));
+const indexNow = JSON.parse(kv.store.get("jobs:index").value);
+await kv.put("jobs:index", JSON.stringify([...indexNow, "ownerless-1"]));
+const claimable = await call("GET", "/api/runner/jobs", { headers: { "x-book-runner-token": laptopToken.json.token } });
+check(!claimable.json.jobs.some((job) => job.id === "ownerless-1"), "A machine must not be offered a book that has no owner.");
+
+// A change asked for from another site is refused; SameSite does not cover
+// other apps on vocate.app, which count as the same site.
+const crossSite = await worker.fetch(new Request("https://ebookstudio.vocate.app/cloud/api/logout", { method: "POST", headers: { origin: "https://typing.vocate.app", cookie: designerAgain } }), env);
+check(crossSite.status === 403, "A change requested from another site must be refused, got " + crossSite.status);
+const sameSite = await worker.fetch(new Request("https://ebookstudio.vocate.app/cloud/api/logout", { method: "POST", headers: { origin: "https://ebookstudio.vocate.app" } }), env);
+check(sameSite.status === 200, "A change requested from this site must still work, got " + sameSite.status);
+const agentNoOrigin = await call("POST", "/api/runner/status", { headers: { "x-book-runner-token": laptopToken.json.token }, body: { runnerName: "LAPTOP / gio", codex: { status: "Connected" } } });
+check(agentNoOrigin.status === 200, "An agent, which sends no Origin, must still be able to report itself.");
+
+// Every response carries the headers that stop framing and content sniffing.
+const anyPage = await worker.fetch(new Request("https://ebookstudio.vocate.app/cloud/login", { headers: { accept: "text/html" } }), env);
+check(anyPage.headers.get("x-frame-options") === "DENY", "Pages must refuse to be framed.");
+check(/frame-ancestors 'none'/.test(anyPage.headers.get("content-security-policy") || ""), "The content policy must forbid framing too.");
+check(anyPage.headers.get("x-content-type-options") === "nosniff", "Responses must not be content-sniffed.");
+check(Boolean(anyPage.headers.get("strict-transport-security")), "Browsers must be told to keep to HTTPS.");
+
+// Guessing across many addresses from one network is limited as well.
+for (let attempt = 0; attempt < 32; attempt++) {
+  await worker.fetch(new Request("https://ebookstudio.vocate.app/cloud/api/login", { method: "POST", headers: { "content-type": "application/json", "cf-connecting-ip": "203.0.113.9" }, body: JSON.stringify({ email: "spray" + attempt + "@vocate.org", password: "guess" }) }), env);
+}
+const sprayed = await worker.fetch(new Request("https://ebookstudio.vocate.app/cloud/api/login", { method: "POST", headers: { "content-type": "application/json", "cf-connecting-ip": "203.0.113.9" }, body: JSON.stringify({ email: "reader@vocate.org", password: "a-reader-password-12" }) }), env);
+check(sprayed.status === 429, "One network guessing across many addresses must be slowed down, got " + sprayed.status);
+
+// An administrator could store markup as an address; the only check was an @.
+const markupAddress = await call("POST", "/api/users", { cookie: admin, body: { email: "<img src=x onerror=alert(1)>@vocate.org" } });
+check(markupAddress.status === 400, "An address that is not an address must be refused, got " + markupAddress.status);
+
+// The old addresses must land on the page asked for, not on /cloud/cloud/...
+const oldLogin = await worker.fetch(new Request("https://ebook.vocate.app/cloud/login", { headers: { accept: "text/html" } }), env);
+check(!(oldLogin.headers.get("location") || "").includes("/cloud/cloud"), "An old link must not gain a second /cloud, got " + oldLogin.headers.get("location"));
+
+// 26. Asking for an account. Only a vocate.org address may ask, and asking
+//     creates nothing: an address proves only that someone typed it, so an
+//     administrator who knows their people approves every request. Before
+//     this, the only way in was an administrator adding someone by hand.
+const studioEnvForSignup = { ...env, SIGNUP_DOMAIN: "vocate.org" };
+const ask = (body, ip = "198.51.100." + Math.floor(Math.random() * 200)) => worker.fetch(new Request("https://ebookstudio.vocate.app/cloud/api/signup", {
+  method: "POST", headers: { "content-type": "application/json", "cf-connecting-ip": ip }, body: JSON.stringify(body)
+}), studioEnvForSignup).then(async (response) => ({ status: response.status, text: await response.text() }));
+
+check((await ask({ name: "Someone", email: "someone@gmail.com" })).status === 400, "An address outside vocate.org must not be able to ask for an account.");
+check((await ask({ name: "Someone", email: "someone@vocate.org.evil.example" })).status === 400, "A look-alike domain must not pass as vocate.org.");
+check((await ask({ name: "", email: "someone@vocate.org" })).status === 400, "A request must say who is asking.");
+const asked = await ask({ name: "New Designer", email: "New.Designer@Vocate.org", note: "RB1010" });
+check(asked.status === 200, "A vocate.org address may ask for an account, got " + asked.status);
+check(/administrator/.test(asked.text) && /Nothing is emailed/.test(asked.text), "The reply must say what happens next, and that nothing is emailed.");
+
+// Asking is not getting in.
+const tooSoon = await call("POST", "/api/login", { body: { email: "new.designer@vocate.org", password: "anything-at-all-12" } });
+check(tooSoon.status === 401, "Asking for an account must not create one.");
+
+// The same reply whether or not the address already has an account, so this
+// form cannot be used to find out who does.
+const already = await ask({ name: "Reader", email: "reader@vocate.org" });
+check(already.text === asked.text, "An address that already has an account must get the same reply as a new one.");
+check(!kv.store.has("signup:reader@vocate.org"), "And no request is recorded for someone who already has an account.");
+
+// Only an administrator sees and decides the requests.
+check((await call("GET", "/api/signups", { cookie: designerAgain })).status === 403, "A designer must not see account requests.");
+const pendingList = await call("GET", "/api/signups", { cookie: admin });
+check(pendingList.status === 200 && pendingList.json.requests.some((r) => r.email === "new.designer@vocate.org"), "An administrator sees the request, with the address in one case.");
+check(pendingList.json.requests.find((r) => r.email === "new.designer@vocate.org").note === "RB1010", "The note the person left is kept for the administrator.");
+check((await call("POST", "/api/signups/approve", { cookie: designerAgain, body: { email: "new.designer@vocate.org" } })).status === 403, "A designer must not approve a request.");
+
+const approved = await call("POST", "/api/signups/approve", { cookie: admin, body: { email: "new.designer@vocate.org" } });
+check(approved.status === 200 && typeof approved.json.password === "string" && approved.json.password.length >= 16, "Approving issues a password to hand over.");
+check(approved.json.user.mustChangePassword === true, "The issued password has to be changed at the first sign-in.");
+const firstIn = await call("POST", "/api/login", { body: { email: "new.designer@vocate.org", password: approved.json.password } });
+check(firstIn.status === 200 && firstIn.json.mustChangePassword === true, "The approved person can sign in, and is asked to choose a password.");
+check(!kv.store.has("signup:new.designer@vocate.org"), "An approved request no longer waits.");
+check((await call("POST", "/api/signups/approve", { cookie: admin, body: { email: "new.designer@vocate.org" } })).status === 404, "A request cannot be approved twice.");
+
+await ask({ name: "Not Staff", email: "declined@vocate.org" });
+const declined = await call("POST", "/api/signups/decline", { cookie: admin, body: { email: "declined@vocate.org" } });
+check(declined.status === 200 && !kv.store.has("signup:declined@vocate.org"), "A declined request is removed.");
+check((await call("POST", "/api/login", { body: { email: "declined@vocate.org", password: "anything-at-all-12" } })).status === 401, "A declined request leaves no way in.");
+
+// One network cannot flood the administrator with requests.
+let lastFromOneNetwork = null;
+for (let attempt = 0; attempt < 12; attempt++) lastFromOneNetwork = await ask({ name: "Flood " + attempt, email: "flood" + attempt + "@vocate.org" }, "192.0.2.77");
+check(lastFromOneNetwork.status === 429, "Requests from one network must be limited, got " + lastFromOneNetwork.status);
+
+// The guide and the request form are read before anyone has an account.
+for (const open of ["/cloud/guide", "/cloud/signup"]) {
+  const openPage = await worker.fetch(new Request("https://ebookstudio.vocate.app" + open, { headers: { accept: "text/html" } }), env);
+  check(openPage.status === 200, open + " must be readable without signing in, got " + openPage.status);
+}
+
 console.log("PASS: " + checks + " sign-in checks (sessions, password storage, lockout, administration, runner tokens)");

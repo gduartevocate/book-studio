@@ -76,6 +76,10 @@ REQUIRE_ACCESS = "true"
 # change their own password. Kept here rather than in the store, so losing the
 # store cannot promote anyone.
 ADMIN_EMAILS = "gduarte@vocate.org"
+# Who may ask for an account. Asking creates nothing: an address on this
+# domain proves only that someone typed it, so every request waits for an
+# administrator to approve it.
+SIGNUP_DOMAIN = "vocate.org"
 STUDIO_HOSTNAMES = "ebookstudio.vocate.app,studio.vocate.app"
 
 # One per connected machine. The browser and the agent must see each other

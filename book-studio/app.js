@@ -1024,10 +1024,21 @@ function escapeHtml(value) {
   })[character]);
 }
 
+// Only addresses that lead somewhere: the web, an email, or a place in the
+// book. A chapter link used to become <a href> with whatever the manuscript
+// said, so [see this](javascript:...) ran script when clicked -- and reached
+// through the web, this page shares a site with the cloud's account pages.
+function isSafeLinkTarget(target) {
+  const value = String(target || "").trim().replace(/&amp;/g, "&");
+  return /^(https?:|mailto:|#|\/(?!\/))/i.test(value);
+}
+
 function inlineMarkdownToHtml(value) {
   return escapeHtml(value)
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text, target) => isSafeLinkTarget(target)
+      ? `<a href="${target}" target="_blank" rel="noreferrer noopener">${text}</a>`
+      : text);
 }
 
 function parseMarkdownTableRow(value) {
@@ -3441,23 +3452,31 @@ async function loadCloudSettings() {
     const status = await api("/cloud/api/runner/status");
     const machines = status.machines || [];
     if (!machines.length) {
-      cloudMachines.innerHTML = "<dt>No computer</dt><dd>" + (status.detail || "Nothing of yours is running Book Studio.") + "</dd>";
+      cloudMachines.innerHTML = "<dt>No computer</dt><dd>" + escapeHtml(status.detail || "Nothing of yours is running Book Studio.") + "</dd>";
       return;
     }
     cloudMachines.innerHTML = machines.map((machine) => {
       const codex = machine.codex || {};
       const ready = codex.status === "Connected";
       const state = ready ? "Ready" : (codex.status === "Unknown" ? "Codex not checked yet" : "Codex " + String(codex.status || "unknown").toLowerCase());
-      return "<dt>" + (machine.runnerName || machine.label || "unnamed computer") + "</dt><dd>" +
-        state + (codex.version ? " - " + codex.version : "") +
-        " - last heard from " + describeLastSeen(machine.seenAt) +
-        (machine.version ? "<br>Book Studio " + machine.version : "") +
-        (ready ? "" : "<br>" + (codex.detail || "")) + "</dd>";
+      // A computer names itself, and its Codex describes its own state, so
+      // both are text here, never markup.
+      return "<dt>" + escapeHtml(machine.runnerName || machine.label || "unnamed computer") + "</dt><dd>" +
+        escapeHtml(state) + (codex.version ? " - " + escapeHtml(codex.version) : "") +
+        " - last heard from " + escapeHtml(describeLastSeen(machine.seenAt)) +
+        (machine.version ? "<br>Book Studio " + escapeHtml(machine.version) : "") +
+        (ready ? "" : "<br>" + escapeHtml(codex.detail || "")) + "</dd>";
     }).join("");
   } catch (error) {
-    cloudMachines.innerHTML = "<dt>Connection</dt><dd>Could not check: " + error.message + "</dd>";
+    cloudMachines.innerHTML = "<dt>Connection</dt><dd>Could not check: " + escapeHtml(error.message) + "</dd>";
   }
 }
+
+// The guide lives on the web site, so the link to it appears only when Book
+// Studio is reached through the web; opened on the PC itself there is nowhere
+// for it to go.
+const guideLink = document.querySelector("#guideLink");
+if (guideLink && reachedThroughTheCloud()) guideLink.hidden = false;
 
 const refreshCloudButton = document.querySelector("#refreshCloud");
 if (refreshCloudButton) {

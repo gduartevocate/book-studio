@@ -78,7 +78,9 @@ Check ($connect -match 'status\.detail') 'A machine that has never checked in mu
 #    deliberately open: a probe, the one that tells the page whether anyone is
 #    signed in, and the two that sign a person in and out, which cannot require
 #    the session they are there to create and destroy.
-$openRoutes = @('/api/health', '/api/identity', '/api/login', '/api/logout')
+# Asking for an account is open too: a person with no account has nothing to
+# sign in with. It creates nothing -- an administrator approves every request.
+$openRoutes = @('/api/health', '/api/identity', '/api/login', '/api/logout', '/api/signup')
 $blocks = [regex]::Matches($worker, '(?s)if \(request\.method === "(GET|POST)" && pathname === "(/api/[^"]+)"\) \{(.*?)\r?\n      \}')
 Check ($blocks.Count -ge 5) "Only $($blocks.Count) route bodies were matched; the scan pattern is wrong."
 foreach ($block in $blocks) {

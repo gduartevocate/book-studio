@@ -59,26 +59,27 @@ const CONNECT_HTML = `<!doctype html>
  .nav a, .linkish { color:#0d6efd; text-decoration:none; background:none; border:0; padding:0;
                     font:inherit; cursor:pointer; }
  .nav-here { font-weight:600; }
+ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible { outline:3px solid #0b62d6; outline-offset:2px; }
 </style></head><body><main>
-<nav class="nav"><a href="/">Book Studio</a><a href="__CLOUD__/">Cloud queue</a><span class="nav-here">Your computer</span>
+<nav class="nav"><a href="/">Book Studio</a><a href="__CLOUD__/">Your books</a><span class="nav-here">Your computer</span><a href="__CLOUD__/guide">Guide</a>
   <button class="linkish" id="signout">Sign out</button></nav>
 <h1>Connect your computer</h1>
 <p class="sub">Book Studio writes your book on your own PC, using the Codex you are already signed in to. This page pairs that machine with your account.</p>
 
-<section><h2>1. You</h2><div id="who">Checking…</div></section>
+<section><h2>1. You</h2><div id="who" aria-live="polite">Checking…</div></section>
 
 <section><h2>2. Your machine's token</h2>
   <p>Create one token per computer. It is shown once and is not stored anywhere it can be read back, so a lost token is replaced rather than recovered.</p>
   <div class="row"><input id="label" placeholder="Which computer is this? e.g. Gio desktop" style="flex:1;min-width:220px;padding:9px;border-radius:7px;border:1px solid var(--line);background:transparent;color:inherit">
   <button id="mint">Create token</button></div>
-  <div id="token"></div>
+  <div id="token" role="status" aria-live="polite"></div>
 </section>
 
 <section><h2>3. Set up that computer</h2>
   <p><strong>On the computer you just named</strong>, press the Windows key, type <strong>PowerShell</strong>,
   open it, and paste this one line in. It does not matter which folder the window is in.</p>
   <pre id="cmd">Create a token above and the command will appear here.</pre>
-  <div class="row"><button class="secondary" id="copy">Copy the command</button><span id="copied" class="muted"></span></div>
+  <div class="row"><button class="secondary" id="copy">Copy the command</button><span id="copied" class="muted" role="status" aria-live="polite"></span></div>
   <p>It installs or updates Book Studio on that computer, connects it to your account, and sets it to
   reconnect whenever you sign in to Windows. Running it again is safe. Leave the window it opens running:
   that is what writes your books.</p>
@@ -97,7 +98,7 @@ const CONNECT_HTML = `<!doctype html>
 </section>
 
 <section><h2>4. Your computers</h2>
-  <div class="row"><button class="secondary" id="check">Test connection</button><span id="state" class="pill">Not checked</span></div>
+  <div class="row"><button class="secondary" id="check">Test connection</button><span id="state" class="pill" role="status" aria-live="polite">Not checked</span></div>
   <dl id="detail"></dl>
 </section>
 <section id="people" hidden><h2>5. People</h2>
@@ -105,12 +106,26 @@ const CONNECT_HTML = `<!doctype html>
   change it the first time they sign in. Nothing is emailed, so nothing can be opened on their behalf.</p>
   <div class="row"><input id="newEmail" placeholder="name@vocate.org" style="flex:1;min-width:220px;padding:9px;border-radius:7px;border:1px solid var(--line);background:transparent;color:inherit">
   <button id="add">Add or reset</button></div>
-  <div id="issued"></div>
+  <div id="issued" role="status" aria-live="polite"></div>
+  <h3 id="requestsHeading" hidden>Waiting for approval</h3>
+  <table id="requests" aria-labelledby="requestsHeading"></table>
+  <h3>Everyone with an account</h3>
   <table id="roster"></table>
 </section>
 
 
 </main><script>
+// Everything written into the page as markup passes through here. The
+// values come from other machines, other people and other programs --
+// a computer names itself, an administrator types an address -- and any
+// one of them could otherwise carry a script into this page.
+function esc(value) {
+  return String(value == null ? "" : value).replace(/[&<>"']/g, function (character) {
+    // Written without a backslash: this page lives inside a template literal,
+    // which would eat it and leave three quotes in a row in the browser.
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character];
+  });
+}
 const el = (id) => document.getElementById(id);
 async function api(path, options) {
   const response = await fetch(path, options);
@@ -119,7 +134,7 @@ async function api(path, options) {
 }
 api("__CLOUD__/api/identity").then((identity) => {
   el("who").innerHTML = identity.email
-    ? "Signed in as <strong>" + identity.email + "</strong>. Books and machines you create belong to this address."
+    ? "Signed in as <strong>" + esc(identity.email) + "</strong>. Books and machines you create belong to this address."
     : "<span class='pill warn'>Not signed in</span> Sign-in is not switched on yet, so everything here is shared. Do not put a real course through it until it is.";
 }).catch(() => { el("who").textContent = "Could not read your identity."; });
 
@@ -127,13 +142,13 @@ el("mint").addEventListener("click", async () => {
   el("mint").disabled = true;
   try {
     const created = await api("__CLOUD__/api/runner-tokens", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ label: el("label").value }) });
-    el("token").innerHTML = "<p>Copy this now — it is not shown again.</p><pre>" + created.token + "</pre>";
+    el("token").innerHTML = "<p>Copy this now — it is not shown again.</p><pre>" + esc(created.token) + "</pre>";
     // Escaped twice on purpose. This line lives inside a template literal,
       // which eats one level of escaping: written once, the browser received a
       // real newline inside a quoted string and the page's entire script stopped
       // parsing, so nothing on it worked at all.
       el("cmd").textContent = 'irm ' + location.origin + '/setup.ps1?token=' + created.token + ' | iex';
-  } catch (error) { el("token").innerHTML = "<p class='bad'>" + error.message + "</p>"; }
+  } catch (error) { el("token").innerHTML = "<p class='bad'>" + esc(error.message) + "</p>"; }
   finally { el("mint").disabled = false; }
 });
 
@@ -158,7 +173,7 @@ el("check").addEventListener("click", async () => {
     const machines = status.machines || (status.connected ? [status] : []);
     if (!machines.length) {
       el("state").textContent = "No machine"; el("state").className = "pill warn";
-      el("detail").innerHTML = "<dt>Why</dt><dd>" + status.detail + "</dd>";
+      el("detail").innerHTML = "<dt>Why</dt><dd>" + esc(status.detail) + "</dd>";
       return;
     }
     const working = machines.filter((machine) => (machine.codex || {}).status === "Connected");
@@ -177,16 +192,16 @@ el("check").addEventListener("click", async () => {
       // Said plainly, because a computer that has stopped updating itself is
       // the reason a fix that shipped weeks ago has not reached this designer.
       const updateNote = machine.version
-        ? "<br>Book Studio " + machine.version + (updates.automatic === false ? " - not updating itself: " + (updates.reason || "unknown reason") : " - keeps itself up to date")
+        ? "<br>Book Studio " + esc(machine.version) + (updates.automatic === false ? " - not updating itself: " + esc(updates.reason || "unknown reason") : " - keeps itself up to date")
         : "";
-      return "<dt>" + name + "</dt><dd>" + state +
-        (codex.version ? " - " + codex.version : "") +
+      return "<dt>" + esc(name) + "</dt><dd>" + esc(state) +
+        (codex.version ? " - " + esc(codex.version) : "") +
         " - last heard from " + describeAge(machine.seenAt) +
-        (good ? "" : "<br>" + (codex.detail || "")) + updateNote + "</dd>";
+        (good ? "" : "<br>" + esc(codex.detail || "")) + updateNote + "</dd>";
     }).join("");
   } catch (error) {
     el("state").textContent = "Error"; el("state").className = "pill bad";
-    el("detail").innerHTML = "<dt>Detail</dt><dd>" + error.message + "</dd>";
+    el("detail").innerHTML = "<dt>Detail</dt><dd>" + esc(error.message) + "</dd>";
   }
 });
 
@@ -203,9 +218,9 @@ async function loadPeople() {
         const last = person.lastSignInAt ? new Date(person.lastSignInAt).toLocaleString() : "never signed in";
         const remove = person.email === listing.you
           ? ""
-          : '<button class="secondary remove" data-email="' + person.email + '">Remove</button>';
-        return "<tr><td>" + person.email + (person.admin ? " <span class='pill'>admin</span>" : "") +
-          "</td><td>" + state + "</td><td>" + last + "</td><td>" + remove + "</td></tr>";
+          : '<button class="secondary remove" data-email="' + esc(person.email) + '">Remove</button>';
+        return "<tr><td>" + esc(person.email) + (person.admin ? " <span class='pill'>admin</span>" : "") +
+          "</td><td>" + esc(state) + "</td><td>" + esc(last) + "</td><td>" + remove + "</td></tr>";
       }).join("");
     [...el("roster").querySelectorAll("button.remove")].forEach((button) => {
       button.addEventListener("click", async () => {
@@ -213,12 +228,48 @@ async function loadPeople() {
         try {
           await api("__CLOUD__/api/users/remove", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: button.dataset.email }) });
           await loadPeople();
-        } catch (error) { el("issued").innerHTML = "<p class='bad'>" + error.message + "</p>"; button.disabled = false; }
+        } catch (error) { el("issued").innerHTML = "<p class='bad'>" + esc(error.message) + "</p>"; button.disabled = false; }
       });
     });
   } catch (error) { /* not an administrator, or not signed in */ }
 }
 loadPeople();
+
+// People who asked for an account. Nothing happens for them until an
+// administrator who knows them approves: an address on the right domain
+// proves only that someone typed it.
+async function loadRequests() {
+  try {
+    const listing = await api("__CLOUD__/api/signups");
+    el("requestsHeading").hidden = !listing.requests.length;
+    el("requests").innerHTML = listing.requests.map((pending) =>
+      "<tr><td>" + esc(pending.name) + "<br><small>" + esc(pending.email) + "</small>" +
+      (pending.note ? "<br><small>" + esc(pending.note) + "</small>" : "") + "</td>" +
+      "<td><button class='decide' data-action='approve' data-email='" + esc(pending.email) + "'>Approve</button> " +
+      "<button class='secondary decide' data-action='decline' data-email='" + esc(pending.email) + "'>Decline</button></td></tr>"
+    ).join("");
+    [...el("requests").querySelectorAll("button.decide")].forEach((button) => {
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        try {
+          // Each route named in full rather than built from the button, so every
+          // address this page calls can be checked against the ones served.
+          const decisionPath = button.dataset.action === "approve" ? api("__CLOUD__/api/signups/approve", {
+            method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: button.dataset.email }) })
+            : api("__CLOUD__/api/signups/decline", {
+            method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: button.dataset.email }) });
+          const decided = await decisionPath;
+          el("issued").innerHTML = decided.password
+            ? "<p>Approved. Give this password to <strong>" + esc(decided.user.email) + "</strong> in person or over chat, not by email. It is shown once and has to be changed at their first sign-in.</p><pre>" + esc(decided.password) + "</pre>"
+            : "<p>Request from " + esc(button.dataset.email) + " declined.</p>";
+          await loadRequests();
+          await loadPeople();
+        } catch (error) { el("issued").innerHTML = "<p class='bad'>" + esc(error.message) + "</p>"; button.disabled = false; }
+      });
+    });
+  } catch (error) { /* not an administrator */ }
+}
+loadRequests();
 
 el("add").addEventListener("click", async () => {
   const email = el("newEmail").value.trim();
@@ -226,11 +277,11 @@ el("add").addEventListener("click", async () => {
   el("add").disabled = true;
   try {
     const created = await api("__CLOUD__/api/users", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email }) });
-    el("issued").innerHTML = "<p>Give this to <strong>" + created.user.email + "</strong> in person or over chat, not by email. " +
-      "It is shown once and has to be changed at their first sign-in.</p><pre>" + created.password + "</pre>";
+    el("issued").innerHTML = "<p>Give this to <strong>" + esc(created.user.email) + "</strong> in person or over chat, not by email. " +
+      "It is shown once and has to be changed at their first sign-in.</p><pre>" + esc(created.password) + "</pre>";
     el("newEmail").value = "";
     await loadPeople();
-  } catch (error) { el("issued").innerHTML = "<p class='bad'>" + error.message + "</p>"; }
+  } catch (error) { el("issued").innerHTML = "<p class='bad'>" + esc(error.message) + "</p>"; }
   finally { el("add").disabled = false; }
 });
 
@@ -248,6 +299,287 @@ el("signout").addEventListener("click", async () => {
   location.href = "__CLOUD__/login";
 });
 </script></body></html>`;
+
+// How Book Studio works, for an instructional designer who is new to it.
+// Open to anyone: the people who most need it do not have an account yet.
+const GUIDE_HTML = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How Book Studio works</title>
+<style>
+ :root { --ink:#0d3553; --soft:#4a5d6e; --line:#dbe2e8; --bg:#f6f8fa; --panel:#ffffff; --accent:#0b62d6; --note:#fff8e6; --note-line:#e8c35a; }
+ @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ink:#eef4f8; --soft:#a9bccb; --line:#2b3d4c; --bg:#0f1a22; --panel:#16242f; --accent:#6fb0ff; --note:#2a2412; --note-line:#8a7430; } }
+ :root[data-theme="dark"] { --ink:#eef4f8; --soft:#a9bccb; --line:#2b3d4c; --bg:#0f1a22; --panel:#16242f; --accent:#6fb0ff; --note:#2a2412; --note-line:#8a7430; }
+ * { box-sizing:border-box; }
+ body { margin:0; background:var(--bg); color:var(--ink); font:17px/1.65 "Segoe UI",system-ui,sans-serif; }
+ a { color:var(--accent); }
+ a:focus-visible, button:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+ .skip { position:absolute; left:-9999px; top:0; background:var(--panel); padding:8px 12px; }
+ .skip:focus { left:16px; top:12px; z-index:10; }
+ header.top { border-bottom:1px solid var(--line); background:var(--panel); }
+ header.top nav { max-width:880px; margin:0 auto; padding:14px 16px; display:flex; gap:18px; flex-wrap:wrap; align-items:center; font-size:.95rem; }
+ header.top nav strong { margin-right:auto; }
+ main { max-width:880px; margin:0 auto; padding:28px 16px 64px; }
+ h1 { font-size:2rem; line-height:1.2; margin:0 0 8px; }
+ .lead { color:var(--soft); font-size:1.1rem; margin:0 0 28px; }
+ h2 { font-size:1.4rem; margin:44px 0 10px; padding-top:8px; border-top:1px solid var(--line); }
+ h3 { font-size:1.1rem; margin:26px 0 6px; }
+ .start { display:grid; gap:12px; grid-template-columns:repeat(auto-fit, minmax(190px, 1fr)); margin:18px 0 8px; padding:0; list-style:none; counter-reset:step; }
+ .start li { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; counter-increment:step; }
+ .start li::before { content:counter(step); display:inline-grid; place-items:center; width:28px; height:28px; border-radius:50%; background:var(--accent); color:#fff; font-weight:700; font-size:.9rem; margin-bottom:8px; }
+ .start li strong { display:block; margin-bottom:4px; }
+ .toc { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 18px; }
+ .toc ol { margin:6px 0 0; padding-left:20px; }
+ .stage { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:4px 20px 16px; margin:14px 0; }
+ .stage h3 { margin-top:16px; }
+ .decide { margin:10px 0 0; padding:10px 14px; border-left:4px solid var(--accent); background:var(--bg); border-radius:0 8px 8px 0; }
+ .note { background:var(--note); border:1px solid var(--note-line); border-radius:10px; padding:12px 16px; margin:16px 0; }
+ dl.fix dt { font-weight:700; margin-top:18px; }
+ dl.fix dt code { font-weight:600; }
+ dl.fix dd { margin:4px 0 0; }
+ code { background:rgba(127,127,127,.14); padding:1px 6px; border-radius:5px; font-size:.92em; }
+ table { width:100%; border-collapse:collapse; margin:12px 0; font-size:.96rem; }
+ th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+ th { font-weight:700; }
+ footer { max-width:880px; margin:0 auto; padding:0 16px 48px; color:var(--soft); font-size:.9rem; }
+</style></head><body>
+<a class="skip" href="#content">Skip to the guide</a>
+<header class="top"><nav aria-label="Book Studio">
+  <strong>Book Studio guide</strong>
+  <a href="/">Open Book Studio</a>
+  <a href="__CLOUD__/">Your books</a>
+  <a href="__CLOUD__/login">Sign in</a>
+</nav></header>
+<main id="content">
+<h1>How Book Studio works</h1>
+<p class="lead">Book Studio turns a course document into a finished student e-book. The writing is done by Codex on your
+own computer; you make the decisions at each step, and nothing moves forward until you approve it.</p>
+
+<nav class="toc" aria-labelledby="toc-heading">
+  <strong id="toc-heading">On this page</strong>
+  <ol>
+    <li><a href="#new">New here? Start here</a></li>
+    <li><a href="#steps">Making a book, step by step</a></li>
+    <li><a href="#sources">Sources and readings</a></li>
+    <li><a href="#change">Changing your mind</a></li>
+    <li><a href="#team">Working with the team</a></li>
+    <li><a href="#fix">When something goes wrong</a></li>
+    <li><a href="#safe">Keeping your account safe</a></li>
+  </ol>
+</nav>
+
+<h2 id="new">New here? Start here</h2>
+<p>Four things, once. After that you only ever open Book Studio and make books.</p>
+<ol class="start">
+  <li><strong>Ask for an account</strong>Use <a href="__CLOUD__/signup">the request form</a> with your @vocate.org address. An administrator approves it and gives you a password in person or over chat.</li>
+  <li><strong>Sign in and choose a password</strong>The password you are given works once. Book Studio asks you to pick your own, at least 12 characters.</li>
+  <li><strong>Connect your computer</strong>Go to <a href="__CLOUD__/connect">Your computer</a> and follow the three steps there. It takes about ten minutes the first time.</li>
+  <li><strong>Start your first book</strong>Open Book Studio, upload your course document, and follow the steps below.</li>
+</ol>
+
+<h3>What your computer needs</h3>
+<p>Your books are written on your own computer, so it has to have two things installed. Nothing here needs an administrator.</p>
+<ul>
+  <li><strong>Git for Windows</strong> - from <a href="https://git-scm.com/download/win">git-scm.com/download/win</a>. Accept every default.</li>
+  <li><strong>Codex, signed in</strong> - install <a href="https://nodejs.org">Node.js</a>, then in PowerShell run <code>npm install -g @openai/codex</code> and then <code>codex login</code>.</li>
+</ul>
+<p>Then, on <a href="__CLOUD__/connect">Your computer</a>, create a token, copy the one line it shows you, and paste it into
+PowerShell (press the Windows key, type <em>PowerShell</em>, open it, paste). It installs Book Studio, connects it to your account,
+and tells you when it is done. After that your computer connects by itself whenever you sign in to Windows.</p>
+<div class="note"><strong>Your computer has to be on.</strong> Book Studio in your browser is only as available as the computer
+that writes your books. If it is switched off, the page tells you so.</div>
+
+<h2 id="steps">Making a book, step by step</h2>
+
+<div class="stage">
+<h3>1. Set up the book</h3>
+<p>Upload the course document and give the book a name. You also choose:</p>
+<table>
+  <thead><tr><th scope="col">Choice</th><th scope="col">What it means</th></tr></thead>
+  <tbody>
+    <tr><td>Kind of document</td><td><strong>Curriculum draft</strong> if it came from the academic team and its learning objectives still need work. <strong>Ebook-ready course file</strong> if the outcomes are final.</td></tr>
+    <tr><td>Reading level</td><td>Grade 8 unless you have a reason to change it. The book is written to it and checked against it.</td></tr>
+    <tr><td>Sources</td><td>Where the book may draw from. See <a href="#sources">Sources and readings</a>.</td></tr>
+    <tr><td>Image setting</td><td>Generic, Healthcare, Business, or your own description.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="stage">
+<h3>2. Review the objectives <span style="font-weight:400">(curriculum drafts only)</span></h3>
+<p>Book Studio analyses the draft. Course objectives are kept <strong>word for word</strong>. Learning objectives are reworked
+to follow good practice, each with the reason for the change and the chapter it belongs to.</p>
+<p class="decide">You decide: edit anything you disagree with, then approve. Nothing is planned until you do.</p>
+</div>
+
+<div class="stage">
+<h3>3. Check the format preview</h3>
+<p>A preview of every planned chapter in the finished layout, with placeholder text. It shows the structure, not the writing.</p>
+<p class="decide">You decide: change what is wrong and press <strong>Save changes &amp; update preview</strong>, or press <strong>Approve format &amp; generate book</strong>. Check the number of chapters here - it should match the weeks in your document.</p>
+</div>
+
+<div class="stage">
+<h3>4. Generate the book</h3>
+<p>Pressing <strong>Approve format &amp; generate book</strong> starts it. Codex writes every chapter on your computer. This usually takes about twenty minutes. You can close the browser; keep the computer on.</p>
+</div>
+
+<div class="stage">
+<h3>5. Review and fix</h3>
+<p>Book Studio checks the book and lists what needs attention: reading level, citations, objectives that are not taught, readings
+that could not be opened. <strong>Fix QA with Codex</strong> repairs what it can; you can also edit chapters yourself.</p>
+<p class="decide">You decide: when the book is ready for students.</p>
+</div>
+
+<div class="stage">
+<h3>6. Export</h3>
+<p>Download the Word and web versions from the book's page.</p>
+</div>
+
+<h2 id="sources">Sources and readings</h2>
+<table>
+  <thead><tr><th scope="col">Setting</th><th scope="col">What the book uses</th></tr></thead>
+  <tbody>
+    <tr><td>Uploaded teaching documents only</td><td>Your documents, nothing else.</td></tr>
+    <tr><td>Required readings from blueprint and links below</td><td>The weekly readings listed in your course document. Each one needs a working link, because it is opened, read and cited.</td></tr>
+    <tr><td>Required readings, plus research</td><td>The assigned readings, and additional sources the agent finds. Choose the setting above and tick <em>Also research additional sources beyond the required readings</em>.</td></tr>
+    <tr><td>Discover additional sources (advanced)</td><td>Sources the agent finds on its own.</td></tr>
+  </tbody>
+</table>
+<p>Every assigned reading must have a link. A reading that is only a title - a PDF file name, a book chapter without a web address -
+cannot be opened, so the book cannot teach from it or cite it.</p>
+
+<h2 id="change">Changing your mind</h2>
+<dl class="fix">
+  <dt>Wrong document, wrong name, or wrong kind of document</dt>
+  <dd>Open the book and use <strong>Change setup</strong>. You keep the same book and its history; there is no need to delete it.
+  Replacing the document takes the book back to the format preview.</dd>
+  <dt>The reading list looks wrong or out of date</dt>
+  <dd>Under <strong>Sources and image setting</strong>, press <strong>Read readings from the document again</strong>.</dd>
+  <dt>Starting over</dt>
+  <dd>Press <strong>Delete book</strong> on its page. This cannot be undone.</dd>
+</dl>
+
+<h2 id="team">Working with the team</h2>
+<p><a href="__CLOUD__/">Your books</a> shows your own books first. <strong>Everyone's books</strong> shows what every Vocate
+designer is working on, who owns it, and how far along it is. Everyone signed in can see every book.</p>
+
+<h2 id="fix">When something goes wrong</h2>
+<dl class="fix">
+  <dt>"No machine" or "Book Studio is not answering on your computer"</dt>
+  <dd>Your computer is off, or Book Studio is not running on it. Switch it on and sign in to Windows; it reconnects by itself.
+  If it still does not, run the command from <a href="__CLOUD__/connect">Your computer</a> once more.</dd>
+  <dt>"Codex not checked yet" or "Codex unavailable"</dt>
+  <dd>"Not checked yet" usually means Codex was slow to answer; it is checked again every ten minutes. "Unavailable" means Codex
+  is not installed or not signed in: run <code>codex login</code> in PowerShell.</dd>
+  <dt>"Required readings have no URLs"</dt>
+  <dd>Some readings have no link. Press <strong>Read readings from the document again</strong>, then add links for any that remain,
+  or remove them with <strong>Remove entries with no URL</strong>.</dd>
+  <dt>"The course document produced more than one chapter with the same number"</dt>
+  <dd>The document repeats its week headings, usually in a reading list at the end. Keep that list under one heading, or remove the
+  repeated week labels, then use <strong>Change setup</strong> to upload it again.</dd>
+  <dt>"This book is still generating"</dt>
+  <dd>Wait for it to finish. If it has clearly stopped, refresh the page; a book that is no longer running clears itself.</dd>
+  <dt>"Too many attempts"</dt>
+  <dd>Wait fifteen minutes, or ask an administrator for a new password.</dd>
+  <dt>I forgot my password</dt>
+  <dd>Ask an administrator. There is no reset email: mail scanners open links in emails before you can, which spends them.</dd>
+</dl>
+
+<h2 id="safe">Keeping your account safe</h2>
+<ul>
+  <li>Passwords are never sent by email. Anyone who emails you one is not Book Studio.</li>
+  <li>Do not share your password, and do not share the token for your computer.</li>
+  <li>Sign out on a computer that other people use.</li>
+  <li>Upload only course material. Do not upload student records or personal information.</li>
+</ul>
+</main>
+<footer>Questions? Ask your Book Studio administrator.</footer>
+</body></html>`;
+
+// Asking for an account. It creates nothing by itself; see /api/signup.
+const SIGNUP_HTML = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Request an account</title>
+<style>
+ :root { --ink:#0d3553; --soft:#4a5d6e; --line:#dbdbdb; --bg:#f9f9f9; --panel:#ffffff; --bad:#b42318; --ok:#067647; --accent:#0b62d6; }
+ @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ink:#eef4f8; --soft:#a9bccb; --line:#2b3d4c; --bg:#0f1a22; --panel:#16242f; --bad:#ff8a80; --ok:#6fd49a; --accent:#6fb0ff; } }
+ :root[data-theme="dark"] { --ink:#eef4f8; --soft:#a9bccb; --line:#2b3d4c; --bg:#0f1a22; --panel:#16242f; --bad:#ff8a80; --ok:#6fd49a; --accent:#6fb0ff; }
+ * { box-sizing:border-box; }
+ body { margin:0; min-height:100vh; display:grid; place-items:center; padding:24px 16px;
+        font:16px/1.5 "Segoe UI",system-ui,sans-serif; color:var(--ink); background:var(--bg); }
+ main { width:100%; max-width:460px; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:28px; }
+ h1 { margin:0 0 6px; font-size:1.4rem; }
+ p.lead { margin:0 0 18px; color:var(--soft); font-size:.95rem; }
+ label { display:block; margin:14px 0 6px; font-weight:600; font-size:.92rem; }
+ .optional { font-weight:400; color:var(--soft); }
+ input, textarea { width:100%; padding:10px 12px; font:inherit; color:inherit; background:transparent;
+         border:1px solid var(--line); border-radius:8px; }
+ textarea { min-height:72px; resize:vertical; }
+ input:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+ button { margin-top:20px; width:100%; padding:11px; font:inherit; font-weight:600; color:#fff;
+          background:var(--accent); border:0; border-radius:8px; cursor:pointer; }
+ button[disabled] { opacity:.6; cursor:default; }
+ .note { margin-top:16px; font-size:.95rem; min-height:1.5em; }
+ .bad { color:var(--bad); } .ok { color:var(--ok); }
+ .links { margin-top:18px; padding-top:14px; border-top:1px solid var(--line); font-size:.9rem; display:flex; gap:16px; flex-wrap:wrap; }
+ a { color:var(--accent); }
+</style></head><body>
+<main>
+  <h1>Request a Book Studio account</h1>
+  <p class="lead">For Vocate staff. Use your @vocate.org address. An administrator reviews every request and gives you a
+  password in person or over chat; nothing is sent by email.</p>
+  <form id="request" novalidate>
+    <label for="name">Your name</label>
+    <input id="name" name="name" autocomplete="name" required>
+    <label for="email">Work email</label>
+    <input id="email" name="email" type="email" autocomplete="email" inputmode="email" required aria-describedby="email-hint">
+    <p id="email-hint" class="lead" style="margin:6px 0 0">Must end in @vocate.org.</p>
+    <label for="note">What will you use it for? <span class="optional">(optional)</span></label>
+    <textarea id="note" name="note" maxlength="500"></textarea>
+    <button id="send" type="submit">Request account</button>
+  </form>
+  <p id="status" class="note" role="status" aria-live="polite"></p>
+  <nav class="links" aria-label="Other pages">
+    <a href="__CLOUD__/login">I already have an account</a>
+    <a href="__CLOUD__/guide">How Book Studio works</a>
+  </nav>
+</main>
+<script>
+var form = document.getElementById("request");
+// Not "status": at the top level of a page that is window.status, a string,
+// and an element assigned to it becomes the text "[object HTMLParagraphElement]".
+var statusLine = document.getElementById("status");
+var send = document.getElementById("send");
+form.addEventListener("submit", function (event) {
+  event.preventDefault();
+  var email = document.getElementById("email").value.trim().toLowerCase();
+  var name = document.getElementById("name").value.trim();
+  if (!name) { statusLine.className = "note bad"; statusLine.textContent = "Tell us your name."; document.getElementById("name").focus(); return; }
+  // No regular expression: this page is served from inside a template
+  // literal, which would eat its backslash.
+  if (!email.endsWith("@vocate.org")) { statusLine.className = "note bad"; statusLine.textContent = "Use your @vocate.org address."; document.getElementById("email").focus(); return; }
+  send.disabled = true;
+  statusLine.className = "note";
+  statusLine.textContent = "Sending...";
+  fetch("__CLOUD__/api/signup", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: name, email: email, note: document.getElementById("note").value })
+  }).then(function (response) {
+    return response.text().then(function (text) {
+      if (!response.ok) throw new Error(text || ("Request failed: " + response.status));
+      return JSON.parse(text);
+    });
+  }).then(function (result) {
+    form.hidden = true;
+    statusLine.className = "note ok";
+    statusLine.textContent = result.message;
+  }).catch(function (error) {
+    statusLine.className = "note bad";
+    statusLine.textContent = error.message;
+  }).finally(function () { send.disabled = false; });
+});
+</script>
+</body></html>`;
 
 // The sign-in screen. It deliberately does nothing by email: no magic link, no
 // emailed code, nothing a mail scanner can open on the designer's behalf.
@@ -273,6 +605,7 @@ const LOGIN_HTML = `<!doctype html>
  .note { margin-top:16px; font-size:.9rem; }
  .bad { color:var(--bad); }
  .ok { color:var(--ok); }
+ .hint a { color:inherit; font-weight:600; }
  .hint { margin-top:18px; padding-top:16px; border-top:1px solid var(--line); font-size:.85rem; color:#66788a; }
 </style></head><body>
 <div class="card">
@@ -292,7 +625,9 @@ const LOGIN_HTML = `<!doctype html>
     <input id="confirmPassword" type="password" autocomplete="new-password" minlength="12" required>
     <button id="save" type="submit">Set password and continue</button>
   </form>
-  <p class="note" id="note"></p>
+  <p class="note" id="note" role="status" aria-live="polite"></p>
+  <p class="hint"><strong>New here?</strong> <a href="__CLOUD__/signup">Request an account</a> with your @vocate.org address,
+  or read <a href="__CLOUD__/guide">how Book Studio works</a>.</p>
   <p class="hint">Forgotten it? An administrator issues a new one; there is no reset email, because a
   mail scanner that opens the link first would spend it before you could.</p>
 </div>
@@ -547,6 +882,7 @@ const APP_HTML = `<!doctype html>
       <span id="who" class="who"></span>
       <a class="secondary-link" href="/">Open Book Studio</a>
       <a class="secondary-link" href="__CLOUD__/connect">Your computer</a>
+      <a class="secondary-link" href="__CLOUD__/guide">Guide</a>
       <span id="machineState" class="who"></span>
       <button id="refreshJobs" class="secondary" type="button">Refresh</button>
       <button id="signout" class="secondary" type="button">Sign out</button>
@@ -568,8 +904,8 @@ const APP_HTML = `<!doctype html>
         <span id="jobCount"></span>
       </div>
       <div class="scope-switch">
-        <button id="scopeMine" class="scope active" type="button">My books</button>
-        <button id="scopeEveryone" class="scope" type="button">Everyone's books</button>
+        <button id="scopeMine" class="scope active" type="button" aria-pressed="true">My books</button>
+        <button id="scopeEveryone" class="scope" type="button" aria-pressed="false">Everyone's books</button>
       </div>
       <div id="jobsList" class="jobs-list"></div>
     </section>
@@ -670,6 +1006,8 @@ const APP_HTML = `<!doctype html>
       scope = next;
       document.querySelector("#scopeMine").classList.toggle("active", scope === "mine");
       document.querySelector("#scopeEveryone").classList.toggle("active", scope === "everyone");
+      document.querySelector("#scopeMine").setAttribute("aria-pressed", String(scope === "mine"));
+      document.querySelector("#scopeEveryone").setAttribute("aria-pressed", String(scope === "everyone"));
       loadJobs();
     }
     document.querySelector("#scopeMine").addEventListener("click", function() { setScope("mine"); });
@@ -845,7 +1183,10 @@ async function verifyAccessAssertion(request, env) {
 // Studio also keeps its own accounts: a password an administrator issues, no
 // email in the loop, nothing for a scanner to click. Access is still checked
 // first where it is in front, so this is an addition, not a replacement.
-const SESSION_COOKIE = "bs_session";
+// __Host- makes the browser refuse to send it anywhere but the site that set
+// it. It used to be set for the whole vocate.app domain, which handed every
+// designer's session to every other app on that domain.
+const SESSION_COOKIE = "__Host-bs_session";
 const SESSION_SECONDS = 7 * 24 * 60 * 60;
 // The Workers runtime refuses a PBKDF2 request above 100,000 iterations, and
 // says so only when a password is actually checked: 210,000 passed every local
@@ -960,9 +1301,8 @@ async function startSession(env, email) {
 }
 
 function sessionCookie(id, seconds) {
-  // Set for the whole domain: the cloud and the designer's own machine are two
-  // hostnames of one site, and signing in on one must count on the other.
-  return SESSION_COOKIE + "=" + id + "; Path=/; Domain=vocate.app; HttpOnly; Secure; SameSite=Lax; Max-Age=" + seconds;
+  // Host-only, now that Book Studio and its cloud settings are one site.
+  return SESSION_COOKIE + "=" + id + "; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=" + seconds;
 }
 
 function readCookie(request, name) {
@@ -1002,6 +1342,27 @@ async function recordLoginFailure(env, email) {
   return count;
 }
 
+
+// An address a person could have, and nothing else: it is shown back on pages,
+// so anything looser is a way to store markup.
+function isPlainEmail(value) {
+  return /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(String(value || ""));
+}
+
+// Security headers on every response, including pages passed through from a
+// designer's machine. Nothing here is framed, sniffed or referred elsewhere.
+function withSecurityHeaders(response) {
+  const secured = new Response(response.body, response);
+  secured.headers.set("X-Content-Type-Options", "nosniff");
+  secured.headers.set("Referrer-Policy", "same-origin");
+  secured.headers.set("X-Frame-Options", "DENY");
+  if (!secured.headers.has("Content-Security-Policy")) {
+    secured.headers.set("Content-Security-Policy", "frame-ancestors 'none'; object-src 'none'; base-uri 'self'");
+  }
+  secured.headers.set("Strict-Transport-Security", "max-age=31536000");
+  return secured;
+}
+
 // Every route that reads or changes a book goes through this, so there is one
 // answer to "who is this" rather than a check per route that can be forgotten.
 async function requireUser(request, env) {
@@ -1033,10 +1394,9 @@ async function resolveRunner(request, env) {
   // given one the first time it reports, rather than needing every designer to
   // create a new token by hand.
   if (record) return { ...record, tokenKey: "runner:token:" + presented };
-  // The original single shared token, kept so an existing agent keeps working
-  // until its owner mints a personal one.
-  const legacy = await env.BOOK_STUDIO_KV.get(RUNNER_TOKEN_KEY);
-  if (legacy && presented === legacy) return { owner: "", label: "shared token", legacy: true };
+  // The single shared token from the first spike is no longer honoured. It
+  // could claim any book whoever owned it, and every machine now has a token
+  // of its own, tied to the person who connected it.
   return null;
 }
 
@@ -1053,10 +1413,11 @@ async function requireRunner(request, env) {
 // A machine may only touch books belonging to the person who minted its token.
 // Without this any agent could claim, read and overwrite anyone's book, which
 // is worse than the shared token it replaced.
+// A machine works only on its own person's books. A book with no owner dates
+// from before accounts existed; letting any machine claim those was a way to
+// read someone's upload without being them.
 function runnerMayTouch(runner, job) {
-  if (!job) return false;
-  if (runner.legacy) return true;
-  if (!job.owner) return true;
+  if (!job || !job.owner) return false;
   return job.owner === runner.owner;
 }
 
@@ -1607,8 +1968,24 @@ async function forwardToMachine(request, env, url) {
 
 export default {
   async fetch(request, env) {
+    return withSecurityHeaders(await handleRequest(request, env));
+  }
+};
+
+async function handleRequest(request, env) {
+  {
     const url = new URL(request.url);
     let pathname = url.pathname.replace(/\/+$/, "") || "/";
+
+    // A change asked for from another site is refused. SameSite cookies stop a
+    // stranger's site, but every other app on vocate.app counts as the same
+    // site, so the Origin is checked as well. Agents send no Origin.
+    if (!["GET", "HEAD", "OPTIONS"].includes(request.method)) {
+      const origin = request.headers.get("origin");
+      if (origin && new URL(origin).host !== url.host) {
+        return textResponse("Changes must come from this site.", { status: 403 });
+      }
+    }
     // What a cloud page must put in front of its own links and API calls, so
     // the same page works under /cloud and, for an agent, at the root.
     let cloudPrefix = "";
@@ -1641,7 +2018,11 @@ export default {
       // copy of it.
       if (!onStudio && !agentRoute && request.method === "GET") {
         const studioName = studioHostnames[0];
-        const moved = pathname === "/" || pathname === "/index.html" ? "/cloud/" : "/cloud" + pathname;
+        // A path already under /cloud keeps it; adding another produced
+        // /cloud/cloud/login, which is nothing.
+        const moved = pathname === "/" || pathname === "/index.html"
+          ? "/cloud/"
+          : (pathname.startsWith("/cloud") ? pathname : "/cloud" + pathname);
         return new Response(null, { status: 302, headers: { location: "https://" + studioName + moved + url.search } });
       }
 
@@ -1674,6 +2055,11 @@ export default {
         });
       }
 
+      if (request.method === "GET" && (pathname === "/guide" || pathname === "/signup")) {
+        const pageHtml = pathname === "/guide" ? GUIDE_HTML : SIGNUP_HTML;
+        return new Response(withCloudPrefix(pageHtml, cloudPrefix), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+      }
+
       if (request.method === "GET" && pathname === "/login") {
         return new Response(withCloudPrefix(LOGIN_HTML, cloudPrefix), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
       }
@@ -1684,6 +2070,12 @@ export default {
         const email = normalizeEmail(payload.email);
         const password = String(payload.password || "");
         if (!email || !password) return textResponse("Enter your email and password.", { status: 400 });
+        // Per address and per network, because a lockout on addresses alone
+        // does nothing against one guess tried across a hundred of them.
+        const network = request.headers.get("cf-connecting-ip") || "unknown";
+        if ((await loginFailures(env, "ip:" + network)) >= MAX_LOGIN_FAILURES * 4) {
+          return textResponse("Too many sign-in attempts from this network. Wait fifteen minutes.", { status: 429 });
+        }
         if ((await loginFailures(env, email)) >= MAX_LOGIN_FAILURES) {
           return textResponse("Too many attempts. Wait fifteen minutes, or ask an administrator for a new password.", { status: 429 });
         }
@@ -1692,6 +2084,7 @@ export default {
         // page cannot be used to find out who has an account.
         if (!user || user.disabled || !(await passwordMatches(user, password))) {
           await recordLoginFailure(env, email);
+          await recordLoginFailure(env, "ip:" + network);
           return textResponse("That email and password do not match an account.", { status: 401 });
         }
         await env.BOOK_STUDIO_KV.delete(loginFailureKey(email));
@@ -1702,6 +2095,73 @@ export default {
           { email, mustChangePassword: Boolean(user.mustChangePassword), admin: isAdmin(env, email) },
           { headers: { "set-cookie": sessionCookie(session, SESSION_SECONDS) } }
         );
+      }
+
+      // Asking for an account. Open to anyone, because a person who has no
+      // account has nothing to sign in with -- but it creates nothing. An
+      // address on the allowed domain proves only that someone typed it, not
+      // that it is theirs, so a request waits for an administrator who knows
+      // their people. The reply is the same whatever happened, so this form
+      // cannot be used to find out who already has an account.
+      if (request.method === "POST" && pathname === "/api/signup") {
+        const payload = await request.json().catch(() => ({}));
+        const email = normalizeEmail(payload.email);
+        const name = String(payload.name || "").trim().slice(0, 120);
+        const network = request.headers.get("cf-connecting-ip") || "unknown";
+        const allowedDomain = String(env.SIGNUP_DOMAIN || "vocate.org").toLowerCase();
+        if (!isPlainEmail(email) || !email.endsWith("@" + allowedDomain)) {
+          return textResponse("Book Studio accounts are for @" + allowedDomain + " addresses. Use your work address.", { status: 400 });
+        }
+        if (!name) return textResponse("Tell us your name, so the administrator knows who is asking.", { status: 400 });
+        if ((await loginFailures(env, "signup:" + network)) >= 10) {
+          return textResponse("Too many requests from this network. Try again later.", { status: 429 });
+        }
+        await recordLoginFailure(env, "signup:" + network);
+        const existing = await readUser(env, email);
+        if (!existing) {
+          await env.BOOK_STUDIO_KV.put("signup:" + email, JSON.stringify({
+            email, name, requestedAt: nowIso(), note: String(payload.note || "").slice(0, 500)
+          }), { expirationTtl: 60 * 60 * 24 * 30 });
+        }
+        return jsonResponse({
+          received: true,
+          message: "Thanks. An administrator will review your request and give you a password in person or over chat. Nothing is emailed."
+        });
+      }
+
+      if (request.method === "GET" && pathname === "/api/signups") {
+        const user = await requireUser(request, env);
+        if (user.response) return user.response;
+        if (!isAdmin(env, user.email)) return textResponse("Only an administrator can see account requests.", { status: 403 });
+        const listed = await env.BOOK_STUDIO_KV.list({ prefix: "signup:" });
+        const requests = [];
+        for (const key of listed.keys) {
+          const record = await env.BOOK_STUDIO_KV.get(key.name, "json");
+          if (record && record.email) requests.push(record);
+        }
+        requests.sort((left, right) => String(left.requestedAt).localeCompare(String(right.requestedAt)));
+        return jsonResponse({ requests });
+      }
+
+      // Approving issues a password exactly as adding someone by hand does:
+      // generated here, shown once, changed at the first sign-in.
+      if (request.method === "POST" && (pathname === "/api/signups/approve" || pathname === "/api/signups/decline")) {
+        const user = await requireUser(request, env);
+        if (user.response) return user.response;
+        if (!isAdmin(env, user.email)) return textResponse("Only an administrator can decide account requests.", { status: 403 });
+        const payload = await request.json().catch(() => ({}));
+        const email = normalizeEmail(payload.email);
+        const pending = await env.BOOK_STUDIO_KV.get("signup:" + email, "json");
+        if (!pending) return textResponse("There is no request from that address.", { status: 404 });
+        await env.BOOK_STUDIO_KV.delete("signup:" + email);
+        if (pathname === "/api/signups/decline") return jsonResponse({ declined: email });
+        const record = (await readUser(env, email)) || { email, createdAt: nowIso(), createdBy: user.email };
+        record.name = pending.name || record.name || "";
+        record.disabled = false;
+        record.mustChangePassword = true;
+        const password = generatePassword();
+        await setUserPassword(env, record, password);
+        return jsonResponse({ user: publicUser(env, record), password });
       }
 
       if (request.method === "POST" && pathname === "/api/logout") {
@@ -1749,7 +2209,7 @@ export default {
         if (!isAdmin(env, user.email)) return textResponse("Only an administrator can add people.", { status: 403 });
         const payload = await request.json().catch(() => ({}));
         const email = normalizeEmail(payload.email);
-        if (!email || !email.includes("@")) return textResponse("Enter the email address of the person.", { status: 400 });
+        if (!isPlainEmail(email)) return textResponse("Enter the person's email address, such as name@vocate.org.", { status: 400 });
         const existing = await readUser(env, email);
         const record = existing || { email, createdAt: nowIso(), createdBy: user.email };
         if (payload.name !== undefined) record.name = String(payload.name || "").slice(0, 120);
@@ -2067,8 +2527,14 @@ export default {
         return jsonResponse(job);
       }
 
+      // A single book and its files. These were answered to anyone who had
+      // the id, signed in or not; an audit downloaded a finished 6 MB Word
+      // book with no session at all. Everyone signed in may read every book --
+      // the books list already shows everyone's -- but nobody else may.
       const artifactJobId = getRouteId(pathname, "/artifact");
       if (request.method === "GET" && artifactJobId) {
+        const reader = await requireUser(request, env);
+        if (reader.response) return reader.response;
         const job = await readJob(env, artifactJobId);
         if (!job) return textResponse("Job not found", { status: 404 });
         const name = url.searchParams.get("name") || "";
@@ -2077,7 +2543,9 @@ export default {
         return new Response(found.object.body, {
           headers: {
             "content-type": found.artifact.contentType || "application/octet-stream",
-            "content-disposition": "attachment; filename=\"" + (found.artifact.fileName || "artifact.bin") + "\"",
+            // The name came from the machine that uploaded it; a quote in it
+            // would end the header value early.
+            "content-disposition": "attachment; filename=\"" + String(found.artifact.fileName || "artifact.bin").replace(/["\\\r\n]/g, "_") + "\"",
             "cache-control": "no-store"
           }
         });
@@ -2085,6 +2553,8 @@ export default {
 
       const jobId = getRouteId(pathname);
       if (request.method === "GET" && jobId) {
+        const reader = await requireUser(request, env);
+        if (reader.response) return reader.response;
         const job = await readJob(env, jobId);
         if (!job) return textResponse("Job not found", { status: 404 });
         return jsonResponse(publicJob(job));
