@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.23.18 (2026-09-23)
+
+- Pages load faster through the web site (dedicated helpers carry them), and a learning objective Codex reworded is restored to the course wording instead of failing the book.
+
 ## v2026.09.23.17 (2026-09-23)
 
 - Administrators see People in Book Studio's menu, with the number of account requests waiting.

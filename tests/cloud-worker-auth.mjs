@@ -429,6 +429,7 @@ const finished = await bridged;
 check(finished.status === 200, "The browser must get the local answer, got " + finished.status);
 check(finished.text.includes("from the local machine"), "The body must be the local one, got " + finished.text.slice(0, 80));
 check(finished.headers.get("content-type") === "application/json", "The local content type must survive.");
+check(finished.headers.get("x-frame-options") === "SAMEORIGIN" && /frame-ancestors 'self'/.test(finished.headers.get("content-security-policy") || ""), "What comes back from the computer must be showable in Book Studio's own frames (the format preview), and in no one else's.");
 
 // And the bridge is a runner route: it needs the machine credential.
 check((await call("GET", "/api/bridge/next")).status === 401, "Collecting work must require a runner token.");
@@ -558,8 +559,10 @@ check(agentNoOrigin.status === 200, "An agent, which sends no Origin, must still
 
 // Every response carries the headers that stop framing and content sniffing.
 const anyPage = await worker.fetch(new Request("https://ebookstudio.vocate.app/cloud/login", { headers: { accept: "text/html" } }), env);
-check(anyPage.headers.get("x-frame-options") === "DENY", "Pages must refuse to be framed.");
-check(/frame-ancestors 'none'/.test(anyPage.headers.get("content-security-policy") || ""), "The content policy must forbid framing too.");
+check(anyPage.headers.get("x-frame-options") === "SAMEORIGIN", "Pages must refuse to be framed by any other site.");
+check(/frame-ancestors 'self'/.test(anyPage.headers.get("content-security-policy") || ""), "The content policy must allow only this site to frame its pages.");
+check(!/frame-ancestors 'none'/.test(anyPage.headers.get("content-security-policy") || "") && anyPage.headers.get("x-frame-options") !== "DENY",
+  "Refusing all framing blanks Book Studio's own format preview with 'refused to connect'.");
 check(anyPage.headers.get("x-content-type-options") === "nosniff", "Responses must not be content-sniffed.");
 check(Boolean(anyPage.headers.get("strict-transport-security")), "Browsers must be told to keep to HTTPS.");
 

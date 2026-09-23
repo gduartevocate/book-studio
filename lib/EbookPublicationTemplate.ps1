@@ -238,6 +238,58 @@ function Update-EbookObjectiveListNumbering {
     return $changed
 }
 
+function Update-EbookObjectiveListWording {
+    # Codex redrafts whole chapters and now and then rewords an objective in
+    # the Learning Objectives list. MI1010 stopped at "Chapter 2: Rendered
+    # objective 2 does not exactly match the source text", and the automatic
+    # Codex repair did not put it back. That list is not Codex's to write: it
+    # is the course's objectives, word for word, and the plan holds them.
+    #
+    # Where a chapter lists as many objectives as the plan, each is set to the
+    # plan's exact wording, and every change is returned so it can be
+    # recorded. A chapter with a different number of objectives is left alone:
+    # that is a designer's decision, not a slip, and the gate still refuses it.
+    param(
+        [Parameter(Mandatory)][string]$MarkdownPath,
+        [Parameter(Mandatory)][object]$Plan
+    )
+
+    if (-not (Test-Path -LiteralPath $MarkdownPath -PathType Leaf)) { return @() }
+    $comparable = { param($text) ((([string]$text).ToLowerInvariant() -replace '[^a-z0-9]+', ' ') -replace '\s+', ' ').Trim() }
+    $markdown = Get-Content -LiteralPath $MarkdownPath -Raw -Encoding UTF8
+    $lines = @($markdown -split "`r?`n")
+    $items = @{}
+    $chapter = 0
+    $inObjectives = $false
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        $chapterHeading = [regex]::Match($lines[$i], '^#[ 	]+Chapter[ 	]+(\d+):')
+        if ($chapterHeading.Success) { $chapter = [int]$chapterHeading.Groups[1].Value; $inObjectives = $false; continue }
+        $heading = [regex]::Match($lines[$i], '^(#{1,6})[ 	]+(.+?)[ 	]*$')
+        if ($heading.Success) { $inObjectives = [bool]($heading.Groups[2].Value.Trim() -match '(?i)^learning objectives$'); continue }
+        if (-not $inObjectives -or -not $chapter) { continue }
+        $item = [regex]::Match($lines[$i], '^(?<indent>[ 	]*)(?<number>[0-9]+)\.[ 	]+(?<text>.+?)[ 	]*$')
+        if (-not $item.Success) { continue }
+        if (-not $items.ContainsKey($chapter)) { $items[$chapter] = New-Object System.Collections.ArrayList }
+        [void]$items[$chapter].Add([pscustomobject]@{ line = $i; indent = $item.Groups['indent'].Value; number = $item.Groups['number'].Value; text = $item.Groups['text'].Value })
+    }
+
+    $changes = New-Object System.Collections.ArrayList
+    foreach ($planChapter in @($Plan.chapters)) {
+        $number = [int]$planChapter.number
+        if (-not $items.ContainsKey($number)) { continue }
+        $expected = @(if (@($planChapter.learningTargetRecords).Count) { @($planChapter.learningTargetRecords | ForEach-Object { [string]$_.objective }) } else { @($planChapter.learningTargets | ForEach-Object { [string]$_ }) })
+        $rendered = @($items[$number])
+        if (-not $expected.Count -or $rendered.Count -ne $expected.Count) { continue }
+        for ($k = 0; $k -lt $expected.Count; $k++) {
+            if ((& $comparable $rendered[$k].text) -eq (& $comparable $expected[$k])) { continue }
+            $lines[$rendered[$k].line] = "$($rendered[$k].indent)$($rendered[$k].number). $($expected[$k])"
+            [void]$changes.Add([pscustomobject]@{ chapter = $number; objective = $k + 1; drafted = $rendered[$k].text; restored = $expected[$k] })
+        }
+    }
+    if ($changes.Count) { Set-Content -LiteralPath $MarkdownPath -Value ($lines -join "`r`n") -Encoding UTF8 }
+    return @($changes)
+}
+
 function Add-EbookLearningObjectives {
     param([Collections.ArrayList]$Lines, [object]$Chapter)
     $records = @($Chapter.learningTargetRecords)

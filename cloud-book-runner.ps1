@@ -14,6 +14,11 @@ param(
     # How often to look for a new release. It was used but never declared, so
     # it was empty and every cycle, about every 25 seconds, asked GitHub.
     [int]$UpdateCheckMinutes = 60,
+    # Page helpers: copies of this agent that only carry requests between the
+    # web site and Book Studio here. See Start-BridgeWorkers.
+    [switch]$BridgeWorker,
+    [int]$ParentProcessId = 0,
+    [int]$BridgeWorkers = 3,
     [string]$EnvPath = "..\.env",
     [string]$ProjectRoot = "",
     [string]$WorkRoot = "",
@@ -569,6 +574,20 @@ if ($Token) {
     Write-Host "Token saved for this computer. You will not have to paste it again ($savedTo)."
 }
 
+# A page helper carries requests between the web site and Book Studio on this
+# computer and does nothing else. The agent used to do it between its other
+# work -- polling for jobs, reporting, checking for updates, and every ten
+# minutes a Codex test of up to 45 seconds -- so every page waited behind all
+# of that, one request at a time, and a designer's page hung and then said
+# "Book Studio on your computer did not answer in time". Several helpers wait
+# side by side, and each stops when the agent that started it does.
+if ($BridgeWorker) {
+    while (-not $ParentProcessId -or (Get-Process -Id $ParentProcessId -ErrorAction SilentlyContinue)) {
+        $null = Invoke-BridgeCycle -ProjectRoot $ProjectRoot -Port $StudioPort
+    }
+    return
+}
+
 # One agent per computer. A second one polls the same queue and reports the
 # same machine over the first, and the designer who started it twice cannot
 # tell. -Once is exempt: it is a check, not a second agent.
@@ -654,15 +673,34 @@ function Sync-LocalStudioServer {
     }
 }
 
+function Start-BridgeWorkers {
+    param([object[]]$Running = @())
+
+    $alive = @($Running | Where-Object { $_ -and -not $_.HasExited })
+    $agent = Join-Path $ProjectRoot 'cloud-book-runner.ps1'
+    while ($alive.Count -lt $BridgeWorkers) {
+        # Read and run as a command, like every start of the agent, because a
+        # managed PC refuses to run a .ps1 file.
+        $inner = "& ([scriptblock]::Create((Get-Content -Raw -LiteralPath '" + $agent.Replace("'", "''") + "'))) -BridgeWorker -ParentProcessId $PID" +
+                 " -ProjectRoot '" + $ProjectRoot.Replace("'", "''") + "' -BaseUrl '" + $BaseUrl.Replace("'", "''") + "' -StudioPort $StudioPort"
+        $alive += Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-Command', $inner) -WindowStyle Hidden -PassThru
+    }
+    return $alive
+}
+
 $script:lastUpdateCheck = [datetime]::MinValue
 if (-not $Once) {
     if (Invoke-BookRunnerSelfUpdate -ProjectRoot $ProjectRoot -Instance $instance) { return }
     Sync-LocalStudioServer
+    $script:bridgeWorkerProcesses = @(Start-BridgeWorkers)
 }
 
 do {
     try {
-        if (((Get-Date) - $script:codexCheckedAt).TotalMinutes -ge 10) {
+        # Every eight minutes: a passing test counts for ten, so Book Studio
+        # always finds a recent one and never has to stop a designer's
+        # request to test Codex itself.
+        if (((Get-Date) - $script:codexCheckedAt).TotalMinutes -ge 8) {
             $script:codexStatus = Test-LocalCodexConnection -ProjectRoot $ProjectRoot
             $script:codexCommandPath = $script:codexStatus.commandPath
             $script:codexCheckedAt = Get-Date
@@ -690,9 +728,9 @@ do {
             if (Invoke-BookRunnerSelfUpdate -ProjectRoot $ProjectRoot -Instance $instance) { return }
             Sync-LocalStudioServer
         }
-        $carried = Invoke-BridgeCycle -ProjectRoot $ProjectRoot -Port $StudioPort
-        # Several clicks arrive together; none of them should wait for the
-        # job queue to be checked first.
-        while ($carried) { $carried = Invoke-BridgeCycle -ProjectRoot $ProjectRoot -Port $StudioPort }
+        # Pages are carried by the helpers; this loop only keeps them running,
+        # and replaces any that stopped.
+        $script:bridgeWorkerProcesses = @(Start-BridgeWorkers -Running $script:bridgeWorkerProcesses)
+        Start-Sleep -Seconds $PollIntervalSeconds
     }
 } while (-not $Once)

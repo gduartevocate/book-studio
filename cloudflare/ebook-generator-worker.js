@@ -1458,9 +1458,13 @@ function withSecurityHeaders(response) {
   const secured = new Response(response.body, response);
   secured.headers.set("X-Content-Type-Options", "nosniff");
   secured.headers.set("Referrer-Policy", "same-origin");
-  secured.headers.set("X-Frame-Options", "DENY");
+  // Framed only by this site itself. Book Studio shows its format preview in
+  // a frame of its own page; refusing all framing (DENY, 'none') blanked that
+  // preview with "refused to connect" for every designer on the web site,
+  // while stopping other sites from framing these pages needs only this.
+  secured.headers.set("X-Frame-Options", "SAMEORIGIN");
   if (!secured.headers.has("Content-Security-Policy")) {
-    secured.headers.set("Content-Security-Policy", "frame-ancestors 'none'; object-src 'none'; base-uri 'self'");
+    secured.headers.set("Content-Security-Policy", "frame-ancestors 'self'; object-src 'none'; base-uri 'self'");
   }
   secured.headers.set("Strict-Transport-Security", "max-age=31536000");
   return secured;

@@ -431,6 +431,41 @@ Check ($runnerText -match 'Restart-BookRunner') 'It must restart into what it fe
 # Origin made every action in Settings fail with 403.
 Check ($runnerText -match "'Origin', 'Referer', 'Cookie'") 'The bridge must not carry the browser Origin, Referer or the cloud cookie to the local server.'
 
+# Page helpers. One agent carried every page request between its other work --
+# job polling, reporting, update checks, a Codex test of up to 45 seconds -- so
+# Ann Jackson's pages hung and then said "did not answer in time". Helpers now
+# carry pages side by side, and nothing else.
+$agentPath = Join-Path $root 'cloud-book-runner.ps1'
+$workerAt = $runnerText.IndexOf('if ($BridgeWorker) {')
+Check ($workerAt -gt 0 -and $workerAt -lt $runnerText.IndexOf('Enter-BookRunnerSingleInstance -TakeOver')) 'A helper must start before the one-agent lock, which is the agent''s, not its helpers''.'
+$workerBlock = $runnerText.Substring($workerAt, $runnerText.IndexOf('return', $workerAt) - $workerAt)
+Check ($workerBlock -match 'Get-Process -Id \$ParentProcessId' -and $workerBlock -match 'Invoke-BridgeCycle') 'A helper carries page requests for as long as its agent runs.'
+$loopAt = $runnerText.LastIndexOf('do {')
+Check ($runnerText.Substring($loopAt) -notmatch 'Invoke-BridgeCycle') 'The agent''s own loop must not carry pages: that is what made them wait.'
+Check ($runnerText -match '-BridgeWorker -ParentProcessId \$PID' -and $runnerText -match "'-WindowStyle', 'Hidden', '-Command', \`$inner\) -WindowStyle Hidden -PassThru") 'The agent starts its helpers hidden, tied to itself.'
+Check ($runnerText -match 'Sync-LocalStudioServer\s+\$script:bridgeWorkerProcesses = @\(Start-BridgeWorkers\)') 'Helpers start as soon as the agent does, not after its first round of other work.'
+Check ($runnerText -match '\[int\]\$BridgeWorkers = 3') 'Several helpers, so one slow page does not hold up the next.'
+Check ($runnerText -match 'codexCheckedAt\)\.TotalMinutes -ge 8\)') 'The background Codex check must run inside the ten minutes a pass counts for.'
+
+# And for real: a helper whose agent has gone stops by itself.
+$savedToken = $env:BOOK_RUNNER_TOKEN
+$env:BOOK_RUNNER_TOKEN = 'fixture-token-never-sent'
+try {
+    $standInAgent = Start-Process powershell -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep -Seconds 60')
+    $helperArgs = "& ([scriptblock]::Create((Get-Content -Raw -LiteralPath '$agentPath'))) -BridgeWorker -ParentProcessId $($standInAgent.Id) -ProjectRoot '$root' -BaseUrl 'http://127.0.0.1:9'"
+    $helper = Start-Process powershell -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $helperArgs)
+    Start-Sleep -Seconds 4
+    $helper.Refresh()
+    Check (-not $helper.HasExited) 'A helper keeps running while its agent runs, even when the site cannot be reached.'
+    Stop-Process -Id $standInAgent.Id -Force
+    $helper.WaitForExit(20000) | Out-Null
+    Check ($helper.HasExited) 'A helper must stop by itself once its agent has gone, so none are left behind.'
+}
+finally {
+    $env:BOOK_RUNNER_TOKEN = $savedToken
+    foreach ($p in @($standInAgent, $helper)) { if ($p -and -not $p.HasExited) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue } }
+}
+
 # The agent uses these rules where they matter.
 Check ($runnerText -match 'Enter-BookRunnerSingleInstance -TakeOver:\(\[bool\]\$Token\)') 'Only the setup command, which carries a token, may replace a running agent.'
 $afterSelfUpdate = [regex]::Matches($runnerText, 'Invoke-BookRunnerSelfUpdate -ProjectRoot \$ProjectRoot -Instance \$instance\) \{ return \}\s+Sync-LocalStudioServer')

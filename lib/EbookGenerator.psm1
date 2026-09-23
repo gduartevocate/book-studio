@@ -12698,6 +12698,20 @@ function Repair-EbookPackageOutputs {
     if (Update-EbookObjectiveListNumbering -MarkdownPath $ebookMarkdownFile.FullName) {
         Write-EbookGeneratorProgress -Phase "Restoring objective numbering" -Detail "The Learning Objectives list was renumbered to restart at 1 in each chapter. Objective wording is unchanged."
     }
+    # And its wording: an objective Codex reworded is put back to the course's
+    # exact text, recorded in objective-wording-restored.json, rather than
+    # failing the whole book at the traceability gate.
+    $objectivePlanPath = Join-Path $resolvedOutputFolder 'ebook-plan.json'
+    if (Test-Path -LiteralPath $objectivePlanPath -PathType Leaf) {
+        $objectivePlan = Get-Content -LiteralPath $objectivePlanPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $restoredObjectives = @(Update-EbookObjectiveListWording -MarkdownPath $ebookMarkdownFile.FullName -Plan $objectivePlan)
+        if ($restoredObjectives.Count) {
+            [pscustomobject]@{ restoredAt = (Get-Date).ToString('o'); changes = $restoredObjectives } | ConvertTo-Json -Depth 5 |
+                Set-Content -LiteralPath (Join-Path $resolvedOutputFolder 'objective-wording-restored.json') -Encoding UTF8
+            $where = (@($restoredObjectives | ForEach-Object { "chapter $($_.chapter) objective $($_.objective)" }) -join ', ')
+            Write-EbookGeneratorProgress -Phase "Restoring objective wording" -Detail "Codex had reworded $where; restored to the course document's exact wording. See objective-wording-restored.json."
+        }
+    }
     $markdown = Get-Content -LiteralPath $ebookMarkdownFile.FullName -Raw -Encoding UTF8
     $citationMarkdown = ConvertTo-EbookCitationMarkdown -Markdown (ConvertTo-EbookPublicationMarkdown -Markdown (ConvertTo-EbookBusinessCaseLabel -Markdown $markdown))
     $citationChanged = $citationMarkdown -cne ($markdown -replace '\r\n', "`n")
