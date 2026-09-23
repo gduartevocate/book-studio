@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.23.2 (2026-09-23)
+
+- Settings now shows which computer is writing your books, and lets you test it.
+
 ## v2026.09.23.1 (2026-09-23)
 
 - One site: Book Studio and the cloud settings live at the same address.

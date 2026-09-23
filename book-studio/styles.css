@@ -2663,3 +2663,11 @@ button:disabled {
 /* An action failure has to be visible where the buttons are. */
 .job-action-error { margin-top: 10px; border: 1px solid var(--danger); border-radius: 8px; padding: 10px 12px; background: #fff5f4; color: var(--danger); font-size: 13px; }
 .job-action-error[hidden] { display: none; }
+
+/* The cloud half of Settings: which computer is writing your books, and
+   whether it is connected. Hidden entirely when Book Studio is opened on
+   the PC it runs on, where none of it applies. */
+.cloud-machines { margin: 12px 0 0; }
+.cloud-machines dt { font-weight: 600; margin-top: 10px; }
+.cloud-machines dd { margin: 2px 0 0; color: inherit; opacity: .85; }
+.cloud-panel .actions { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 14px; }

@@ -49,7 +49,7 @@
     },
     {
         "path":  "ID Quick Start.txt",
-        "sha256":  "9D395FAF322D6271CA96D74F23D5319447151B68BE139B8FA3C72EEB24816AB6"
+        "sha256":  "2B5DE9A324B9669671C23E941D629413439ECEBDB37287E808925642FC861632"
     },
     {
         "path":  "Install Book Studio.cmd",
@@ -109,15 +109,15 @@
     },
     {
         "path":  "VERSION.txt",
-        "sha256":  "83F5F2FDF6428BE0F02140DA3070C7495440CEFE1FFBCC2157E849E48668A2BE"
+        "sha256":  "FE0CFCA13A33A38D0A3AC953359DB332BF21B80BE5A3FCFD959FB45726F2461A"
     },
     {
         "path":  "book-studio/app.js",
-        "sha256":  "AB47F0A3F23CE8890AEECB8E5C940C33708078024CCE4992DBC2EF265D8B415A"
+        "sha256":  "54BC24F0F3E0464325070BD1DBB46C41A976AF4AC0C63A22B0250585FECAF968"
     },
     {
         "path":  "book-studio/index.html",
-        "sha256":  "FED41ED34C32156E7E7769D1C581C03E402B9CBD5A28DBA48C21DFB63ADBBE44"
+        "sha256":  "0E0471EFB5E10580FDB50AAE3B91718CF92F23F3EAFF35FEAC1AA819B2566452"
     },
     {
         "path":  "book-studio/outcome-analysis.js",
@@ -133,15 +133,15 @@
     },
     {
         "path":  "book-studio/styles.css",
-        "sha256":  "C4304E928CE7F635571734ABB3B882BDB05457AC70033121DFA247AA689BDD95"
+        "sha256":  "9D40A195BAB679AA2FA5989FC34ADAE62437EC81A7F1FA6A57452611EB85A112"
     },
     {
         "path":  "book-studio/version.json",
-        "sha256":  "2D02896EFF36A2FA0BD1D1050720FE0257B69EFFF5729B87C5625F451B064429"
+        "sha256":  "60A170674D2143FF6BF768557CDA9D9C91A6370A7C2472BEE8CBE4CB81196AA1"
     },
     {
         "path":  "cloudflare/ebook-generator-worker.js",
-        "sha256":  "EB98395EA5219DA725A2F05893A3790C237F2CDEB899D0E5DCE1558719ECD873"
+        "sha256":  "9F5AA767A00AD637BFBD7503D0257162C1B6AEC248CAB370A4664A7FCF001AD1"
     },
     {
         "path":  "cloudflare/sme-review-worker.js",
@@ -441,7 +441,7 @@
     },
     {
         "path":  "tests/cloud-worker-auth.mjs",
-        "sha256":  "63E6407E32A292C80FAD4314656D74A54DEFF2ED8DC9EAEB5C0E6B1F71D8D37F"
+        "sha256":  "79AB54C2766B4C76DC84D36A22178617D5173BAC321504DEC383B5A1EF9CE565"
     },
     {
         "path":  "tests/cloud-worker-auth.ps1",
@@ -501,7 +501,7 @@
     },
     {
         "path":  "tests/repo-hygiene-regressions.ps1",
-        "sha256":  "6560EDF42E3A936FA7F8900223C4CFA71BC15F56155A4DD2E79C4090B0E653FB"
+        "sha256":  "2FC50DC4704C80EEE457D596CFA2A162E28940794C41959D9A7FC86F49B693AB"
     },
     {
         "path":  "tests/required-readings-regressions.ps1",

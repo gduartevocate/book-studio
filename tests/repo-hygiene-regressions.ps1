@@ -177,4 +177,19 @@ Check ([bool]$published) 'The published version could not be read.'
 $asNumber = { param([string]$value) $parts = @($value -split '[.]' | ForEach-Object { [int]$_ }); while ($parts.Count -lt 4) { $parts += 0 }; ($parts[0] * 1000000L) + ($parts[1] * 10000L) + ($parts[2] * 100L) + $parts[3] }
 Check ((& $asNumber $minimum) -le (& $asNumber $published)) "The cloud needs Book Studio $minimum, but the newest published release is $published; every designer PC would refuse to connect."
 
+# Settings is where someone looks for "which computer is this running on, and
+# is it connected?". Reached through the web, the local Settings page answered
+# none of that and the answer lived on another page entirely.
+$indexHtml = Get-Content -LiteralPath (Join-Path $root 'book-studio/index.html') -Raw -Encoding UTF8
+$clientScript = Get-Content -LiteralPath (Join-Path $root 'book-studio/app.js') -Raw -Encoding UTF8
+Check ($indexHtml -match 'id="cloudPanel"') 'Settings must have a place for the cloud half.'
+Check ($indexHtml -match 'id="cloudPanel" hidden') 'It must start hidden, because on a local Book Studio none of it applies.'
+Check ($clientScript -match 'reachedThroughTheCloud') 'The client must decide whether that half applies at all.'
+Check ($clientScript -match 'localhost') 'It must tell a local Book Studio from one reached through the web.'
+foreach ($call in @('/cloud/api/identity', '/cloud/api/runner/status', '/cloud/api/logout')) {
+    Check ($clientScript -match [regex]::Escape($call)) "Settings must reach $call, or it cannot answer what it is there to answer."
+}
+Check ($indexHtml -match 'href="/cloud/connect"') 'Settings must offer to connect another computer.'
+Check ($clientScript -match 'loadCloudSettings\(\)') 'Opening Settings must load it.'
+
 "PASS: $checks repository hygiene assertions (module exports across the Book Studio boundary, CRLF and BOM preservation, client assets served and cache-busted, release gate after drafting)."

@@ -294,7 +294,9 @@ check(laptopToken.json.token !== deskToken.json.token, "Two machines must get tw
 
 const report = (token, name, codexStatus, extra = {}) => call("POST", "/api/runner/status", {
   headers: { "x-book-runner-token": token },
-  body: { runnerName: name, codex: { status: codexStatus, version: "codex-cli 0.154.0" }, ...extra }
+  // A current Book Studio unless a test says otherwise: most of these checks
+  // are about what a machine reports, not about which version it runs.
+  body: { runnerName: name, version: "2026.09.23.1", codex: { status: codexStatus, version: "codex-cli 0.154.0" }, ...extra }
 });
 check((await report(laptopToken.json.token, "LAPTOP / gio", "Connected")).status === 200, "A machine must be able to report itself.");
 check((await report(deskToken.json.token, "NEWKING / gio", "Unavailable")).status === 200, "A second machine must be able to report itself too.");
@@ -381,7 +383,7 @@ check((await studioCall("/api/jobs")).status === 401, "A signed-out API call mus
 // Signed in, but nothing of theirs is running: say so instead of hanging.
 const noMachinePage = await studioCall("/", { cookie: designerAgain, headers: { accept: "text/html" } });
 check(noMachinePage.status === 503, "With no computer running, the page must say so, got " + noMachinePage.status);
-check(/not running on your computer/i.test(noMachinePage.text), "That page must explain what is missing.");
+check(/not answering on your computer/i.test(noMachinePage.text), "That page must explain what is missing.");
 check(/connect/i.test(noMachinePage.text), "That page must say where to go to fix it.");
 
 // With a machine, the request is carried to it and its answer comes back.
@@ -442,5 +444,51 @@ const agentOnOldName = await worker.fetch(new Request("https://ebook.vocate.app/
 check(agentOnOldName.status === 200, "An agent on the old address must still be served, got " + agentOnOldName.status);
 const healthOnOldName = await worker.fetch(new Request("https://ebook.vocate.app/api/health"), env);
 check(healthOnOldName.status === 200, "The health probe must answer on both addresses.");
+
+// 23. A designer is sent to a computer that can answer. A laptop that reported
+//     thirty seconds ago and runs a Book Studio from before any of this worked
+//     is worse than a desktop that reported a minute ago and can serve the
+//     page: routing to the first means a minute of nothing and then a failure,
+//     which is exactly what was happening.
+await report(deskToken.json.token, "DESK / gio", "Connected", { version: "2026.09.23.1" });
+await report(laptopToken.json.token, "OLD LAPTOP / gio", "Connected", { version: "2026.09.22.2" });
+const seen = await call("GET", "/api/runner/status", { cookie: admin });
+check(seen.json.machines[0].runnerName === "OLD LAPTOP / gio", "The old laptop must be the most recent, or this proves nothing.");
+
+const routed = studioCall("/api/jobs", { cookie: admin });
+const collectedByDesk = await call("GET", "/api/bridge/next", { headers: { "x-book-runner-token": deskToken.json.token } });
+check(collectedByDesk.json.path === "/api/jobs", "The request must go to the computer that can answer, not the most recent one.");
+await call("POST", "/api/bridge/reply", { headers: { "x-book-runner-token": deskToken.json.token }, body: {
+  id: collectedByDesk.json.id, status: 200, headers: { "content-type": "application/json" },
+  bodyBase64: Buffer.from(JSON.stringify({ jobs: [] })).toString("base64") } });
+check((await routed).status === 200, "And the designer gets their page.");
+
+// With nothing but an old computer, the page says which one and why, at once,
+// rather than holding the tab open for a minute first.
+// Only the old laptop remains: every other machine of theirs stops reporting.
+const deskRecord = await kv.get("runner:token:" + deskToken.json.token, "json");
+const oldRecord = await kv.get("runner:token:old-token", "json");
+await kv.delete("runner:status:boss@vocate.org:" + deskRecord.id);
+if (oldRecord && oldRecord.id) await kv.delete("runner:status:boss@vocate.org:" + oldRecord.id);
+const stale = await studioCall("/", { cookie: admin, headers: { accept: "text/html" } });
+check(stale.status === 503, "An unusable computer must be reported, got " + stale.status);
+check(stale.text.includes("OLD LAPTOP / gio"), "It must name the computer holding them up.");
+check(/older than this page needs/.test(stale.text), "It must say what is wrong with it.");
+check(/updates itself within the hour/.test(stale.text), "It must say that it mends itself.");
+check(stale.text.includes("2026.09.22.2"), "It must say which version that computer has.");
+
+// 24. A computer that is current but not listening -- switched off, or its
+//     Book Studio window closed -- must be reported at once. Waiting the full
+//     minute to discover it is a tab that hangs and then says something a
+//     designer cannot act on, which is what they kept seeing.
+const quietToken = await call("POST", "/api/runner-tokens", { cookie: admin, body: { label: "Quiet" } });
+await report(quietToken.json.token, "QUIET / gio", "Connected");
+const started = Date.now();
+const quiet = await studioCall("/api/jobs", { cookie: admin });
+const waited = Date.now() - started;
+check(quiet.status === 503, "A machine that is not listening must be reported, got " + quiet.status);
+check(waited < 5000, "It must be reported at once, not after the timeout; waited " + waited + " ms");
+check(/not listening/i.test(quiet.text), "It must say nobody is listening there: " + quiet.text.slice(0, 120));
+check(/within the hour|not be running/i.test(quiet.text), "And what to do about it.");
 
 console.log("PASS: " + checks + " sign-in checks (sessions, password storage, lockout, administration, runner tokens)");

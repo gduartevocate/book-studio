@@ -1412,6 +1412,16 @@ export class MachineBridge {
     // From the browser, through the worker: one request to run over there.
     if (url.pathname === "/request") {
       const job = await request.json();
+      // Nothing is listening on the other side. Waiting fifty-five seconds to
+      // discover that is not patience, it is a browser tab that hangs and
+      // then says something a designer cannot act on.
+      const quiet = Date.now() - (this.lastCollectorAt || 0);
+      if (!this.collectors.length && quiet > 90000) {
+        return jsonResponse({
+          bridgeError: "Book Studio is not listening on that computer. It may be running a version from before this worked, which it will replace by itself within the hour, or it may not be running at all.",
+          notListening: true
+        }, { status: 503 });
+      }
       job.id = String(this.nextId++);
       const answer = new Promise((resolve) => {
         const timer = setTimeout(() => {
@@ -1432,6 +1442,9 @@ export class MachineBridge {
     // The agent, asking for something to do. It waits rather than polling in a
     // loop, so a designer's click is not held up by a polling interval.
     if (url.pathname === "/next") {
+      // When an agent last asked for work, which is how the other half of
+      // this object knows whether anyone is there at all.
+      this.lastCollectorAt = Date.now();
       if (this.pending.length) {
         return jsonResponse(this.pending.shift());
       }
@@ -1477,15 +1490,32 @@ export class MachineBridge {
 // Which machine a person's browser is talking to: the one that reported most
 // recently. Designers have one; an id is carried so a second is a small change
 // rather than a redesign.
+// The oldest Book Studio that can answer a request from a browser at all.
+// Anything before this collects nothing, so routing a designer to it means a
+// wait and then a failure.
+const MINIMUM_BRIDGE_VERSION = "2026.09.22.7";
+
+function versionNumber(version) {
+  const parts = String(version || "").split(".").map((part) => parseInt(part.replace(/[^0-9]/g, ""), 10) || 0);
+  while (parts.length < 4) parts.push(0);
+  return (parts[0] * 1000000) + (parts[1] * 10000) + (parts[2] * 100) + parts[3];
+}
+
+// The machine a browser is sent to. Most recent first, but only among the
+// ones that can actually answer: a laptop that reported thirty seconds ago
+// and cannot serve a page is worse than a desktop that reported a minute ago
+// and can. A machine that is too old is still returned, separately, so the
+// designer can be told which computer is holding them up and why.
 async function resolveMachineForUser(env, email) {
   const listed = await env.BOOK_STUDIO_KV.list({ prefix: "runner:status:" + email + ":" });
-  let newest = null;
+  const machines = [];
   for (const key of listed.keys) {
     const record = await env.BOOK_STUDIO_KV.get(key.name, "json");
-    if (!record) continue;
-    if (!newest || String(record.seenAt || "") > String(newest.seenAt || "")) newest = record;
+    if (record) machines.push(record);
   }
-  return newest;
+  machines.sort((left, right) => String(right.seenAt || "").localeCompare(String(left.seenAt || "")));
+  const capable = machines.filter((machine) => versionNumber(machine.version) >= versionNumber(MINIMUM_BRIDGE_VERSION));
+  return { machine: capable[0] || null, tooOld: capable.length ? null : machines[0] || null };
 }
 
 function bridgeStub(env, owner, machineId) {
@@ -1495,7 +1525,7 @@ function bridgeStub(env, owner, machineId) {
 // The page a designer sees when no computer of theirs is running. It is served
 // in place of Book Studio itself, because the alternative is a browser tab that
 // hangs for a minute and then says nothing useful.
-function noMachineHtml(email) {
+function noMachineHtml(email, message) {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Your computer is not running</title>
@@ -1509,9 +1539,10 @@ function noMachineHtml(email) {
  code { background:rgba(127,127,127,.15); padding:2px 5px; border-radius:4px; }
 </style></head><body>
 <div class="card">
-  <h1>Book Studio is not running on your computer</h1>
+  <h1>Book Studio is not answering on your computer</h1>
   <p>Signed in as <strong>${email}</strong>. Your books are written on your own PC, so that computer has to
   be switched on with Book Studio running before this page has anything to show.</p>
+  <p>${message || ""}</p>
   <p>Open the minimised <code>Book Studio</code> PowerShell window on that computer, or set it up again from
   <a href="/cloud/connect">Your computer</a>.</p>
   <p><a href="/cloud/">Your books</a></p>
@@ -1532,7 +1563,17 @@ async function forwardToMachine(request, env, url) {
       ? new Response(null, { status: 302, headers: { location: "/cloud/login?next=" + encodeURIComponent(url.pathname) } })
       : user.response;
   }
-  const machine = await resolveMachineForUser(env, user.email);
+  const { machine, tooOld } = await resolveMachineForUser(env, user.email);
+  if (!machine && tooOld) {
+    // The computer is there; it is running a Book Studio from before this
+    // worked. Saying which one, and that it mends itself, is the difference
+    // between a minute of nothing and a sentence a designer can act on.
+    const message = "The Book Studio on " + (tooOld.runnerName || "your computer") + " is older than this page needs" +
+      (tooOld.version ? " (" + tooOld.version + ")" : "") + ". It updates itself within the hour. To have it now, run the setup command on that computer once more.";
+    return (request.headers.get("accept") || "").includes("text/html")
+      ? new Response(noMachineHtml(user.email, message), { status: 503, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } })
+      : jsonResponse({ error: message }, { status: 503 });
+  }
   if (!machine) {
     return (request.headers.get("accept") || "").includes("text/html")
       ? new Response(noMachineHtml(user.email), { status: 503, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } })

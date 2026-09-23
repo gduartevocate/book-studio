@@ -3398,7 +3398,79 @@ homeNewBook.addEventListener("click", openNewBook);
 cancelNewBook.addEventListener("click", openBooksHome);
 booksButton.addEventListener("click", openBooksHome);
 activeBookBack.addEventListener("click", openBooksHome);
-settingsButton.addEventListener("click", () => showView("settings"));
+// The cloud half of Settings.
+//
+// Reaching Book Studio through the web and reaching it on your own PC are the
+// same app, so Settings has to answer "which computer is this running on, and
+// is it connected?" in the place someone already looks for it. Nothing here
+// exists when Book Studio is opened locally: there is no account to show and no
+// bridge to test.
+const cloudPanel = document.querySelector("#cloudPanel");
+const cloudAccount = document.querySelector("#cloudAccount");
+const cloudMachines = document.querySelector("#cloudMachines");
+
+function reachedThroughTheCloud() {
+  return !["localhost", "127.0.0.1", "::1"].includes(location.hostname);
+}
+
+function describeLastSeen(seenAt) {
+  const seen = Date.parse(seenAt || "");
+  if (!seen) return "";
+  const seconds = Math.max(0, Math.round((Date.now() - seen) / 1000));
+  if (seconds < 90) return "just now";
+  if (seconds < 3600) return Math.round(seconds / 60) + " minutes ago";
+  return new Date(seen).toLocaleString();
+}
+
+async function loadCloudSettings() {
+  if (!cloudPanel || !reachedThroughTheCloud()) return;
+  cloudPanel.hidden = false;
+  try {
+    const identity = await api("/cloud/api/identity");
+    cloudAccount.textContent = identity.email
+      ? "Signed in as " + identity.email + "."
+      : "Signed in.";
+  } catch (error) {
+    cloudAccount.textContent = "Could not read your account: " + error.message;
+  }
+  try {
+    const status = await api("/cloud/api/runner/status");
+    const machines = status.machines || [];
+    if (!machines.length) {
+      cloudMachines.innerHTML = "<dt>No computer</dt><dd>" + (status.detail || "Nothing of yours is running Book Studio.") + "</dd>";
+      return;
+    }
+    cloudMachines.innerHTML = machines.map((machine) => {
+      const codex = machine.codex || {};
+      const ready = codex.status === "Connected";
+      const state = ready ? "Ready" : (codex.status === "Unknown" ? "Codex not checked yet" : "Codex " + String(codex.status || "unknown").toLowerCase());
+      return "<dt>" + (machine.runnerName || machine.label || "unnamed computer") + "</dt><dd>" +
+        state + (codex.version ? " - " + codex.version : "") +
+        " - last heard from " + describeLastSeen(machine.seenAt) +
+        (machine.version ? "<br>Book Studio " + machine.version : "") +
+        (ready ? "" : "<br>" + (codex.detail || "")) + "</dd>";
+    }).join("");
+  } catch (error) {
+    cloudMachines.innerHTML = "<dt>Connection</dt><dd>Could not check: " + error.message + "</dd>";
+  }
+}
+
+const refreshCloudButton = document.querySelector("#refreshCloud");
+if (refreshCloudButton) {
+  refreshCloudButton.addEventListener("click", () => {
+    cloudMachines.innerHTML = "<dt>Checking</dt><dd>Asking the cloud which computers are running...</dd>";
+    loadCloudSettings();
+  });
+}
+const cloudSignOutButton = document.querySelector("#cloudSignOut");
+if (cloudSignOutButton) {
+  cloudSignOutButton.addEventListener("click", async () => {
+    try { await api("/cloud/api/logout", { method: "POST" }); } catch (error) { /* the cookie goes either way */ }
+    location.href = "/cloud/login";
+  });
+}
+
+settingsButton.addEventListener("click", () => { showView("settings"); loadCloudSettings(); });
 settingsBack.addEventListener("click", openBooksHome);
 homeImportBook.addEventListener("click", openImportPanel);
 newBookNext.addEventListener("click", () => {
