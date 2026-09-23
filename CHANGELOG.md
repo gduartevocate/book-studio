@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.23.4 (2026-09-23)
+
+- A book parked at format review stops reporting itself as generating, and a refusal now says why.
+
 ## v2026.09.23.3 (2026-09-23)
 
 - Settings actions work through the web again: the browser's Origin is no longer sent to the local server.

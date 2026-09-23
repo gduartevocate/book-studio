@@ -103,6 +103,25 @@ $aged=Read-BookStudioDatabase -DatabasePath $db
 Write-BookStudioDatabase -DatabasePath $db -Database $aged
 Check (Repair-BookStudioParkedJobs -DatabasePath $db) 'A book stranded as Queued with no runner was not repaired.'
 Check ((Get-BookStudioJob -DatabasePath $db -JobId $draftJob.id).status -eq 'Ready') 'The repair did not clear the runner status from a stranded book.'
+# A scaffold already written is the normal state at format review: the runner
+# writes the folder, stops, and waits for a person to approve the format.
+# Treating that as still generating left real books stuck for days, reported as
+# generating, refusing their own deletion, with nothing a designer could do.
+# On a copy, so the book this suite is still working with is left alone.
+$parkedDb=Read-BookStudioDatabase -DatabasePath $db
+$parkedCopy=(@($parkedDb.jobs | Where-Object id -eq $draftJob.id)[0]) | ConvertTo-Json -Depth 20 | ConvertFrom-Json
+$parkedCopy.id='parkedcopy'
+$parkedCopy.status='Queued'
+$parkedCopy.workflowStage='format-review'
+$parkedCopy.runnerProcessId=$null
+$parkedCopy.outputFolder=(Join-Path $fixture 'outputs/parkedcopy')
+$parkedCopy.updatedAt=(Get-Date).AddMinutes(-5).ToString('s')
+$parkedDb.jobs=@($parkedDb.jobs) + $parkedCopy
+Write-BookStudioDatabase -DatabasePath $db -Database $parkedDb
+Check (Repair-BookStudioParkedJobs -DatabasePath $db) 'A book parked at format review with its scaffold written was not repaired.'
+Check ((Get-BookStudioJob -DatabasePath $db -JobId 'parkedcopy').status -eq 'Ready') 'A book with a written scaffold must stop reporting itself as generating.'
+$null=Remove-BookStudioJob -DatabasePath $db -JobId 'parkedcopy'
+Check (-not (Get-BookStudioJob -DatabasePath $db -JobId 'parkedcopy')) 'A book parked at format review must be deletable once it is no longer generating.'
 # A book that was queued a moment ago is still starting; leave it alone.
 $null=Update-BookStudioJob -DatabasePath $db -JobId $draftJob.id -Update { param($j) $j.status='Queued'; $j.updatedAt=(Get-Date).ToString('s') }
 Check (-not (Repair-BookStudioParkedJobs -DatabasePath $db)) 'The repair raced a book that had only just been queued.'

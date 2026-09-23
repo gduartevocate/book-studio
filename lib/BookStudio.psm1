@@ -285,7 +285,13 @@ function Repair-BookStudioParkedJobs {
             # older Queued job with none is not starting and never will.
             $parked = $job.workflowStage -eq 'outcomes-analysis'
             if (-not $parked) {
-                if ($job.workflowStage -ne 'format-review' -or $job.outputFolder) { continue }
+                if ($job.workflowStage -ne 'format-review') { continue }
+                # A scaffold that has already been written is the normal state
+                # at format review, not a sign that something is still running:
+                # the runner writes the folder and then stops, waiting for a
+                # person to approve the format. Treating those as busy left two
+                # books stuck as "generating" for days, which could be neither
+                # finished nor deleted.
                 $updatedAt = try { [datetime]$job.updatedAt } catch { (Get-Date).AddMinutes(-10) }
                 if (((Get-Date) - $updatedAt).TotalSeconds -lt 120) { continue }
             }

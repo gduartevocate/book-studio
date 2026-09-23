@@ -233,15 +233,25 @@ function Invoke-LocalStudioRequest {
         $webResponse = $_.Exception.Response
         if ($webResponse) {
             $reply.status = [int]$webResponse.StatusCode
-            try {
-                $stream = $webResponse.GetResponseStream()
-                $reader = New-Object System.IO.StreamReader($stream)
-                $text = $reader.ReadToEnd()
-                $reader.Dispose()
-                $reply.headers = @{ 'content-type' = [string]$webResponse.ContentType }
-                $reply.bodyBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($text))
+            # PowerShell has already read the response body into ErrorDetails by
+            # the time this runs, so the stream is at its end and reading it
+            # again returns nothing. That is why a refusal such as "this book is
+            # still generating" reached the designer as a bare "Request failed:
+            # 400" with nothing to act on.
+            $text = ''
+            if ($_.ErrorDetails -and $_.ErrorDetails.Message) {
+                $text = [string]$_.ErrorDetails.Message
             }
-            catch { }
+            else {
+                try {
+                    $reader = New-Object System.IO.StreamReader($webResponse.GetResponseStream())
+                    $text = $reader.ReadToEnd()
+                    $reader.Dispose()
+                }
+                catch { }
+            }
+            $reply.headers = @{ 'content-type' = [string]$webResponse.ContentType }
+            $reply.bodyBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($text))
         }
         else {
             $reply.headers = @{ 'content-type' = 'application/json' }
