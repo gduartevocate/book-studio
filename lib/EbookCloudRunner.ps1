@@ -338,6 +338,23 @@ function Update-BookStudioInstall {
     }
 }
 
+# Whether the Book Studio on disk is newer than the code this agent is running,
+# however it got there. The agent only restarted after an update it downloaded
+# itself; one installed by Get latest updates in Book Studio's Settings left it
+# running the old code, finding nothing new to download, until the next
+# Windows sign-in -- so a fix could reach the files and never the agent.
+function Test-BookRunnerBehindInstall {
+    param(
+        [Parameter(Mandatory)][string]$ProjectRoot,
+        [AllowEmptyString()][string]$RunningVersion
+    )
+
+    if ([string]::IsNullOrWhiteSpace($RunningVersion)) { return $false }
+    $installed = Get-BookStudioInstalledVersion -ProjectRoot $ProjectRoot
+    if ([string]::IsNullOrWhiteSpace($installed)) { return $false }
+    return ((ConvertTo-BookStudioVersionNumber $installed) -gt (ConvertTo-BookStudioVersionNumber $RunningVersion))
+}
+
 # Restarting into the new copy. The agent's own code is already stale by the
 # time it gets here, so it starts a fresh one and stands down, releasing the
 # single-instance hold first so the new one is not turned away by the old.

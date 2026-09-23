@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.23.19 (2026-09-23)
+
+- Updates apply themselves: every computer checks every 15 minutes, and Book Studio's own Get latest updates now also restarts the connection agent into the new release.
+
 ## v2026.09.23.18 (2026-09-23)
 
 - Pages load faster through the web site (dedicated helpers carry them), and a learning objective Codex reworded is restored to the course wording instead of failing the book.

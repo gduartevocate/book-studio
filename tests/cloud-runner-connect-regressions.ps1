@@ -470,6 +470,24 @@ finally {
 Check ($runnerText -match 'Enter-BookRunnerSingleInstance -TakeOver:\(\[bool\]\$Token\)') 'Only the setup command, which carries a token, may replace a running agent.'
 $afterSelfUpdate = [regex]::Matches($runnerText, 'Invoke-BookRunnerSelfUpdate -ProjectRoot \$ProjectRoot -Instance \$instance\) \{ return \}\s+Sync-LocalStudioServer')
 Check ($afterSelfUpdate.Count -eq 2) 'The server must be brought up to date at start and at every hourly check, after the agent itself.'
-Check ($runnerText -match '\[int\]\$UpdateCheckMinutes = 60') 'The hourly update check needs its interval, or it asks GitHub every cycle.'
+Check ($runnerText -match '\[int\]\$UpdateCheckMinutes = 15') 'The update check needs its interval, or it asks GitHub every cycle; fifteen minutes gets a fix out the same morning.'
+
+# Any update on disk is running within a cycle, however it got there. An update
+# from Get latest updates in Settings left the agent on its old code, because
+# its own check then found nothing new to download.
+$versionRoot = Join-Path ([IO.Path]::GetTempPath()) ('agent-version-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path (Join-Path $versionRoot 'book-studio') -Force | Out-Null
+try {
+    '{ "version": "2026.09.23.18" }' | Set-Content -LiteralPath (Join-Path $versionRoot 'book-studio/version.json')
+    Check (Test-BookRunnerBehindInstall -ProjectRoot $versionRoot -RunningVersion '2026.09.23.17') 'An agent older than the files on disk must see it is behind.'
+    Check (-not (Test-BookRunnerBehindInstall -ProjectRoot $versionRoot -RunningVersion '2026.09.23.18')) 'An agent on the installed release is not behind.'
+    Check (-not (Test-BookRunnerBehindInstall -ProjectRoot $versionRoot -RunningVersion '2026.09.23.19')) 'Files older than the agent never make it restart.'
+    Check (Test-BookRunnerBehindInstall -ProjectRoot $versionRoot -RunningVersion '2026.09.23.9') 'Release numbers compare as numbers: .18 is newer than .9.'
+    Check (-not (Test-BookRunnerBehindInstall -ProjectRoot $versionRoot -RunningVersion '')) 'An agent that could not read its own release does not restart in a loop.'
+}
+finally { Remove-Item -LiteralPath $versionRoot -Recurse -Force -ErrorAction SilentlyContinue }
+$behindAt = $runnerText.IndexOf('Test-BookRunnerBehindInstall -ProjectRoot $ProjectRoot -RunningVersion $script:agentVersion')
+Check ($behindAt -gt 0 -and $runnerText.Substring($behindAt, 400) -match 'Restart-BookRunner -ProjectRoot \$ProjectRoot -Instance \$instance\s+return') 'An agent behind the files on disk must restart into them.'
+Check ($runnerText.IndexOf('$script:agentVersion = Get-BookStudioInstalledVersion') -gt 0 -and $runnerText.IndexOf('$script:agentVersion = Get-BookStudioInstalledVersion') -lt $behindAt) 'The agent must remember the release it started as.' 
 
 "PASS: $checks connection assertions (token remembered and replaced, kept in the user profile, start with Windows without an administrator, setup replaces an old agent, an old local server is restarted when idle)."

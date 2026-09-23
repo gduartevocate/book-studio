@@ -13,7 +13,9 @@ param(
     [int]$StudioPort = 8790,
     # How often to look for a new release. It was used but never declared, so
     # it was empty and every cycle, about every 25 seconds, asked GitHub.
-    [int]$UpdateCheckMinutes = 60,
+    # How often to ask GitHub for a new release. Fifteen minutes: a fix should
+    # reach every computer the same morning, without anyone doing anything.
+    [int]$UpdateCheckMinutes = 15,
     # Page helpers: copies of this agent that only carry requests between the
     # web site and Book Studio here. See Start-BridgeWorkers.
     [switch]$BridgeWorker,
@@ -689,6 +691,10 @@ function Start-BridgeWorkers {
 }
 
 $script:lastUpdateCheck = [datetime]::MinValue
+# The release this agent's code is. Compared with the files on disk every
+# cycle, so any update -- downloaded here or installed from Book Studio's
+# Settings -- is running within one cycle.
+$script:agentVersion = Get-BookStudioInstalledVersion -ProjectRoot $ProjectRoot
 if (-not $Once) {
     if (Invoke-BookRunnerSelfUpdate -ProjectRoot $ProjectRoot -Instance $instance) { return }
     Sync-LocalStudioServer
@@ -724,6 +730,11 @@ do {
         # designer clicks something in the browser, and otherwise after
         # about twenty-five seconds, which is the poll interval by another
         # name.
+        if (Test-BookRunnerBehindInstall -ProjectRoot $ProjectRoot -RunningVersion $script:agentVersion) {
+            Write-Host "Book Studio $(Get-BookStudioInstalledVersion -ProjectRoot $ProjectRoot) is installed; this agent runs $($script:agentVersion). Restarting into it." -ForegroundColor Green
+            Restart-BookRunner -ProjectRoot $ProjectRoot -Instance $instance
+            return
+        }
         if (((Get-Date) - $script:lastUpdateCheck).TotalMinutes -ge $UpdateCheckMinutes) {
             if (Invoke-BookRunnerSelfUpdate -ProjectRoot $ProjectRoot -Instance $instance) { return }
             Sync-LocalStudioServer
