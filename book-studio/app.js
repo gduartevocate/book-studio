@@ -3533,6 +3533,32 @@ function reachedThroughTheCloud() {
   return !["localhost", "127.0.0.1", "::1"].includes(location.hostname);
 }
 
+// An administrator using Book Studio through the web site is told when someone
+// is waiting for an account, with the way to the page that approves it. The
+// web site refuses the question from anyone else, and they see nothing.
+async function showAccountRequestsWaiting() {
+  if (!reachedThroughTheCloud()) return;
+  try {
+    const response = await fetch("/cloud/api/signups", { headers: { accept: "application/json" } });
+    if (!response.ok) return;
+    const waiting = ((await response.json()).requests || []).length;
+    if (!waiting) return;
+    const banner = document.createElement("div");
+    banner.className = "connection-notice requests-notice";
+    banner.setAttribute("role", "status");
+    const text = document.createElement("span");
+    text.textContent = `${waiting} account ${waiting === 1 ? "request is" : "requests are"} waiting for your approval. `;
+    const review = document.createElement("a");
+    review.href = "/cloud/admin";
+    review.textContent = "Review";
+    banner.append(text, review);
+    document.body.prepend(banner);
+  } catch {
+    // Nothing to say if the question cannot be asked.
+  }
+}
+showAccountRequestsWaiting();
+
 function describeLastSeen(seenAt) {
   const seen = Date.parse(seenAt || "");
   if (!seen) return "";

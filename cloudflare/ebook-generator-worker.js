@@ -102,15 +102,8 @@ const CONNECT_HTML = `<!doctype html>
   <dl id="detail"></dl>
 </section>
 <section id="people" hidden><h2>5. People</h2>
-  <p class="muted">Only you can see this. A new password is shown once, here, and the person has to
-  change it the first time they sign in. Nothing is emailed, so nothing can be opened on their behalf.</p>
-  <div class="row"><input id="newEmail" placeholder="name@vocate.org" style="flex:1;min-width:220px;padding:9px;border-radius:7px;border:1px solid var(--line);background:transparent;color:inherit">
-  <button id="add">Add or reset</button></div>
-  <div id="issued" role="status" aria-live="polite"></div>
-  <h3 id="requestsHeading" hidden>Waiting for approval</h3>
-  <table id="requests" aria-labelledby="requestsHeading"></table>
-  <h3>Everyone with an account</h3>
-  <table id="roster"></table>
+  <p>You look after who can use Book Studio. <a href="__CLOUD__/admin">Manage people and account requests</a>
+  <span id="waiting" class="pill warn" hidden></span></p>
 </section>
 
 
@@ -205,6 +198,97 @@ el("check").addEventListener("click", async () => {
   }
 });
 
+// Administrators get a way to their page, and a count of who is waiting.
+// Anyone else is refused by the API and never sees the section.
+api("__CLOUD__/api/signups").then((listing) => {
+  el("people").hidden = false;
+  const waiting = (listing.requests || []).length;
+  el("waiting").hidden = !waiting;
+  el("waiting").textContent = waiting + (waiting === 1 ? " request waiting" : " requests waiting");
+}).catch(() => {});
+
+el("copy").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(el("cmd").textContent);
+    el("copied").textContent = "Copied. Paste it into PowerShell on that computer.";
+  } catch (error) {
+    el("copied").textContent = "Select the line above and copy it.";
+  }
+});
+el("signout").addEventListener("click", async () => {
+  try { await api("__CLOUD__/api/logout", { method: "POST" }); } catch (error) { /* the cookie goes either way */ }
+  location.href = "__CLOUD__/login";
+});
+</script></body></html>`;
+
+// Administrators: account requests, and everyone with an account. The API
+// behind it refuses anyone else; this page only makes it findable.
+const ADMIN_HTML = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>People and access</title>
+<style>
+ :root { --ink:#0d3553; --line:#dbdbdb; --bg:#f9f9f9; --ok:#067647; --warn:#a15c00; --bad:#b42318; }
+ @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ink:#eef4f8; --line:#2b3d4c; --bg:#0f1a22; } }
+ :root[data-theme="dark"] { --ink:#eef4f8; --line:#2b3d4c; --bg:#0f1a22; }
+ body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui,Segoe UI,Arial,sans-serif; }
+ main { max-width:760px; margin:0 auto; padding:32px 16px 64px; }
+ h1 { font-size:26px; margin:0 0 4px; } p.sub { margin:0 0 28px; opacity:.75; }
+ section { border:1px solid var(--line); border-radius:10px; padding:20px; margin-bottom:18px; background:color-mix(in srgb, var(--bg) 88%, white); }
+ h2 { font-size:15px; text-transform:uppercase; letter-spacing:.06em; margin:0 0 12px; opacity:.7; }
+ .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+ button { font:inherit; padding:9px 16px; border-radius:7px; border:1px solid var(--ink); background:var(--ink); color:var(--bg); cursor:pointer; }
+ button.secondary { background:transparent; color:var(--ink); }
+ code, pre { font-family:ui-monospace,Consolas,monospace; font-size:13px; }
+ pre { background:color-mix(in srgb, var(--bg) 70%, black); color:#e6edf3; padding:14px; border-radius:8px; overflow:auto; }
+ .pill { display:inline-block; padding:3px 10px; border-radius:999px; font-size:13px; font-weight:700; border:1px solid currentColor; }
+ .ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)}
+ dl { display:grid; grid-template-columns:auto 1fr; gap:6px 16px; margin:12px 0 0; font-size:14px; }
+ dt { opacity:.65; } dd { margin:0; word-break:break-all; }
+ table { width:100%; border-collapse:collapse; margin-top:12px; font-size:.92rem; }
+ td { padding:6px 8px; border-top:1px solid var(--line); vertical-align:middle; }
+ .muted { color:#66788a; font-size:.9rem; }
+ .nav { display:flex; gap:14px; align-items:center; margin-bottom:8px; font-size:.92rem; }
+ .nav a, .linkish { color:#0d6efd; text-decoration:none; background:none; border:0; padding:0;
+                    font:inherit; cursor:pointer; }
+ .nav-here { font-weight:600; }
+ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible { outline:3px solid #0b62d6; outline-offset:2px; }
+</style></head><body><main>
+<nav class="nav"><a href="/">Book Studio</a><a href="__CLOUD__/">Your books</a><a href="__CLOUD__/connect">Your computer</a><span class="nav-here">People</span><a href="__CLOUD__/guide">Guide</a>
+  <button class="linkish" id="signout">Sign out</button></nav>
+<h1>People and access</h1>
+<p class="sub">Who can use Book Studio. Only a vocate.org address can ask for an account, and nobody gets one until an administrator approves it here.</p>
+<p id="notAdmin" hidden>This page is for Book Studio administrators. Ask one if someone needs an account.</p>
+<section id="people" hidden><h2>Account requests and people</h2>
+  <p class="muted">Only you can see this. A new password is shown once, here, and the person has to
+  change it the first time they sign in. Nothing is emailed, so nothing can be opened on their behalf.</p>
+  <div class="row"><input id="newEmail" placeholder="name@vocate.org" style="flex:1;min-width:220px;padding:9px;border-radius:7px;border:1px solid var(--line);background:transparent;color:inherit">
+  <button id="add">Add or reset</button></div>
+  <div id="issued" role="status" aria-live="polite"></div>
+  <h3 id="requestsHeading" hidden>Waiting for approval</h3>
+  <table id="requests" aria-labelledby="requestsHeading"></table>
+  <h3>Everyone with an account</h3>
+  <table id="roster"></table>
+</section>
+
+</main><script>
+// Everything written into the page as markup passes through here. The
+// values come from other machines, other people and other programs --
+// a computer names itself, an administrator types an address -- and any
+// one of them could otherwise carry a script into this page.
+function esc(value) {
+  return String(value == null ? "" : value).replace(/[&<>"']/g, function (character) {
+    // Written without a backslash: this page lives inside a template literal,
+    // which would eat it and leave three quotes in a row in the browser.
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character];
+  });
+}
+const el = (id) => document.getElementById(id);
+async function api(path, options) {
+  const response = await fetch(path, options);
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
 // The list of people is an administrator's view. For everyone else the request
 // is refused and the section simply never appears.
 async function loadPeople() {
@@ -285,15 +369,8 @@ el("add").addEventListener("click", async () => {
   finally { el("add").disabled = false; }
 });
 
-
-el("copy").addEventListener("click", async () => {
-  try {
-    await navigator.clipboard.writeText(el("cmd").textContent);
-    el("copied").textContent = "Copied. Paste it into PowerShell on that computer.";
-  } catch (error) {
-    el("copied").textContent = "Select the line above and copy it.";
-  }
-});
+// Shown instead of an empty page to anyone who is not an administrator.
+api("__CLOUD__/api/signups").catch(() => { el("notAdmin").hidden = false; });
 el("signout").addEventListener("click", async () => {
   try { await api("__CLOUD__/api/logout", { method: "POST" }); } catch (error) { /* the cookie goes either way */ }
   location.href = "__CLOUD__/login";
@@ -883,12 +960,14 @@ const APP_HTML = `<!doctype html>
       <a class="secondary-link" href="/">Open Book Studio</a>
       <a class="secondary-link" href="__CLOUD__/connect">Your computer</a>
       <a class="secondary-link" href="__CLOUD__/guide">Guide</a>
+      <a class="secondary-link" id="peopleLink" href="__CLOUD__/admin" hidden>People</a>
       <span id="machineState" class="who"></span>
       <button id="refreshJobs" class="secondary" type="button">Refresh</button>
       <button id="signout" class="secondary" type="button">Sign out</button>
     </div>
   </header>
   <main class="workspace">
+    <p id="requestsWaiting" class="panel" role="status" hidden></p>
     <section class="panel">
       <h2>Start a book in Book Studio</h2>
       <p>This page is where books are listed, not where they are made. A book made here would be
@@ -1028,6 +1107,20 @@ const APP_HTML = `<!doctype html>
     });
     refreshJobsButton.addEventListener("click", function() { loadJobs().catch(function(error) { setStatus(error.message); }); });
     loadJobs().catch(function(error) { setStatus(error.message); });
+    // An administrator sees the way to the People page, and is told when
+    // someone is waiting to be let in. Anyone else is refused and sees neither.
+    api("__CLOUD__/api/signups").then(function(listing) {
+      document.querySelector("#peopleLink").hidden = false;
+      var waiting = (listing.requests || []).length;
+      if (!waiting) return;
+      var notice = document.querySelector("#requestsWaiting");
+      notice.textContent = waiting + (waiting === 1 ? " account request is" : " account requests are") + " waiting for your approval. ";
+      var review = document.createElement("a");
+      review.href = "__CLOUD__/admin";
+      review.textContent = "Review";
+      notice.append(review);
+      notice.hidden = false;
+    }).catch(function() {});
     setInterval(function() { loadJobs().catch(function() {}); }, 5000);
   </script>
 </body>
@@ -2066,6 +2159,13 @@ async function handleRequest(request, env) {
         if (env.REQUIRE_ACCESS === "true" && !(await accessIdentity(request, env))) {
           return new Response(null, { status: 302, headers: { location: cloudPrefix + "/login?next=" + encodeURIComponent(cloudPrefix + pathname) } });
         }
+      }
+
+      if (request.method === "GET" && pathname === "/admin") {
+        if (env.REQUIRE_ACCESS === "true" && !(await accessIdentity(request, env))) {
+          return new Response(null, { status: 302, headers: { location: cloudPrefix + "/login?next=" + encodeURIComponent(cloudPrefix + "/admin") } });
+        }
+        return new Response(withCloudPrefix(ADMIN_HTML, cloudPrefix), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
       }
 
       if (request.method === "GET" && pathname === "/connect") {

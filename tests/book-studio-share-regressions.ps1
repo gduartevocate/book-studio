@@ -96,6 +96,7 @@ Check ($app -match 'if \(!isJobProcessing\(job\)\) appendShareAction\(actions, j
 Check ($app -match '"Share again" : "Share with Vocate"' -and $app -match '"Stop sharing"') 'The page must offer Share with Vocate, Share again and Stop sharing.'
 Check ($app -match 'job\.shared\?\.status === "Sharing"\) \|\| bookChatHasRunningRequests') 'The page must keep refreshing while a share uploads.'
 Check ($app -match '\$\{describeSharing\(job\)\}') 'Each book''s summary line must say whether and when it was shared.'
-Check ((Get-Content -LiteralPath (Join-Path $root 'book-studio/index.html') -Raw) -match 'app\.js\?v=20260923-6') 'The changed page must be cache-busted.'
+$appVersion = [regex]::Match((Get-Content -LiteralPath (Join-Path $root 'book-studio/index.html') -Raw), 'app\.js\?v=(\d{8})-(\d+)')
+Check ($appVersion.Success -and ([long]$appVersion.Groups[1].Value * 100 + [int]$appVersion.Groups[2].Value) -ge 2026092306) 'The page must be cache-busted to at least the release that added sharing.'
 
 "PASS: $checks sharing assertions (self-contained copies, upload order, failures on the book, never-connected computers, stop sharing)."

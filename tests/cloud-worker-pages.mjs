@@ -60,6 +60,7 @@ async function page(path) {
 // or every link on them points at a page that is not there.
 const pages = {
   "/cloud/connect": await page("/cloud/connect"),
+  "/cloud/admin": await page("/cloud/admin"),
   "/cloud/login": await page("/cloud/login"),
   "/cloud/": await page("/cloud/")
 };
@@ -187,13 +188,29 @@ check(/keeps itself up to date/.test(script), "And say when it has not.");
 // Found by the security audit of 2026-09-23: values from other machines and
 // other people were written into this page as markup. A computer names itself
 // and an administrator types an address; either could carry a script.
-const markupWrites = [...script.matchAll(/innerHTML\s*=([\s\S]*?);\s*$/gm)].map((match) => match[1]);
+const adminPage = pages["/cloud/admin"];
+const adminScript = (adminPage.match(/<script>([\s\S]*?)<\/script>/) || [])[1] || "";
+const markupWrites = [...(script + " " + adminScript).matchAll(/innerHTML\s*=([\s\S]*?);\s*$/gm)].map((match) => match[1]);
 check(markupWrites.length > 3, "The markup scan found too few writes; the pattern is wrong.");
 for (const write of markupWrites) {
   const risky = [...write.matchAll(/\+\s*([A-Za-z_][\w.]*(?:\.(?:message|email|detail|token|password|version|reason|runnerName|label))[\w.]*)/g)].map((m) => m[1]);
   for (const value of risky) check(false, "The connect page writes " + value + " as markup without esc().");
 }
 check(/function esc\(/.test(script), "The connect page must have an escaping helper.");
+check(/function esc\(/.test(adminScript), "The admin page must have an escaping helper.");
+
+// Account approvals have a page of their own, and every way in points there.
+// They used to be section 5 at the bottom of Your computer, where the one
+// administrator could not find them.
+for (const id of ['id="requests"', 'id="roster"', 'id="newEmail"', 'id="notAdmin"']) {
+  check(adminPage.includes(id), "The admin page must have " + id + ".");
+}
+check(adminScript.includes('"/cloud/api/signups/approve"') && adminScript.includes('"/cloud/api/signups/decline"'), "The admin page must approve and decline requests.");
+check(!connect.includes('id="roster"') && connect.includes('href="/cloud/admin"') && /request waiting/.test(script), "Your computer must link to the admin page, with the number waiting, instead of holding it.");
+const booksPage2 = pages["/cloud/"];
+check(booksPage2.includes('id="peopleLink" href="/cloud/admin" hidden') && booksPage2.includes("waiting for your approval"), "The books page must show an administrator the way to People and who is waiting.");
+const studioClient = readFileSync(new URL("../book-studio/app.js", import.meta.url), "utf8");
+check(studioClient.includes('fetch("/cloud/api/signups"') && studioClient.includes('review.href = "/cloud/admin"'), "Book Studio must tell an administrator when someone is waiting.");
 check(!script.includes('"""'), "The escaping helper must survive the template literal it lives in.");
 
 // Chapter links. A manuscript link became <a href> with whatever it said, so

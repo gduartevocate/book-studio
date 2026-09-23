@@ -606,6 +606,12 @@ check(!kv.store.has("signup:reader@vocate.org"), "And no request is recorded for
 
 // Only an administrator sees and decides the requests.
 check((await call("GET", "/api/signups", { cookie: designerAgain })).status === 403, "A designer must not see account requests.");
+// The page administrators approve requests on. Signed out, it is the sign-in
+// screen; signed in as anyone else, the page loads but its API refuses them.
+const adminSignedOut = await call("GET", "/admin", { headers: { accept: "text/html" } });
+check(adminSignedOut.status === 302 && (adminSignedOut.headers.get("location") || "").includes("/cloud/login?next=%2Fcloud%2Fadmin"), "The admin page must send a signed-out visitor to sign in, got " + adminSignedOut.status);
+const adminPageForAdmin = await call("GET", "/admin", { cookie: admin, headers: { accept: "text/html" } });
+check(adminPageForAdmin.status === 200 && adminPageForAdmin.text.includes("People and access"), "An administrator must get the admin page.");
 const pendingList = await call("GET", "/api/signups", { cookie: admin });
 check(pendingList.status === 200 && pendingList.json.requests.some((r) => r.email === "new.designer@vocate.org"), "An administrator sees the request, with the address in one case.");
 check(pendingList.json.requests.find((r) => r.email === "new.designer@vocate.org").note === "RB1010", "The note the person left is kept for the administrator.");

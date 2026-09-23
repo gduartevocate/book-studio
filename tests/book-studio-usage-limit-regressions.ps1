@@ -116,6 +116,7 @@ Check ($app -match 'choose Finish images') 'The callout must name the button it 
 Check ($app -match '!isAwaitingImages\(job\) && job\.artifacts') 'Fix QA must not be offered for a package that is only waiting for its images.'
 Check ($app -notmatch 'time shown in the log') 'The page must not point at a time the log does not show.'
 $index = Get-Content -LiteralPath (Join-Path $root 'book-studio/index.html') -Raw
-Check ($index -match 'app\.js\?v=20260923-5' -and $index -match 'styles\.css\?v=20260923-4') 'The changed page files must be cache-busted, or open browsers keep the old buttons.'
+$appVersion = [regex]::Match($index, 'app\.js\?v=(\d{8})-(\d+)'); $cssVersion = [regex]::Match($index, 'styles\.css\?v=(\d{8})-(\d+)')
+Check ($appVersion.Success -and ([long]$appVersion.Groups[1].Value * 100 + [int]$appVersion.Groups[2].Value) -ge 2026092305 -and $cssVersion.Success -and ([long]$cssVersion.Groups[1].Value * 100 + [int]$cssVersion.Groups[2].Value) -ge 2026092304) 'The changed page files must be cache-busted, or open browsers keep the old buttons.'
 
 "PASS: $checks usage-limit assertions (never put back a copy over chapters this run wrote, only put back a finished book, finish images instead of rewriting, say what to do next)."
