@@ -132,8 +132,36 @@ function Test-BookRunnerStartupInstalled {
 # Only one agent per computer. Two of them poll the same queue and report the
 # same machine over each other, and a designer who pastes the setup command
 # twice has no way to know they have done it.
+#
+# Started deliberately -- the setup command, with a token -- it takes over
+# instead. On the Vocate laptop the setup command updated the files and started
+# the new agent, which found the old one running, said so in a minimised window
+# nobody saw, and quit; the old one carried on with code too old to show Book
+# Studio on the web site, and setup reported "has not reached Book Studio".
+# Started at sign-in, with no token, it still defers to the one running.
 function Enter-BookRunnerSingleInstance {
-    param([string]$Name = 'Global\BookStudioCloudRunner')
+    param(
+        [string]$Name = 'Global\BookStudioCloudRunner',
+        [switch]$TakeOver,
+        # Which processes are the other agents. A parameter so the rule can be
+        # tested against a stand-in process; the agent uses the real list.
+        [scriptblock]$FindOthers = { Get-OtherBookRunnerProcesses },
+        [int]$WaitSeconds = 20
+    )
+
+    # Stopped before the mutex is even asked for: an agent from before the
+    # mutex existed holds none, and would otherwise keep reporting this
+    # computer, with no version, over the new one.
+    $replaced = @()
+    if ($TakeOver) {
+        foreach ($process in @(& $FindOthers)) {
+            try {
+                Stop-Process -Id $process.ProcessId -Force -ErrorAction Stop
+                $replaced += [int]$process.ProcessId
+            }
+            catch { }
+        }
+    }
 
     $created = $false
     try {
@@ -142,13 +170,81 @@ function Enter-BookRunnerSingleInstance {
     catch {
         # A machine that will not give us a mutex is not a reason to refuse to
         # run; it only means a second copy cannot be detected.
-        return [pscustomobject]@{ acquired = $true; mutex = $null }
+        return [pscustomobject]@{ acquired = $true; mutex = $null; replaced = $replaced }
     }
-    if (-not $created) {
-        $mutex.Dispose()
-        return [pscustomobject]@{ acquired = $false; mutex = $null }
+    if ($created) { return [pscustomobject]@{ acquired = $true; mutex = $mutex; replaced = $replaced } }
+    if ($TakeOver) {
+        # The stopped agent's mutex is released as it exits (abandoned, which
+        # still hands it over), or is held by a window this cannot find.
+        $owned = $false
+        try { $owned = $mutex.WaitOne($WaitSeconds * 1000) }
+        catch {
+            $inner = $_.Exception
+            while ($inner -and -not ($inner -is [System.Threading.AbandonedMutexException])) { $inner = $inner.InnerException }
+            $owned = [bool]$inner
+        }
+        if ($owned) { return [pscustomobject]@{ acquired = $true; mutex = $mutex; replaced = $replaced } }
     }
-    return [pscustomobject]@{ acquired = $true; mutex = $mutex }
+    $mutex.Dispose()
+    return [pscustomobject]@{ acquired = $false; mutex = $null; replaced = $replaced }
+}
+
+# The other agents running as this person on this computer, found by the
+# command line they were started with: the setup command, the sign-in shortcut
+# and a self-update restart all name cloud-book-runner.ps1. A one-off check
+# (-Once) and a request to stop starting with Windows are not agents.
+function Get-OtherBookRunnerProcesses {
+    param([int]$ExceptProcessId = $PID)
+
+    @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe' OR Name='pwsh.exe'" -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.ProcessId -ne $ExceptProcessId -and
+            [string]$_.CommandLine -match 'cloud-book-runner' -and
+            [string]$_.CommandLine -notmatch '(?i)-Once\b|-StopStartingWithWindows'
+        })
+}
+
+# The Book Studio server on this computer has to run the code on disk. It is
+# started once and then left alone, so an agent that updated itself went on
+# forwarding the web site to a server still running the release before: the
+# page on the web was never the one just published.
+function Get-BookStudioServerProcesses {
+    @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe' OR Name='pwsh.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { [string]$_.CommandLine -match 'Start-BookStudioServer|book-studio\.ps1' -and $_.ProcessId -ne $PID })
+}
+
+function Update-StaleLocalStudioServer {
+    param(
+        [Parameter(Mandatory)][string]$ProjectRoot,
+        [int]$Port = 8790,
+        # The three things this decides on, as parameters so the rule can be
+        # tested without a server; the agent uses the defaults.
+        [scriptblock]$ServedVersion = { param($port) try { (Invoke-RestMethod -Uri "http://localhost:$port/version.json" -TimeoutSec 4).version } catch { $null } },
+        [scriptblock]$Busy = {
+            param($root)
+            Import-Module (Join-Path $root 'lib/BookStudio.psm1') -DisableNameChecking -ErrorAction Stop
+            $database = Get-BookStudioDatabasePath -ProjectRoot $root
+            & (Get-Module BookStudio) { param($path) Get-BookStudioUpdateBlocker -DatabasePath $path } $database
+        },
+        [scriptblock]$FindServers = { Get-BookStudioServerProcesses }
+    )
+
+    $installed = ''
+    try { $installed = [string](Get-Content -LiteralPath (Join-Path $ProjectRoot 'book-studio/version.json') -Raw | ConvertFrom-Json).version } catch { }
+    $served = [string](& $ServedVersion $Port)
+    if (-not $served) { return [pscustomobject]@{ status = 'not-running'; served = ''; installed = $installed; detail = '' } }
+    if (-not $installed -or $served -eq $installed) { return [pscustomobject]@{ status = 'current'; served = $served; installed = $installed; detail = '' } }
+
+    # Never under a book being written or a Codex request: the same rule as
+    # the update button in Book Studio itself.
+    $blocker = ''
+    try { $blocker = [string](& $Busy $ProjectRoot) } catch { $blocker = "Could not tell whether a book is being written: $($_.Exception.Message)" }
+    if ($blocker) { return [pscustomobject]@{ status = 'busy'; served = $served; installed = $installed; detail = $blocker } }
+
+    $servers = @(& $FindServers)
+    if (-not $servers.Count) { return [pscustomobject]@{ status = 'not-found'; served = $served; installed = $installed; detail = 'The Book Studio server running here was not started in a way this agent recognises; restart it by hand.' } }
+    foreach ($server in $servers) { try { Stop-Process -Id $server.ProcessId -Force -ErrorAction Stop } catch { } }
+    return [pscustomobject]@{ status = 'restarted'; served = $served; installed = $installed; detail = '' }
 }
 
 # Keeping itself up to date.

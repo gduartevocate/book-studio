@@ -11,6 +11,9 @@ param(
     [string]$BaseUrl = "https://ebook-generator.gduarte-28e.workers.dev",
     [string]$SignInUrl = "https://ebookstudio.vocate.app/cloud/connect",
     [int]$StudioPort = 8790,
+    # How often to look for a new release. It was used but never declared, so
+    # it was empty and every cycle, about every 25 seconds, asked GitHub.
+    [int]$UpdateCheckMinutes = 60,
     [string]$EnvPath = "..\.env",
     [string]$ProjectRoot = "",
     [string]$WorkRoot = "",
@@ -568,10 +571,22 @@ if ($Token) {
 # same machine over the first, and the designer who started it twice cannot
 # tell. -Once is exempt: it is a check, not a second agent.
 if (-not $Once) {
-    $instance = Enter-BookRunnerSingleInstance
+    # Given a token, this is the setup command being run on purpose: replace
+    # whatever agent is running. Started at sign-in, defer to it.
+    $instance = Enter-BookRunnerSingleInstance -TakeOver:([bool]$Token)
+    if ($instance.replaced.Count) {
+        Write-Host "Replaced the Book Studio agent that was already running here (process $($instance.replaced -join ', '))." -ForegroundColor Green
+    }
     if (-not $instance.acquired) {
-        Write-Host "Book Studio is already running on this computer, so this window has nothing to do."
-        Write-Host "Its connection is unaffected. Close this window."
+        if ($Token) {
+            Write-Warning "Another Book Studio window on this computer would not close. Close every PowerShell window titled Book Studio, then run the setup command again."
+            # Kept open: setup tells the designer to look in this window.
+            try { Read-Host 'Press Enter to close this window' | Out-Null } catch { }
+        }
+        else {
+            Write-Host "Book Studio is already running on this computer, so this window has nothing to do."
+            Write-Host "Its connection is unaffected. Close this window."
+        }
         return
     }
 }
@@ -625,9 +640,22 @@ function Invoke-BookRunnerSelfUpdate {
     return $true
 }
 
+function Sync-LocalStudioServer {
+    $server = Update-StaleLocalStudioServer -ProjectRoot $ProjectRoot -Port $StudioPort
+    switch ($server.status) {
+        'restarted' {
+            Write-Host "The Book Studio server here was running $($server.served); restarting it on $($server.installed)." -ForegroundColor Green
+            Start-LocalStudioServer -ProjectRoot $ProjectRoot -Port $StudioPort | Out-Null
+        }
+        'busy' { Write-Host "The Book Studio server here runs $($server.served), not $($server.installed). It restarts once nothing is being written: $($server.detail)" }
+        'not-found' { Write-Warning "The Book Studio server here runs $($server.served), not $($server.installed). $($server.detail)" }
+    }
+}
+
 $script:lastUpdateCheck = [datetime]::MinValue
 if (-not $Once) {
     if (Invoke-BookRunnerSelfUpdate -ProjectRoot $ProjectRoot -Instance $instance) { return }
+    Sync-LocalStudioServer
 }
 
 do {
@@ -658,6 +686,7 @@ do {
         # name.
         if (((Get-Date) - $script:lastUpdateCheck).TotalMinutes -ge $UpdateCheckMinutes) {
             if (Invoke-BookRunnerSelfUpdate -ProjectRoot $ProjectRoot -Instance $instance) { return }
+            Sync-LocalStudioServer
         }
         $carried = Invoke-BridgeCycle -ProjectRoot $ProjectRoot -Port $StudioPort
         # Several clicks arrive together; none of them should wait for the

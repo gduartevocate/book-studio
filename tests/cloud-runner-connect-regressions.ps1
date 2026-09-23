@@ -88,6 +88,84 @@ try {
     Check ($third.acquired) 'Once the first agent stops, another must be able to start.'
     $third.mutex.ReleaseMutex(); $third.mutex.Dispose()
 
+    # 7c. But the setup command, run on purpose, replaces the agent already
+    #     running. On the Vocate laptop the new agent found the old one, quit
+    #     in a minimised window, and the old code carried on; setup said "has
+    #     not reached Book Studio". Tested against real processes, because the
+    #     point is what happens between two of them.
+    $asAgents = { param($processes) @($processes | ForEach-Object { [pscustomobject]@{ ProcessId = $_.Id } }) }
+    $name = 'Local\BookStudioTakeover' + [guid]::NewGuid().ToString('N')
+    $ready = Join-Path $fixture 'holder-ready'
+    $holder = Start-Process powershell -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile', '-Command',
+        "`$m = New-Object System.Threading.Mutex(`$true, '$name'); Set-Content -LiteralPath '$ready' -Value 1; Start-Sleep -Seconds 120")
+    foreach ($wait in 1..80) { if (Test-Path -LiteralPath $ready) { break }; Start-Sleep -Milliseconds 250 }
+    Check (Test-Path -LiteralPath $ready) 'The stand-in agent must be holding the lock before the test goes on.'
+    $atSignIn = Enter-BookRunnerSingleInstance -Name $name -FindOthers { & $asAgents $holder }
+    $holder.Refresh()
+    Check (-not $atSignIn.acquired -and -not $holder.HasExited) 'Started at sign-in, a second agent still defers to the running one and stops nothing.'
+    $bySetup = Enter-BookRunnerSingleInstance -Name $name -TakeOver -FindOthers { & $asAgents $holder } -WaitSeconds 15
+    $holder.Refresh()
+    Check ($bySetup.acquired) 'Started by the setup command, the new agent must end up running.'
+    Check ($holder.HasExited -and $bySetup.replaced -contains $holder.Id) 'And the agent it replaced must be stopped, and named.'
+    if ($bySetup.mutex) { $bySetup.mutex.ReleaseMutex(); $bySetup.mutex.Dispose() }
+
+    # An agent that takes a moment to let go -- still closing, or one this
+    # could not find by name -- is waited for, not given up on at once.
+    $slowName = 'Local\BookStudioTakeover' + [guid]::NewGuid().ToString('N')
+    $slowReady = Join-Path $fixture 'slow-ready'
+    $slow = Start-Process powershell -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile', '-Command',
+        "`$m = New-Object System.Threading.Mutex(`$true, '$slowName'); Set-Content -LiteralPath '$slowReady' -Value 1; Start-Sleep -Seconds 3")
+    foreach ($wait in 1..80) { if (Test-Path -LiteralPath $slowReady) { break }; Start-Sleep -Milliseconds 250 }
+    $patient = Enter-BookRunnerSingleInstance -Name $slowName -TakeOver -FindOthers { @() } -WaitSeconds 15
+    Check ($patient.acquired) 'The setup command must wait for an agent that is still letting go, then run.'
+    if ($patient.mutex) { $patient.mutex.ReleaseMutex(); $patient.mutex.Dispose() }
+    Stop-Process -Id $slow.Id -Force -ErrorAction SilentlyContinue
+
+    # An agent from before the lock existed holds none, yet reports the same
+    # computer; it has to be stopped all the same, or the two overwrite each
+    # other's status and the web site flips between them.
+    $lockless = Start-Process powershell -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep -Seconds 120')
+    $fresh = Enter-BookRunnerSingleInstance -Name ('Local\BookStudioTakeover' + [guid]::NewGuid().ToString('N')) -TakeOver -FindOthers { & $asAgents $lockless }
+    $lockless.WaitForExit(10000) | Out-Null
+    Check ($fresh.acquired -and $lockless.HasExited -and $fresh.replaced -contains $lockless.Id) 'An old agent that holds no lock must be stopped too.'
+    if ($fresh.mutex) { $fresh.mutex.ReleaseMutex(); $fresh.mutex.Dispose() }
+
+    # Which processes count as agents: found by the command line, which a
+    # standard user can read for their own processes -- no administrator.
+    $marker = [guid]::NewGuid().ToString('N')
+    $agentLike = Start-Process powershell -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile', '-Command', "Start-Sleep -Seconds 60 # cloud-book-runner $marker")
+    $checkLike = Start-Process powershell -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile', '-Command', "Start-Sleep -Seconds 60 # cloud-book-runner -Once $marker")
+    try {
+        Start-Sleep -Milliseconds 800
+        $found = @(Get-OtherBookRunnerProcesses | Where-Object { [string]$_.CommandLine -match $marker })
+        Check ($found.ProcessId -contains $agentLike.Id) 'A running agent must be found by its command line, as a standard user.'
+        Check ($found.ProcessId -notcontains $checkLike.Id) 'A one-off check (-Once) is not an agent and must not be stopped.'
+        Check (@(Get-OtherBookRunnerProcesses).ProcessId -notcontains $PID) 'An agent never counts itself.'
+    }
+    finally {
+        Stop-Process -Id $agentLike.Id, $checkLike.Id -Force -ErrorAction SilentlyContinue
+    }
+
+    # 7d. The Book Studio server here has to run the code on disk. An agent
+    #     that updated itself used to keep forwarding the web site to a server
+    #     still running the release before.
+    $project = Join-Path $fixture 'project'
+    New-Item -ItemType Directory -Path (Join-Path $project 'book-studio') -Force | Out-Null
+    '{ "version": "2026.09.23.12" }' | Set-Content -LiteralPath (Join-Path $project 'book-studio/version.json')
+    $never = { throw 'must not be asked' }
+    $idle = { param($r) '' }
+    Check ((Update-StaleLocalStudioServer -ProjectRoot $project -ServedVersion { param($p) $null } -Busy $never -FindServers $never).status -eq 'not-running') 'No server running: nothing to restart.'
+    Check ((Update-StaleLocalStudioServer -ProjectRoot $project -ServedVersion { param($p) '2026.09.23.12' } -Busy $never -FindServers $never).status -eq 'current') 'A server on the installed release is left alone.'
+    $busy = Update-StaleLocalStudioServer -ProjectRoot $project -ServedVersion { param($p) '2026.09.17.3' } -Busy { param($r) "'RB1000' is still generating." } -FindServers $never
+    Check ($busy.status -eq 'busy' -and $busy.detail -match 'RB1000') 'An old server is never restarted while a book is being written, and says which book it waits for.'
+    Check ((Update-StaleLocalStudioServer -ProjectRoot $project -ServedVersion { param($p) '2026.09.17.3' } -Busy { param($r) throw 'database locked' } -FindServers $never).status -eq 'busy') 'When it cannot tell whether a book is being written, it assumes one is.'
+    Check ((Update-StaleLocalStudioServer -ProjectRoot $project -ServedVersion { param($p) '2026.09.17.3' } -Busy $idle -FindServers { @() }).status -eq 'not-found') 'A server it did not start and cannot find is reported, not guessed at.'
+    $oldServer = Start-Process powershell -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep -Seconds 120')
+    $restart = Update-StaleLocalStudioServer -ProjectRoot $project -ServedVersion { param($p) '2026.09.17.3' } -Busy $idle -FindServers { & $asAgents $oldServer }
+    $oldServer.WaitForExit(10000) | Out-Null
+    Check ($restart.status -eq 'restarted' -and $oldServer.HasExited) 'An idle server on an older release is stopped so the current one can start.'
+    Check ($restart.served -eq '2026.09.17.3' -and $restart.installed -eq '2026.09.23.12') 'And the agent is told which release it replaced with which.'
+
     # 8. And it can be taken off again by the same person, without an installer.
     Uninstall-BookRunnerStartup -StartupFolder $startup | Out-Null
     Check (-not (Test-BookRunnerStartupInstalled -StartupFolder $startup)) 'Removing it must stop it starting with Windows.'
@@ -327,4 +405,10 @@ Check ($runnerText -match 'Restart-BookRunner') 'It must restart into what it fe
 # Origin made every action in Settings fail with 403.
 Check ($runnerText -match "'Origin', 'Referer', 'Cookie'") 'The bridge must not carry the browser Origin, Referer or the cloud cookie to the local server.'
 
-"PASS: $checks connection assertions (token remembered and replaced, kept in the user profile, start with Windows without an administrator)."
+# The agent uses these rules where they matter.
+Check ($runnerText -match 'Enter-BookRunnerSingleInstance -TakeOver:\(\[bool\]\$Token\)') 'Only the setup command, which carries a token, may replace a running agent.'
+$afterSelfUpdate = [regex]::Matches($runnerText, 'Invoke-BookRunnerSelfUpdate -ProjectRoot \$ProjectRoot -Instance \$instance\) \{ return \}\s+Sync-LocalStudioServer')
+Check ($afterSelfUpdate.Count -eq 2) 'The server must be brought up to date at start and at every hourly check, after the agent itself.'
+Check ($runnerText -match '\[int\]\$UpdateCheckMinutes = 60') 'The hourly update check needs its interval, or it asks GitHub every cycle.'
+
+"PASS: $checks connection assertions (token remembered and replaced, kept in the user profile, start with Windows without an administrator, setup replaces an old agent, an old local server is restarted when idle)."

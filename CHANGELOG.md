@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.23.12 (2026-09-23)
+
+- Running the setup command again now replaces a Book Studio agent that is already running, and an out-of-date local Book Studio server is restarted when nothing is being written. No administrator rights needed.
+
 ## v2026.09.23.11 (2026-09-23)
 
 - A book stopped by the Codex usage limit after its chapters were written now says the chapters are saved, and its button reads Finish images: it draws the missing images and rebuilds the Word and HTML files without writing the chapters again.

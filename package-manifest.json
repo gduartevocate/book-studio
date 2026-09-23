@@ -21,7 +21,7 @@
     },
     {
         "path":  "cloud-book-runner.ps1",
-        "sha256":  "50A701D51ECA0FB1C2C1BA293A980349FE5161205D815C558D68846FEC738855"
+        "sha256":  "866A30035BB7DE4E92561E86119F3F5CB4C385B205947A9799792F34D63D3CBE"
     },
     {
         "path":  "Cloudflare Setup Notes.txt",
@@ -49,7 +49,7 @@
     },
     {
         "path":  "ID Quick Start.txt",
-        "sha256":  "5343883CDF57984AF50227135288A8E5505CF238E89033F491CE4019B9A21322"
+        "sha256":  "7498B5D1B62EF001A94E197BB2C4F0D9CEB19E35D13882E09852B92D90717722"
     },
     {
         "path":  "Install Book Studio.cmd",
@@ -109,7 +109,7 @@
     },
     {
         "path":  "VERSION.txt",
-        "sha256":  "5D79C36BCE8A1E0143E1808FBABAC366D9E557898910B550C1B9C55F11BE1C5D"
+        "sha256":  "B5500F8CB64C60C527F029651846C4065CEF9078A2AC9D92DF005B4E42E5ACFE"
     },
     {
         "path":  "book-studio/app.js",
@@ -141,7 +141,7 @@
     },
     {
         "path":  "book-studio/version.json",
-        "sha256":  "6942DF6C3F22310A34D4F683B0F804986D9075A54EE9A1E714A3A8CD4892A763"
+        "sha256":  "BF3CFC6FC44BBB2FBA03FA631CCBA13383001D3E6BDAC734A5F84069ED8C6C67"
     },
     {
         "path":  "cloudflare/ebook-generator-worker.js",
@@ -345,7 +345,7 @@
     },
     {
         "path":  "lib/EbookCloudRunner.ps1",
-        "sha256":  "4E2E42BE5B47C02E70CD92FF8405E46D0F718AD81FD338BC7CB812F14ED61E4A"
+        "sha256":  "60F22794370D7C07167F46CBA0E0FF780C5037157DAC33887196CC7FD68C816E"
     },
     {
         "path":  "lib/EbookCodexImages.ps1",
@@ -457,7 +457,7 @@
     },
     {
         "path":  "tests/cloud-runner-connect-regressions.ps1",
-        "sha256":  "8E581737AA4E67C603E73849DE44BB520242D75B6653A3BE0D4DC0EDDC06725F"
+        "sha256":  "DAA140AC3056F058E287AA2E5FAE87D1966C42EE2DF1E50E779C718673A086D7"
     },
     {
         "path":  "tests/cloud-worker-auth.mjs",
