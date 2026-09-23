@@ -762,6 +762,18 @@ try {
     $useCodexImages = if ($job.options.PSObject.Properties.Name -contains "useCodexImages") { [bool]$job.options.useCodexImages } else { $true }
     $resumeImages = $false
     $resumeFolder = Get-LatestRunnerOutputFolder -OutputRoot $outputRoot
+    # Chapters kept after a usage limit are finished, not rewritten, whichever
+    # button started this run. The record is cleared here and set again only if
+    # the limit stops this run too.
+    $awaitingImages = Test-BookStudioJobAwaitingImages -Job $job
+    if ($job.PSObject.Properties.Name -contains 'recovery' -and $job.recovery) {
+        Update-BookStudioJob -DatabasePath $DatabasePath -JobId $JobId -Update { param($current) $current.recovery = $null }
+    }
+    if ($RunMode -eq 'Full' -and $awaitingImages -and -not $job.options.savedImageRetry) {
+        $resumeFolder = Get-Item -LiteralPath $job.outputFolder -ErrorAction Stop
+        $useCodexImages = $true
+        Set-BookStudioImagesOnlyMarker -OutputFolder $resumeFolder.FullName
+    }
     if ($RunMode -eq 'Full' -and $job.options.savedImageRetry) {
         $resumeFolder=Get-Item -LiteralPath $job.outputFolder -ErrorAction Stop
         [pscustomobject]@{status='Incomplete';failure='Generate images for the saved scene setting.'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $resumeFolder.FullName 'image-production-run.json') -Encoding UTF8
@@ -923,7 +935,16 @@ try {
                 }
             }
 
-            throw (Get-BookStudioUsageLimitNotice -CodexMessage $usageLimitMessage -ManuscriptKept ([bool]$manuscriptKept))
+            $usageLimitNotice = Get-BookStudioUsageLimitNotice -CodexMessage $usageLimitMessage -ManuscriptKept ([bool]$manuscriptKept)
+            if ($manuscriptKept) {
+                Set-BookStudioImagesOnlyMarker -OutputFolder $availableOutputFolder.FullName
+                $recovery = [pscustomobject]@{ kind = 'usage-limit'; manuscriptKept = $true; at = (Get-Date).ToString('o'); codexMessage = $usageLimitMessage }
+                Update-BookStudioJob -DatabasePath $DatabasePath -JobId $JobId -Update {
+                    param($current)
+                    $current | Add-Member -NotePropertyName recovery -NotePropertyValue $recovery -Force
+                }
+            }
+            throw $usageLimitNotice
         }
 
         if ($RunMode -eq 'Full' -and $availableOutputFolder -and (Test-Path -LiteralPath (Join-Path $availableOutputFolder.FullName 'image-production-run.json'))) {

@@ -813,6 +813,26 @@ function getFocusedJobs(jobs, options = {}) {
   return [sourceJobs[0]];
 }
 
+// A book the Codex usage limit stopped after its chapters were written is
+// waiting for its images, not broken. Say so above the error, in words a
+// designer can act on, and name the button that finishes it: before this the
+// page showed only "Failed" and a Retry that could have written the chapters a
+// second time.
+function isAwaitingImages(job) {
+  return job.status === "Failed" && job.recovery?.kind === "usage-limit" && Boolean(job.recovery.manuscriptKept);
+}
+
+function renderImagesPendingCallout(container, job) {
+  if (!isAwaitingImages(job)) return;
+  const callout = makeElement("div", "images-pending-callout");
+  callout.setAttribute("role", "status");
+  callout.append(makeElement("strong", "", "Your chapters are saved."));
+  callout.append(makeElement("p", "", "Codex reached its usage limit while drawing the chapter images. Once the limit resets, choose Finish images. It draws only the missing images and rebuilds the Word and HTML files; the chapters are not written again."));
+  const resetAt = /try again at ([^.]+)/i.exec(job.recovery.codexMessage || "");
+  callout.append(makeElement("p", "", resetAt ? `Codex says the limit resets at ${resetAt[1].trim()}.` : "Codex did not say when the limit resets; it is usually within a few hours."));
+  container.prepend(callout);
+}
+
 function renderJobProgress(container, job) {
   container.textContent = "";
 
@@ -2528,6 +2548,7 @@ function renderJobs(jobs, options = {}) {
       status.classList.add(String(job.lifecycleStatus).toLowerCase());
     }
     renderJobProgress(log, job);
+    renderImagesPendingCallout(log, job);
     appendJobLogLinks(log, job);
     renderJobQaSummary(log, job);
     renderWorkflowPanel(workflowPanel, job);
@@ -2553,7 +2574,8 @@ function renderJobs(jobs, options = {}) {
       const retry = document.createElement("button");
       retry.type = "button";
       retry.className = "secondary";
-      retry.textContent = "Retry";
+      retry.textContent = isAwaitingImages(job) ? "Finish images" : "Retry";
+      if (isAwaitingImages(job)) retry.title = "Draw the missing chapter images and rebuild the Word and HTML files. The chapters are kept.";
       retry.addEventListener("click", () => runJob(job.id, getWorkflowRunMode(job)).catch((error) => reportJobActionError(job, error.message)));
       actions.append(retry);
       // A full run refuses to start without a current approved preview. Offer
@@ -2565,7 +2587,8 @@ function renderJobs(jobs, options = {}) {
         actions.append(recreate);
       }
       appendPackageRebuildAction(actions, job);
-      if (job.artifacts?.some((artifact) => artifact.fileName?.endsWith(" - E-Book.md"))) {
+      // Nothing to repair yet: the package is only waiting for its images.
+      if (!isAwaitingImages(job) && job.artifacts?.some((artifact) => artifact.fileName?.endsWith(" - E-Book.md"))) {
         const fixQa = makeElement("button", "danger qa-repair-button", "Fix QA with Codex");
         fixQa.type = "button";
         fixQa.addEventListener("click", () => startQaRepair(job));

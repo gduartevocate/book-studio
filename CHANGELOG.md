@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.23.11 (2026-09-23)
+
+- A book stopped by the Codex usage limit after its chapters were written now says the chapters are saved, and its button reads Finish images: it draws the missing images and rebuilds the Word and HTML files without writing the chapters again.
+
 ## v2026.09.23.10 (2026-09-23)
 
 - A book that runs out of Codex quota after its chapters are written keeps its manuscript; finish the images with Generate images for saved setting once the limit resets.

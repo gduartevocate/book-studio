@@ -2689,3 +2689,8 @@ button:disabled {
   color: #5c3b00; border-bottom: 1px solid #f0c36d; font-weight: 600; }
 .connection-notice a { color: inherit; text-decoration: underline; }
 @media (prefers-color-scheme: dark) { .connection-notice { background: #3a2a0f; color: #ffe2b0; border-color: #7a5a20; } }
+
+/* A book waiting only for its images after a Codex usage limit. */
+.images-pending-callout { margin: 0 0 12px; padding: 12px 14px; border-left: 4px solid #2f7d4f; background: #eef8f1; color: #16361f; border-radius: 6px; }
+.images-pending-callout p { margin: 6px 0 0; }
+@media (prefers-color-scheme: dark) { .images-pending-callout { background: #13291b; color: #d4f0dc; border-left-color: #5dbb82; } }

@@ -58,7 +58,39 @@ function Get-BookStudioUsageLimitNotice {
         'Codex did not say when the limit resets; it is usually within a few hours.'
     }
     if ($ManuscriptKept) {
-        return "Codex reached its usage limit after the chapters were written. The manuscript is kept. Once the limit resets, use Generate images for saved setting to finish the chapter images; nothing has to be written again. $when"
+        return "Codex reached its usage limit after the chapters were written. The manuscript is kept. Once the limit resets, choose Finish images: it draws the missing chapter images and nothing has to be written again. $when"
     }
     return "Codex reached its usage limit before the chapters were written. Nothing was lost; start generation again once the limit resets. $when"
+}
+
+# A book whose chapters survived a usage limit is waiting for its images, not
+# for a rewrite. Retry used to start the whole book again unless the folder
+# happened to hold an unfinished image run, and after RB1000's rollback it did
+# not, so the obvious button would have written the chapters a second time.
+# The runner records the wait on the job and leaves the marker that makes the
+# next run finish images only; every way of starting the book then does that.
+function Set-BookStudioImagesOnlyMarker {
+    param(
+        [Parameter(Mandatory)][string]$OutputFolder,
+        [string]$Reason = 'Codex reached its usage limit before the chapter images were finished.'
+    )
+
+    $markerPath = Join-Path $OutputFolder 'image-production-run.json'
+    if (Test-Path -LiteralPath $markerPath) {
+        try {
+            if ((Get-Content -LiteralPath $markerPath -Raw -Encoding UTF8 | ConvertFrom-Json).status -eq 'Incomplete') { return }
+        }
+        catch { }
+    }
+    [pscustomobject]@{ status = 'Incomplete'; failure = $Reason; updatedAt = (Get-Date).ToString('o') } |
+        ConvertTo-Json | Set-Content -LiteralPath $markerPath -Encoding UTF8
+}
+
+function Test-BookStudioJobAwaitingImages {
+    param([AllowNull()][object]$Job)
+
+    if (-not $Job -or -not ($Job.PSObject.Properties.Name -contains 'recovery') -or -not $Job.recovery) { return $false }
+    if ([string]$Job.recovery.kind -ne 'usage-limit' -or -not $Job.recovery.manuscriptKept) { return $false }
+    if ([string]::IsNullOrWhiteSpace([string]$Job.outputFolder) -or -not (Test-Path -LiteralPath $Job.outputFolder -PathType Container)) { return $false }
+    return [bool](Get-ChildItem -LiteralPath $Job.outputFolder -Filter '* - E-Book.md' -File -ErrorAction SilentlyContinue | Select-Object -First 1)
 }
