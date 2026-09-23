@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.23.7 (2026-09-23)
+
+- Read the readings from the course document again, for a book whose saved list is out of date.
+
 ## v2026.09.23.6 (2026-09-23)
 
 - Change a book's setup without deleting it: rename, replace the document, correct the document kind.

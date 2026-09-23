@@ -233,4 +233,54 @@ $readingsSource = Get-Content -LiteralPath (Join-Path $root 'lib/EbookRequiredRe
 Check ($readingsSource -notmatch 'Install the Poppler pdftotext utility') 'The refusal must not tell a designer without administrator rights to install Poppler.'
 Check ($readingsSource -match 'mingw64') 'The converter lookup must check the Git for Windows installation.'
 
+# Reading the document again, for a book whose saved list was taken by an older
+# version. RB1000 carried eighteen entries, four of them fragments with no URL,
+# while the same document read today yields every source linked. The designer
+# could see "4 required readings have no URLs" and had no way to act on it.
+$refreshFixture = Join-Path ([IO.Path]::GetTempPath()) ('readings-refresh-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $refreshFixture | Out-Null
+try {
+    Import-Module (Join-Path $root 'lib/BookStudio.psm1') -Force -DisableNameChecking
+    $refreshDb = Initialize-BookStudioDatabase -ProjectRoot $refreshFixture
+    $courseText = @(
+        'RB9100 Fixture Readings Course',
+        'Week 1 Foundations',
+        'Course Objective',
+        '1. Explain the basics.',
+        'Lesson Objectives',
+        '1.1 Identify the basics.',
+        'Week 1',
+        '[A linked source](https://example.org/one)',
+        '[Another linked source](https://example.org/two)'
+    ) -join [Environment]::NewLine
+    $refreshJob = New-BookStudioJob -DatabasePath $refreshDb -ProjectRoot $root -Request ([pscustomobject]@{
+        title = 'Readings fixture'; courseCode = 'RB9100'; courseDocumentKind = 'EbookReady'
+        sourceMode = 'Assigned'; readingLevel = 8
+        files = @(@{ name = 'course.txt'; contentBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($courseText)) })
+    })
+    # A saved list as an older version left it: two fragments with no URL, and
+    # one entry a designer added that is not in the document at all.
+    $null = Update-BookStudioJob -DatabasePath $refreshDb -JobId $refreshJob.id -Update {
+        param($current)
+        $current.options | Add-Member -NotePropertyName 'requiredReadings' -NotePropertyValue @(
+            [pscustomobject]@{ title = 'A linked source'; url = 'https://example.org/one'; origin = 'Blueprint' },
+            [pscustomobject]@{ title = 'A fragment with no link'; url = ''; origin = 'Designer' },
+            [pscustomobject]@{ title = 'Another fragment'; url = ''; origin = 'Designer' },
+            [pscustomobject]@{ title = 'Something the designer added'; url = 'https://example.org/added'; origin = 'Designer' }
+        ) -Force
+    }
+    $refreshed = Update-BookStudioBlueprintReadings -DatabasePath $refreshDb -JobId $refreshJob.id
+    Check ($refreshed.withoutUrlAfter -eq 0) "Reading the document again must leave nothing without a URL (got $($refreshed.withoutUrlAfter))."
+    Check (@($refreshed.dropped).Count -eq 2) "Both fragments must be dropped (dropped $(@($refreshed.dropped).Count))."
+    Check ((@($refreshed.dropped) -join '; ') -match 'fragment') 'The dropped entries are named, so nothing disappears silently.'
+    $urls = @($refreshed.readings | ForEach-Object { [string]$_.url })
+    Check ($urls -contains 'https://example.org/one' -and $urls -contains 'https://example.org/two') 'Every source in the document is present afterwards.'
+    Check ($urls -contains 'https://example.org/added') 'A source the designer added, which the document does not list, is kept.'
+    $saved = Get-Content -LiteralPath (Join-Path $refreshJob.sourceContextPath 'book-studio-production.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+    Check (@($saved.requiredReadings).Count -eq @($refreshed.readings).Count) 'The list is written back to the book, not only returned.'
+    $logged = @((Get-BookStudioJob -DatabasePath $refreshDb -JobId $refreshJob.id).log | Where-Object { $_.message -match 'Readings read again' })
+    Check ($logged.Count -eq 1 -and $logged[0].message -match 'no URL') 'The book records what was read again and what was dropped.'
+}
+finally { Remove-Item -LiteralPath $refreshFixture -Recurse -Force -ErrorAction SilentlyContinue }
+
 "PASS: $script:checks required-source and QA regression checks. Fixtures: $fixture"

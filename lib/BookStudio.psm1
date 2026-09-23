@@ -5448,6 +5448,14 @@ function Start-BookStudioServer {
                 continue
             }
 
+            if ($path -match "^/api/jobs/([^/]+)/readings/refresh$" -and $request.HttpMethod -eq "POST") {
+                try {
+                    Send-BookStudioResponse -Context $context -Body (ConvertTo-BookStudioJson (Update-BookStudioBlueprintReadings -DatabasePath $DatabasePath -JobId $Matches[1]))
+                }
+                catch { Send-BookStudioResponse -Context $context -StatusCode 400 -ContentType 'text/plain; charset=utf-8' -Body $_.Exception.Message }
+                continue
+            }
+
             if ($path -match "^/api/jobs/([^/]+)/setup$" -and $request.HttpMethod -eq "GET") {
                 $setupJob = Get-BookStudioJob -DatabasePath $DatabasePath -JobId $Matches[1]
                 if (-not $setupJob) {
@@ -5898,6 +5906,7 @@ function Start-BookStudioServer {
 }
 
 Export-ModuleMember -Function Test-BookStudioCodexConnection
+Export-ModuleMember -Function Update-BookStudioBlueprintReadings
 Export-ModuleMember -Function Set-BookStudioJobSetup, Get-BookStudioSetupSummary, Assert-BookStudioSetupChangeAllowed, Get-BookStudioSetupStageReset
 Export-ModuleMember -Function Repair-BookStudioParkedJobs
 Export-ModuleMember -Function Initialize-BookStudioDatabase, Read-BookStudioDatabase, Write-BookStudioDatabase, Get-BookStudioJob, Update-BookStudioJob, Set-BookStudioJobLifecycle, Remove-BookStudioJob, Add-BookStudioLogEntry, Set-BookStudioJobProgress, New-BookStudioJob, Start-BookStudioJob, Start-BookStudioServer, Get-BookStudioDatabasePath, Get-BookStudioVisualManifest, Get-BookStudioDistPackages, Import-BookStudioPackageJob, Import-BookStudioPackageArchiveJob, Refresh-BookStudioJobArtifacts, Invoke-BookStudioPackageRebuild, Set-BookStudioVisualReplacementAsset, Resolve-BookStudioCodexCommand, Set-BookStudioCodexPath, Get-BookStudioCodexStatus, Get-BookStudioCodexPromptManifest, Get-BookStudioVisualReviews, Set-BookStudioVisualReview, Export-BookStudioVisualReviewReport, Initialize-BookStudioChapterSources, Get-BookStudioChapterContent, Set-BookStudioChapterContent, New-BookStudioSmeReviewPackage, Publish-BookStudioSmeReviewToCloudflare, Get-BookStudioSmeReviewFeedbackFromCloudflare, Get-BookStudioAiRequests, New-BookStudioAiRequest, New-BookStudioFormatPreview, Get-BookStudioOutline, Set-BookStudioOutline, Set-BookStudioFormatReview, Get-BookStudioUpdateStatus, Start-BookStudioUpdate, Get-BookStudioUpdateProgress, Get-BookStudioInstallPathStatus, Resolve-BookStudioNativeCodexExecutable, Test-BookStudioFileSystemLink, Repair-BookStudioMovedPaths, Get-BookStudioRebasedPath, Stop-BookStudioAiRequest, Repair-BookStudioStaleAiRequests, Get-BookStudioOutcomeAnalysis, Start-BookStudioOutcomeAnalysis, Get-BookStudioOutcomeAnalysisPreview, Set-BookStudioOutcomeAnalysis, Save-BookStudioCourseFacts, New-BookStudioOutcomeAnalysisState

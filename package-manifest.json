@@ -49,7 +49,7 @@
     },
     {
         "path":  "ID Quick Start.txt",
-        "sha256":  "B4543F5980A575BD763CC12B764EF910AA569782A973D7540BAE2B28E9A6016A"
+        "sha256":  "F97DD3B6849E08AFF55331E47BD37BD32BECBF3E664DACE9AF16A2CA3E139731"
     },
     {
         "path":  "Install Book Studio.cmd",
@@ -109,7 +109,7 @@
     },
     {
         "path":  "VERSION.txt",
-        "sha256":  "9F13E95A692B8EB1EC3437EF78B90502A6BA8FE661F8B82D1E1DD611D032605F"
+        "sha256":  "26A8B1CEF2D5E8852D2BEBF19096266EE3B89BD0796B916F2DB32B67E6D5D2C5"
     },
     {
         "path":  "book-studio/app.js",
@@ -117,7 +117,7 @@
     },
     {
         "path":  "book-studio/index.html",
-        "sha256":  "A08F357AF291F521B036BCFA797AFBB1F984E7B3CBA6CA7E53024CF3A066393A"
+        "sha256":  "D8CBF3619D13393B64D8479DA5B879BB1F0A2A7D99BE4362883754EFED15DEEE"
     },
     {
         "path":  "book-studio/outcome-analysis.js",
@@ -129,7 +129,7 @@
     },
     {
         "path":  "book-studio/production.js",
-        "sha256":  "A514259859C11A813947C03ECA14BB41730236FBB5C0A253BF38DF297A08A7F7"
+        "sha256":  "34CD89B5B740A1F00BA7D39D5D50FA582EEC30D7BA5FB291BB10A2A914BB9839"
     },
     {
         "path":  "book-studio/setup-change.js",
@@ -141,7 +141,7 @@
     },
     {
         "path":  "book-studio/version.json",
-        "sha256":  "4355A3DC4A22BFD5E782900A2EBFA83C0FCE9774CAE6F0E4517D25A910327D18"
+        "sha256":  "51994E46C984C831A110ED0E53F9B32E627EAF48F48009D2AFDA9F877F1E644F"
     },
     {
         "path":  "cloudflare/ebook-generator-worker.js",
@@ -285,7 +285,7 @@
     },
     {
         "path":  "lib/BookStudio.psm1",
-        "sha256":  "CCE2B7435FB7565B214160E5F07DB9BE1DEEBC2B1C3EBD022CB3D30431C2EEF1"
+        "sha256":  "8E897AF8EF2C5EEEFD10D4205AF2F5EB0AB9EF8BD9A3EA221F38131340A269F7"
     },
     {
         "path":  "lib/BookStudioChat.ps1",
@@ -313,7 +313,7 @@
     },
     {
         "path":  "lib/BookStudioProduction.ps1",
-        "sha256":  "57B7FC1F31F70996CE3B5AB046CEAFAE04969DE39BC50DABB403F3B52DB72707"
+        "sha256":  "8ECCCEB7E321C76FD2F4CF7A30F7BDABA741C9AA1786CD390F3D18EB94CE1744"
     },
     {
         "path":  "lib/BookStudioQa.ps1",
@@ -517,7 +517,7 @@
     },
     {
         "path":  "tests/required-readings-regressions.ps1",
-        "sha256":  "F695466603827B395CF2D27F0AAC0F582F4740E77179B873F88DFE08B9B067AC"
+        "sha256":  "9813F0AA8422113AD8545C522A9CEBF2C3257C2F7FD88B2629F05A1922F3EFD6"
     },
     {
         "path":  "tests/standalone-week-regressions.ps1",

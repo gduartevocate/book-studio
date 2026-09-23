@@ -102,6 +102,18 @@ function appendProductionPreferences(container, job) {
         dirty = true;
         status.textContent = `${removed} entr${removed === 1 ? "y" : "ies"} without a URL removed. Review the list, then Save settings.`;
       });
+      addAction("Read readings from the document again", async () => {
+        // The list saved with a book is a copy, taken when the document was
+        // read. When the way documents are read improves, that copy keeps the
+        // old mistakes: four of RB1000's entries were fragments with no URL,
+        // while the same document read today yields every one of them linked.
+        if (dirty) throw new Error("Save your settings first, or the list you are looking at would be overwritten.");
+        const result = await api(`/api/jobs/${job.id}/readings/refresh`, { method: "POST", body: "{}" });
+        const dropped = result.dropped || [];
+        status.textContent = `Read again from the course document: ${result.before} entries became ${result.after}.` +
+          (dropped.length ? ` Dropped for having no URL: ${dropped.join("; ")}` : "");
+        renderReport(await api(`/api/jobs/${job.id}/production-settings`));
+      });
       addAction("Check required sources", async () => {
         if (dirty) throw new Error("Save your settings first.");
         if (mode.value !== "Assigned") throw new Error("Select Required readings and save first.");

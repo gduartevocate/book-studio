@@ -85,6 +85,91 @@ function Get-BookStudioProductionPreferences {
     [pscustomobject]@{sourceMode=$Job.options.sourceMode;readingLevel=$(if($Job.options.readingLevel){[int]$Job.options.readingLevel}else{8});allowAdditionalResearch=[bool]$Job.options.allowAdditionalResearch;requiredSources=(ConvertTo-EbookReadingListText $readings);readings=$readings;sourceReport=$report;imageSettings=$(if($Job.options.imageSettings){$Job.options.imageSettings}else{[pscustomobject]@{context='Generic';instructions=''}})}
 }
 
+function Update-BookStudioBlueprintReadings {
+    param([string]$DatabasePath, [string]$JobId)
+
+    # The reading list saved with a book is a copy, taken when the document was
+    # read. When the way documents are read improves -- and it has -- that copy
+    # keeps the old mistakes: four entries of RB1000's list were fragments with
+    # no URL, while reading the same document now yields twelve, all with URLs.
+    # The designer could see the complaint and had no way to act on it.
+    $job = Get-BookStudioJob -DatabasePath $DatabasePath -JobId $JobId
+    if (-not $job) { throw "Book Studio job not found: $JobId" }
+    Assert-BookStudioProductionIdle $job
+    if (-not $job.specPath -or -not (Test-Path -LiteralPath $job.specPath)) {
+        throw 'The course document for this book is not on this computer, so its readings cannot be read again.'
+    }
+
+    Import-Module (Join-Path $PSScriptRoot 'EbookGenerator.psm1') -Scope Local
+    $fromDocument = @(ConvertFrom-EbookReadingList -Text (Get-EbookBlueprintReadingText $job.specPath) -Origin 'Blueprint')
+    # What the document says, plus anything else already saved that can still
+    # be retrieved. Saving from the production panel re-parses the list and
+    # loses which entries came from the document, so origin cannot be trusted
+    # to tell them apart; a URL can. An entry with no URL is dropped, because
+    # it can be neither retrieved nor cited, and it is exactly what the gate
+    # refuses. Everything dropped is named in the book log.
+    $saved = @($job.options.requiredReadings | Where-Object { $_ })
+    $documentUrls = @{}
+    foreach ($reading in $fromDocument) { if ($reading.url) { $documentUrls[[string]$reading.url] = $true } }
+    # An entry saved by an older version can have no id, and merging keys on
+    # id; one without it stopped the whole re-read with a null key.
+    $keptExtra = @(
+        foreach ($reading in $saved) {
+            if (-not [string]$reading.url) { continue }
+            if ($documentUrls.ContainsKey([string]$reading.url)) { continue }
+            if (-not [string]$reading.id) {
+                # Get-EbookReadingId lives inside the generator module and is
+                # not exported, so it is reached through the module scope, the
+                # way the rest of this file reaches internal functions.
+                $readingId = & (Get-Module EbookGenerator) { param($u) Get-EbookReadingId $u } ([string]$reading.url)
+                Add-Member -InputObject $reading -NotePropertyName id -NotePropertyValue $readingId -Force
+            }
+            $reading
+        }
+    )
+    $dropped = @($saved | Where-Object { -not [string]$_.url })
+    $merged = @(Merge-EbookReadingLists -BlueprintReadings $fromDocument -DesignerReadings $keptExtra)
+
+    $previous = @($job.options.requiredReadings | Where-Object { $_ })
+    $withoutUrlBefore = @($previous | Where-Object { -not [string]$_.url }).Count
+    $withoutUrlAfter = @($merged | Where-Object { -not [string]$_.url }).Count
+
+    $production = [pscustomobject]@{
+        sourceMode = $(if ($job.options.sourceMode) { $job.options.sourceMode } else { 'Assigned' })
+        readingLevel = $(if ($job.options.readingLevel) { [int]$job.options.readingLevel } else { 8 })
+        requiredReadings = $merged
+        imageSettings = $(if ($job.options.imageSettings) { $job.options.imageSettings } else { [pscustomobject]@{ context = 'Generic'; instructions = '' } })
+        allowAdditionalResearch = [bool]$job.options.allowAdditionalResearch
+    }
+    $production | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $job.sourceContextPath 'book-studio-production.json') -Encoding UTF8
+    if ($job.outputFolder -and (Test-Path -LiteralPath (Join-Path $job.outputFolder 'ebook-plan.json'))) {
+        $planPath = Join-Path $job.outputFolder 'ebook-plan.json'
+        $plan = Get-Content -LiteralPath $planPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        foreach ($key in @('sourceMode', 'readingLevel', 'requiredReadings', 'imageSettings', 'allowAdditionalResearch')) {
+            $plan | Add-Member -NotePropertyName $key -NotePropertyValue $production.$key -Force
+        }
+        $plan | ConvertTo-Json -Depth 40 | Set-Content -LiteralPath $planPath -Encoding UTF8
+    }
+    $null = Update-BookStudioJob -DatabasePath $DatabasePath -JobId $JobId -Update {
+        param($current)
+        foreach ($key in @('sourceMode', 'readingLevel', 'requiredReadings', 'imageSettings', 'allowAdditionalResearch')) {
+            $current.options | Add-Member -NotePropertyName $key -NotePropertyValue $production.$key -Force
+        }
+    }
+    $droppedTitles = @($dropped | ForEach-Object { [string]$_.title }) -join '; '
+    $message = "Readings read again from the course document: $($previous.Count) entries became $($merged.Count)."
+    if ($dropped.Count) { $message += " Dropped for having no URL, so they could be neither retrieved nor cited: $droppedTitles." }
+    Add-BookStudioLogEntry -DatabasePath $DatabasePath -JobId $JobId -Message $message
+    return [pscustomobject]@{
+        readings = $merged
+        before = $previous.Count
+        after = $merged.Count
+        withoutUrlBefore = $withoutUrlBefore
+        withoutUrlAfter = $withoutUrlAfter
+        dropped = @($dropped | ForEach-Object { [string]$_.title })
+    }
+}
+
 function Set-BookStudioProductionPreferences {
     param([string]$DatabasePath,[string]$JobId,[object]$Request)
     $job=Get-BookStudioJob -DatabasePath $DatabasePath -JobId $JobId
