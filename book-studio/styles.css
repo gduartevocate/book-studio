@@ -2671,3 +2671,14 @@ button:disabled {
 .cloud-machines dt { font-weight: 600; margin-top: 10px; }
 .cloud-machines dd { margin: 2px 0 0; color: inherit; opacity: .85; }
 .cloud-panel .actions { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 14px; }
+
+/* Changing what was decided at intake, on the book that already exists. */
+.setup-change { margin-top: 14px; border: 1px solid var(--border, #d0d5dd); border-radius: 10px; padding: 10px 14px; }
+.setup-change > summary { cursor: pointer; font-weight: 600; }
+.setup-change-body { display: grid; gap: 12px; margin-top: 12px; }
+.setup-field { display: grid; gap: 4px; font-size: 0.92rem; }
+.setup-field span { font-weight: 600; }
+.setup-field small { color: var(--muted, #667085); }
+.setup-current { margin: 0; font-size: 0.9rem; color: var(--muted, #667085); }
+.setup-status { margin: 0; font-size: 0.9rem; }
+.setup-status.bad { color: var(--danger, #b42318); }

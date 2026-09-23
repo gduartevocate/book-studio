@@ -2488,6 +2488,10 @@ function renderJobs(jobs, options = {}) {
     appendJobLogLinks(log, job);
     renderJobQaSummary(log, job);
     renderWorkflowPanel(workflowPanel, job);
+    // Available whenever nothing is running, including before a preview has
+    // ever been built: correcting a name or the wrong document is exactly what
+    // a designer needs then.
+    if (!isJobProcessing(job)) appendSetupChange(productionPanel, job, api, loadJobs);
     if (!isJobProcessing(job) && job.outputFolder) appendProductionPreferences(productionPanel, job);
     if (!isJobProcessing(job) && job.outputFolder) {
       const review = makeElement("button", "secondary qa-review-button", "Run QA again");

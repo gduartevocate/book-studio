@@ -1,6 +1,7 @@
 . (Join-Path $PSScriptRoot 'EbookReadiness.ps1')
 . (Join-Path $PSScriptRoot 'BookStudioConnection.ps1')
 . (Join-Path $PSScriptRoot 'BookStudioIntake.ps1')
+. (Join-Path $PSScriptRoot 'BookStudioSetupChange.ps1')
 . (Join-Path $PSScriptRoot 'BookStudioFormat.ps1')
 . (Join-Path $PSScriptRoot 'BookStudioChat.ps1')
 . (Join-Path $PSScriptRoot 'BookStudioRequestRecovery.ps1')
@@ -978,6 +979,155 @@ function Select-BookStudioSpecFile {
     }
 
     return $ranked[0].file
+}
+
+function Set-BookStudioJobSetup {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$DatabasePath,
+        [Parameter(Mandatory)][string]$JobId,
+        [Parameter(Mandatory)][object]$Request,
+        [string]$ProjectRoot
+    )
+
+    $job = Get-BookStudioJob -DatabasePath $DatabasePath -JobId $JobId
+    if (-not $job) { throw "Book Studio job not found: $JobId" }
+    Assert-BookStudioSetupChangeAllowed -Job $job
+
+    $uploadFolder = [string]$job.sourceContextPath
+    if (-not (Test-Path -LiteralPath $uploadFolder)) { throw 'This book no longer has its uploaded documents on this computer.' }
+
+    # @($null) is an array of one, so a request that changes only the title
+    # looked exactly like one that replaced the document, and was refused for
+    # uploading a file with no name.
+    $files = @($Request.files | Where-Object { $_ })
+    $documentsChanged = $files.Count -gt 0
+    $kindChanged = $false
+    $changes = New-Object System.Collections.ArrayList
+
+    $newKind = if ($null -ne $Request.courseDocumentKind -and [string]$Request.courseDocumentKind -ne '') { [string]$Request.courseDocumentKind } else { [string]$job.courseDocumentKind }
+    if ($newKind -notin @('CurriculumDraft', 'EbookReady')) { throw 'Say whether this is a curriculum draft or an ebook-ready course file.' }
+    if ($newKind -ne [string]$job.courseDocumentKind) { $kindChanged = $true }
+
+    # Replacing the documents runs the same intake the book had at the start,
+    # against the same folder, so nothing downstream has to know the difference.
+    $uploadedFiles = @($job.uploadedFiles)
+    if ($documentsChanged) {
+        $replacement = [pscustomobject]@{
+            files = $files
+            primaryFileIndex = $Request.primaryFileIndex
+            sourceMode = $Request.sourceMode
+            readingLevel = $Request.readingLevel
+            imageContext = $Request.imageContext
+            imageInstructions = $Request.imageInstructions
+            requiredSources = $Request.requiredSources
+            allowAdditionalResearch = $Request.allowAdditionalResearch
+            courseDocumentKind = $newKind
+        }
+        $validated = Test-BookStudioUploadRequest -Request $replacement
+
+        # The old documents are kept until the new ones are written, so a failed
+        # replacement cannot leave a book with no source at all.
+        $previous = @(@($job.uploadedFiles) | Where-Object { $_.role -ne 'brief' })
+        $written = New-Object System.Collections.ArrayList
+        $fileIndex = 0
+        foreach ($file in $validated.files) {
+            $safeName = ('{0:D3}-' -f ($fileIndex + 1)) + (ConvertTo-BookStudioSafeFileName -Name $file.originalName)
+            $targetPath = Join-Path $uploadFolder $safeName
+            [System.IO.File]::WriteAllBytes($targetPath, $file.bytes)
+            [void]$written.Add([pscustomobject]@{
+                name = $safeName
+                originalName = $file.originalName
+                path = (Resolve-Path $targetPath).ProviderPath
+                size = $file.bytes.Length
+                role = $(if ($fileIndex -eq $validated.primaryFileIndex) { 'spec' } else { 'context' })
+            })
+            $fileIndex++
+        }
+        foreach ($old in $previous) {
+            $stillUsed = @($written | Where-Object { $_.name -eq $old.name }).Count -gt 0
+            if (-not $stillUsed -and (Test-Path -LiteralPath ([string]$old.path))) {
+                Remove-Item -LiteralPath ([string]$old.path) -Force -ErrorAction SilentlyContinue
+            }
+        }
+        $brief = @(@($job.uploadedFiles) | Where-Object { $_.role -eq 'brief' })
+        $uploadedFiles = @($written) + @($brief)
+        [void]$changes.Add("documents replaced with " + (@($written | ForEach-Object { $_.originalName }) -join ', '))
+
+        $specFile = @($uploadedFiles | Where-Object { $_.role -eq 'spec' } | Select-Object -First 1)[0]
+        Import-Module (Join-Path $PSScriptRoot 'EbookGenerator.psm1') -Scope Local
+        $readingText = if ($validated.sourceMode -eq 'Assigned') { Get-EbookBlueprintReadingText -Path $specFile.path } else { '' }
+        $blueprintReadings = @(ConvertFrom-EbookReadingList -Text $readingText -Origin 'Blueprint')
+        $designerReadings = @(ConvertFrom-EbookReadingList -Text ([string]$Request.requiredSources) -Origin 'Designer')
+        $requiredReadings = @(Merge-EbookReadingLists -BlueprintReadings $blueprintReadings -DesignerReadings $designerReadings)
+        $production = [pscustomobject]@{
+            sourceMode = $validated.sourceMode
+            readingLevel = [int]$validated.readingLevel
+            requiredReadings = $requiredReadings
+            imageSettings = [pscustomobject]@{
+                context = $(if ($Request.imageContext) { $Request.imageContext } else { 'Generic' })
+                instructions = [string]$Request.imageInstructions
+            }
+        }
+        $production | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $uploadFolder 'book-studio-production.json') -Encoding UTF8
+        $intakeContext = Import-SourceContext -Path $uploadFolder -CourseSpecPath $specFile.path -MaxFiles 52 -MaxTotalChars 1000000 -StrictCoverage -IncludedPaths @($uploadedFiles.path)
+        $intake = [pscustomobject]@{
+            status = 'PASS'; generatedAt = (Get-Date).ToString('o'); sourceMode = $validated.sourceMode
+            primarySource = $specFile.name; uploadedFiles = $uploadedFiles.Count; readFiles = $intakeContext.files.Count
+            charactersRead = $intakeContext.totalCharactersUsed; files = @($intakeContext.files)
+            notes = 'Every accepted file was extracted without truncation. Reading a file does not establish academic coverage.'
+        }
+        $intake | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath (Join-Path $uploadFolder 'intake-report.json') -Encoding UTF8
+    }
+
+    $reset = Get-BookStudioSetupStageReset -Job ([pscustomobject]@{ workflowStage = $job.workflowStage; status = $job.status; courseDocumentKind = $newKind }) -DocumentsChanged $documentsChanged -KindChanged $kindChanged
+
+    # A curriculum draft is analyzed before anything is planned, exactly as at
+    # intake; an ebook-ready file states its own outcomes and skips it.
+    $outcomeAnalysis = $job.outcomeAnalysis
+    if (($documentsChanged -or $kindChanged) -and $newKind -eq 'CurriculumDraft') {
+        $specFile = @($uploadedFiles | Where-Object { $_.role -eq 'spec' } | Select-Object -First 1)[0]
+        $null = Save-BookStudioCourseFacts -UploadFolder $uploadFolder -SpecPath $specFile.path
+        $outcomeAnalysis = New-BookStudioOutcomeAnalysisState -FactsPath (Join-Path $uploadFolder 'book-studio-course-facts.json')
+        [void]$changes.Add('course objectives will be reviewed again')
+    }
+
+    $updated = Update-BookStudioJob -DatabasePath $DatabasePath -JobId $JobId -Update {
+        param($current)
+        if ($null -ne $Request.title -and [string]$Request.title -ne '' -and [string]$Request.title -ne [string]$current.title) {
+            [void]$changes.Add("renamed to '$([string]$Request.title)'")
+            $current.title = [string]$Request.title
+        }
+        if ($null -ne $Request.courseCode -and [string]$Request.courseCode -ne '' -and [string]$Request.courseCode -ne [string]$current.courseCode) {
+            [void]$changes.Add("course code is now $([string]$Request.courseCode)")
+            $current.courseCode = [string]$Request.courseCode
+        }
+        if ($null -ne $Request.specialInstructions) { $current.specialInstructions = [string]$Request.specialInstructions }
+        if ($kindChanged) {
+            [void]$changes.Add("document kind is now $newKind")
+            Add-OrSet-BookStudioNoteProperty -InputObject $current -Name 'courseDocumentKind' -Value $newKind
+        }
+        if ($documentsChanged) {
+            $current.uploadedFiles = @($uploadedFiles)
+            $current.specPath = [string](@($uploadedFiles | Where-Object { $_.role -eq 'spec' } | Select-Object -First 1)[0].path)
+        }
+        Add-OrSet-BookStudioNoteProperty -InputObject $current -Name 'outcomeAnalysis' -Value $outcomeAnalysis
+        if ($reset.clearedApproval) {
+            # A format preview built from the old document says nothing about the
+            # new one, so its approval cannot carry over.
+            Add-OrSet-BookStudioNoteProperty -InputObject $current.formatReview 'status' 'Not reviewed'
+            Add-OrSet-BookStudioNoteProperty -InputObject $current.formatReview 'reviewedBy' ''
+            Add-OrSet-BookStudioNoteProperty -InputObject $current.formatReview 'reviewedAt' ''
+            Add-OrSet-BookStudioNoteProperty -InputObject $current -Name 'workflowStage' -Value $reset.stage
+            Add-OrSet-BookStudioNoteProperty -InputObject $current -Name 'workflowStatus' -Value 'Setup changed; build the format preview again'
+            $current.status = $reset.status
+            $current.error = ''
+        }
+    }
+
+    $summary = if ($changes.Count) { $changes -join '; ' } else { 'no changes' }
+    Add-BookStudioLogEntry -DatabasePath $DatabasePath -JobId $JobId -Message "Setup changed: $summary."
+    return (Get-BookStudioJob -DatabasePath $DatabasePath -JobId $JobId)
 }
 
 function New-BookStudioJob {
@@ -5055,7 +5205,7 @@ function Start-BookStudioServer {
                 continue
             }
 
-            if ($request.HttpMethod -eq "GET" -and ($path -eq "/styles.css" -or $path -eq "/app.js" -or $path -eq '/production.js' -or $path -eq '/outcomes.js' -or $path -eq '/outcome-analysis.js' -or $path -eq "/version.json")) {
+            if ($request.HttpMethod -eq "GET" -and ($path -eq "/styles.css" -or $path -eq "/app.js" -or $path -eq '/production.js' -or $path -eq '/outcomes.js' -or $path -eq '/outcome-analysis.js' -or $path -eq '/setup-change.js' -or $path -eq "/version.json")) {
                 $filePath = Join-Path $webRoot ($path.TrimStart("/"))
                 Send-BookStudioFileResponse -Context $context -Path $filePath -ContentType (Get-BookStudioContentType -Path $filePath)
                 continue
@@ -5295,6 +5445,26 @@ function Start-BookStudioServer {
                 catch {
                     Send-BookStudioResponse -Context $context -StatusCode 400 -ContentType "text/plain; charset=utf-8" -Body $_.Exception.Message
                 }
+                continue
+            }
+
+            if ($path -match "^/api/jobs/([^/]+)/setup$" -and $request.HttpMethod -eq "GET") {
+                $setupJob = Get-BookStudioJob -DatabasePath $DatabasePath -JobId $Matches[1]
+                if (-not $setupJob) {
+                    Send-BookStudioResponse -Context $context -StatusCode 404 -ContentType 'text/plain; charset=utf-8' -Body 'Job not found'
+                    continue
+                }
+                Send-BookStudioResponse -Context $context -Body (ConvertTo-BookStudioJson (Get-BookStudioSetupSummary -Job $setupJob))
+                continue
+            }
+
+            if ($path -match "^/api/jobs/([^/]+)/setup$" -and $request.HttpMethod -eq "POST") {
+                $payload = Get-BookStudioRequestJson -Request $request
+                try {
+                    $changed = Set-BookStudioJobSetup -DatabasePath $DatabasePath -JobId $Matches[1] -Request $payload -ProjectRoot $ProjectRoot
+                    Send-BookStudioResponse -Context $context -Body (ConvertTo-BookStudioJson $changed)
+                }
+                catch { Send-BookStudioResponse -Context $context -StatusCode 400 -ContentType 'text/plain; charset=utf-8' -Body $_.Exception.Message }
                 continue
             }
 
@@ -5728,5 +5898,6 @@ function Start-BookStudioServer {
 }
 
 Export-ModuleMember -Function Test-BookStudioCodexConnection
+Export-ModuleMember -Function Set-BookStudioJobSetup, Get-BookStudioSetupSummary, Assert-BookStudioSetupChangeAllowed, Get-BookStudioSetupStageReset
 Export-ModuleMember -Function Repair-BookStudioParkedJobs
 Export-ModuleMember -Function Initialize-BookStudioDatabase, Read-BookStudioDatabase, Write-BookStudioDatabase, Get-BookStudioJob, Update-BookStudioJob, Set-BookStudioJobLifecycle, Remove-BookStudioJob, Add-BookStudioLogEntry, Set-BookStudioJobProgress, New-BookStudioJob, Start-BookStudioJob, Start-BookStudioServer, Get-BookStudioDatabasePath, Get-BookStudioVisualManifest, Get-BookStudioDistPackages, Import-BookStudioPackageJob, Import-BookStudioPackageArchiveJob, Refresh-BookStudioJobArtifacts, Invoke-BookStudioPackageRebuild, Set-BookStudioVisualReplacementAsset, Resolve-BookStudioCodexCommand, Set-BookStudioCodexPath, Get-BookStudioCodexStatus, Get-BookStudioCodexPromptManifest, Get-BookStudioVisualReviews, Set-BookStudioVisualReview, Export-BookStudioVisualReviewReport, Initialize-BookStudioChapterSources, Get-BookStudioChapterContent, Set-BookStudioChapterContent, New-BookStudioSmeReviewPackage, Publish-BookStudioSmeReviewToCloudflare, Get-BookStudioSmeReviewFeedbackFromCloudflare, Get-BookStudioAiRequests, New-BookStudioAiRequest, New-BookStudioFormatPreview, Get-BookStudioOutline, Set-BookStudioOutline, Set-BookStudioFormatReview, Get-BookStudioUpdateStatus, Start-BookStudioUpdate, Get-BookStudioUpdateProgress, Get-BookStudioInstallPathStatus, Resolve-BookStudioNativeCodexExecutable, Test-BookStudioFileSystemLink, Repair-BookStudioMovedPaths, Get-BookStudioRebasedPath, Stop-BookStudioAiRequest, Repair-BookStudioStaleAiRequests, Get-BookStudioOutcomeAnalysis, Start-BookStudioOutcomeAnalysis, Get-BookStudioOutcomeAnalysisPreview, Set-BookStudioOutcomeAnalysis, Save-BookStudioCourseFacts, New-BookStudioOutcomeAnalysisState
