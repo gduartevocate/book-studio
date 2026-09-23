@@ -105,7 +105,7 @@ try {
     Check ($runner -match '/connect') 'A missing token must point at the page that issues one.'
     # The agent dials one address and the designer signs in at another. Naming
     # the machine-facing one sends someone to a page they have no account on.
-    Check ($runner -match 'SignInUrl\s*=\s*"https://ebook\.vocate\.app/connect"') 'The agent must point a designer at the address they sign in at.'
+    Check ($runner -match 'SignInUrl\s*=\s*"https://ebookstudio\.vocate\.app/cloud/connect"') 'The agent must point a designer at the one site they sign in at.'
     Check ($runner -match 'Sign in at \$SignInUrl') 'The missing-token message must use the sign-in address, not the address the agent dials.'
     Check ($runner -notmatch 'deploy-ebook-generator-cloudflare\.ps1 once to create it') 'A designer must not be told to run a deployment script.'
     Check ($runner -match "EbookCloudRunner\.ps1") 'The agent must dot-source the connection library.'

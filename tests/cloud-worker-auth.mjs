@@ -78,15 +78,16 @@ const env = {
   ACCESS_AUD: "aud-for-tests",
   REQUIRE_ACCESS: "true",
   ADMIN_EMAILS: "boss@vocate.org",
+  STUDIO_HOSTNAMES: "ebookstudio.vocate.app",
   MACHINE_BRIDGE
 };
 
-const base = "https://ebook.vocate.app";
+const base = "https://ebookstudio.vocate.app";
 async function call(method, path, { body, cookie, headers = {} } = {}) {
   const init = { method, headers: { ...headers } };
   if (body !== undefined) { init.body = JSON.stringify(body); init.headers["content-type"] = "application/json"; }
   if (cookie) init.headers.cookie = cookie;
-  const response = await worker.fetch(new Request(base + path, init), env);
+  const response = await worker.fetch(new Request(base + (path.startsWith("/api/runner") || path.startsWith("/api/bridge") || path === "/api/health" ? path : "/cloud" + path), init), env);
   const text = await response.text();
   let json = null;
   try { json = JSON.parse(text); } catch { /* not every reply is JSON */ }
@@ -116,7 +117,7 @@ const cookieFrom = (result) => (result.headers.get("set-cookie") || "").split(";
 //    told where they were going, rather than a bare 401 they cannot act on.
 const page = await call("GET", "/connect");
 check(page.status === 302, "A signed-out request for /connect must redirect, got " + page.status);
-check(page.headers.get("location") === "/login?next=%2Fconnect", "The redirect must remember where the designer was going.");
+check(page.headers.get("location") === "/cloud/login?next=%2Fcloud%2Fconnect", "The redirect must remember where the designer was going, within the one site; got " + page.headers.get("location"));
 const loginPage = await call("GET", "/login");
 check(loginPage.status === 200 && loginPage.text.includes("Sign in to Book Studio"), "The sign-in page must be served without a session.");
 check(!/\bemail(ed)? (you )?a (code|link)\b/i.test(loginPage.text), "The sign-in page must not promise an emailed code; that is the flow Safe Links breaks.");
@@ -363,12 +364,12 @@ check(odd.json.options.sourceMode === "UploadedOnly", "An unknown source mode mu
 //     PowerShell on their own PC, so the browser asks the cloud, the cloud
 //     asks the agent, and the agent answers from that machine. Rewriting any
 //     of it up here would make a second copy of the rules that drifts.
-const studioEnv = { ...env, STUDIO_HOSTNAME: "studio.vocate.app" };
+const studioEnv = env;
 const studioCall = async (path, options = {}) => {
   const init = { method: options.method || "GET", headers: { ...(options.headers || {}) } };
   if (options.cookie) init.headers.cookie = options.cookie;
   if (options.body !== undefined) { init.body = JSON.stringify(options.body); init.headers["content-type"] = "application/json"; }
-  const response = await worker.fetch(new Request("https://studio.vocate.app" + path, init), studioEnv);
+  const response = await worker.fetch(new Request("https://ebookstudio.vocate.app" + path, init), studioEnv);
   return { status: response.status, text: await response.text(), headers: response.headers };
 };
 
@@ -424,5 +425,22 @@ check(desk.version === "2026.09.22.8", "Each machine must report which Book Stud
 check(desk.updates.automatic === true, "A machine that keeps itself current must say so.");
 check(laptop.updates.automatic === false, "A machine that has stopped updating must say so.");
 check(/unsaved changes/.test(laptop.updates.reason), "It must say why it stopped: " + laptop.updates.reason);
+
+// 22. One site. A designer changing a setting must not have to leave Book
+//     Studio for a second address: the cloud half is under /cloud on the same
+//     site, and the old address moves a person there rather than serving a
+//     second copy of it.
+const movedPage = await worker.fetch(new Request("https://ebook.vocate.app/connect", { headers: { accept: "text/html" } }), env);
+check(movedPage.status === 302, "The old address must move a person to the one site, got " + movedPage.status);
+check((movedPage.headers.get("location") || "").includes("ebookstudio.vocate.app/cloud/connect"), "It must move them to the same page on the one site, got " + movedPage.headers.get("location"));
+const movedRoot = await worker.fetch(new Request("https://ebook.vocate.app/", { headers: { accept: "text/html" } }), env);
+check((movedRoot.headers.get("location") || "").endsWith("/cloud/"), "The old front page must land on the books, got " + movedRoot.headers.get("location"));
+
+// An agent talks to whichever address it was given, so its routes must answer
+// on both rather than being redirected into a browser page.
+const agentOnOldName = await worker.fetch(new Request("https://ebook.vocate.app/api/runner/jobs", { headers: { "x-book-runner-token": "machine-token" } }), env);
+check(agentOnOldName.status === 200, "An agent on the old address must still be served, got " + agentOnOldName.status);
+const healthOnOldName = await worker.fetch(new Request("https://ebook.vocate.app/api/health"), env);
+check(healthOnOldName.status === 200, "The health probe must answer on both addresses.");
 
 console.log("PASS: " + checks + " sign-in checks (sessions, password storage, lockout, administration, runner tokens)");

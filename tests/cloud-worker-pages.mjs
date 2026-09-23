@@ -45,20 +45,28 @@ const env = {
   // Sign-in off, so the pages are served rather than redirected: this suite is
   // about what the page contains, not about who may see it.
   REQUIRE_ACCESS: "false",
-  ADMIN_EMAILS: "boss@vocate.org"
+  ADMIN_EMAILS: "boss@vocate.org",
+  STUDIO_HOSTNAMES: "ebookstudio.vocate.app"
 };
 
 async function page(path) {
-  const response = await worker.fetch(new Request("https://ebook.vocate.app" + path), env);
+  const response = await worker.fetch(new Request("https://ebookstudio.vocate.app" + path, { headers: { accept: "text/html" } }), env);
   check(response.status === 200, "The worker must serve " + path + ", got " + response.status);
   return await response.text();
 }
 
+// Served the way the one site serves them: Book Studio at the root, the cloud
+// under /cloud. The prefix has to be resolved by the time a browser sees them,
+// or every link on them points at a page that is not there.
 const pages = {
-  "/connect": await page("/connect"),
-  "/login": await page("/login"),
-  "/": await page("/")
+  "/cloud/connect": await page("/cloud/connect"),
+  "/cloud/login": await page("/cloud/login"),
+  "/cloud/": await page("/cloud/")
 };
+for (const [path, html] of Object.entries(pages)) {
+  check(!html.includes("__CLOUD__"), path + " still carries the unresolved link marker, so its links go nowhere.");
+  check(html.includes("/cloud/"), path + " has no link into the cloud half of the site.");
+}
 
 for (const [path, html] of Object.entries(pages)) {
   const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
@@ -80,14 +88,23 @@ for (const [path, html] of Object.entries(pages)) {
 
     // A script that parses can still address elements that are not there,
     // which fails just as silently.
+    // Both ways a page addresses its own elements. The scan used to know only
+    // el("x"); the cloud page uses document.querySelector("#x"), so retiring a
+    // panel left its script reaching for elements that no longer existed, and
+    // one of those stops the whole script before anything runs.
     const ids = new Set([...html.matchAll(/id="([A-Za-z0-9_-]+)"/g)].map((match) => match[1]));
-    for (const used of [...script.matchAll(/\bel\("([A-Za-z0-9_-]+)"\)/g)].map((match) => match[1])) {
-      check(ids.has(used), path + ' uses el("' + used + '"), but the page has no element with that id.');
+    const addressed = [
+      ...[...script.matchAll(/\bel\("([A-Za-z0-9_-]+)"\)/g)].map((match) => match[1]),
+      ...[...script.matchAll(/querySelector\("#([A-Za-z0-9_-]+)"\)/g)].map((match) => match[1])
+    ];
+    check(addressed.length > 0, path + " addresses no elements at all; the scan pattern is wrong.");
+    for (const used of addressed) {
+      check(ids.has(used), path + " reaches for #" + used + ", which the page does not have.");
     }
 
     // And a page whose script never reaches the server is a page that shows
     // its placeholder text for ever.
-    if (path !== "/login") {
+    if (path !== "/cloud/login") {
       check(/fetch\(|api\(/.test(script), path + " never calls the API, so nothing on it can update.");
     }
   });
@@ -97,7 +114,7 @@ for (const [path, html] of Object.entries(pages)) {
 // agent, the token, a Windows path, and nothing to assemble by hand. It used to
 // be two lines and an environment variable, which is a developer's habit, not
 // something to ask a designer to get right on a locked-down PC.
-const connect = pages["/connect"];
+const connect = pages["/cloud/connect"];
 const command = (connect.match(/<pre id="cmd">([\s\S]*?)<\/pre>/) || [])[1] || "";
 check(!command.includes("\n"), "The command must be one line; a second line is a second thing to get wrong.");
 check(!/\$env:/.test(command), "The command must not ask a designer to set an environment variable.");
@@ -131,12 +148,12 @@ check(/last heard from/.test(script), "Each computer must say when it was last h
 
 // The front page is where a designer lands after signing in. It has to say
 // whose books these are, offer the shared view, and let them leave.
-const app = pages["/"];
+const app = pages["/cloud/"];
 check(/My books/.test(app), "The front page must show a designer their own books.");
 check(/Everyone/.test(app), "The front page must offer everyone's books.");
 check(/id="who"/.test(app), "The front page must say who is signed in.");
 check(/id="signout"/.test(app), "The front page must offer a way to sign out.");
-check(/href="\/connect"/.test(app), "The front page must link to connecting a computer.");
+check(/href="\/cloud\/connect"/.test(app), "The front page must link to connecting a computer.");
 const appScript = (app.match(/<script>([\s\S]*?)<\/script>/) || [])[1] || "";
 check(/scope=/.test(appScript), "The front page must ask the server for one scope or the other.");
 check(/job\.owner/.test(appScript), "The shared view must show whose book each one is.");
@@ -144,16 +161,22 @@ check(/job\.owner/.test(appScript), "The shared view must show whose book each o
 // Every page must say where the others are. The connect page had no way back
 // to the books at all, so signing in and connecting a computer left a designer
 // at a dead end with nothing to click.
-check(/href="\/"/.test(connect), "The connect page must link back to the books.");
+check(/href="\/cloud\/"/.test(connect), "The connect page must link back to the books.");
 check(/id="signout"/.test(connect), "The connect page must offer a way to sign out.");
 
-// And the choices a designer makes about a book must exist on the page that
-// makes it, or every cloud book is written at the defaults.
-for (const control of ["readingLevel", "sourceMode", "imageContext", "allowAdditionalResearch"]) {
-  check(new RegExp('id="' + control + '"').test(app), "The book form must offer " + control + ".");
-  check(appScript.includes(control), "The book form must send " + control + " to the server.");
-}
-check(/Grade 8 \(default\)/.test(app), "Grade 8 must be the reading level a designer gets without choosing.");
+// Books are not made here. This page offered an uploader with none of the steps
+// a designer needs -- no curriculum-draft analysis, no outcomes review, no
+// production settings, no format review, no quality findings -- and a book
+// started here failed twenty minutes later for a reason Book Studio would have
+// caught before it began.
+check(!/id="bookForm"/.test(app), "The cloud page must not offer a way to start a book; Book Studio is where that happens.");
+check(!/readFileAsBase64/.test(appScript), "Nothing should be uploadable from the cloud page.");
+check(/href="\/"/.test(app), "The cloud page must send a designer to Book Studio, which is this site's own root.");
+// One name for it everywhere a designer reads it: two names for the same place
+// is how somebody ends up bookmarking the one that is later retired.
+check(!/studio\.vocate\.app/.test(app), "Nothing may point at a second address for Book Studio.");
+check(!/studio\.vocate\.app/.test(connect), "The connect page must not point at a second address either.");
+check(/Book Studio/.test(app), "And say so in words.");
 
 // A computer that has stopped updating itself must say so on the page where
 // someone would look, not only in the record behind it.

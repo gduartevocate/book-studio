@@ -60,7 +60,7 @@ const CONNECT_HTML = `<!doctype html>
                     font:inherit; cursor:pointer; }
  .nav-here { font-weight:600; }
 </style></head><body><main>
-<nav class="nav"><a href="https://studio.vocate.app/">Book Studio</a><a href="/">Cloud queue</a><span class="nav-here">Your computer</span>
+<nav class="nav"><a href="/">Book Studio</a><a href="__CLOUD__/">Cloud queue</a><span class="nav-here">Your computer</span>
   <button class="linkish" id="signout">Sign out</button></nav>
 <h1>Connect your computer</h1>
 <p class="sub">Book Studio writes your book on your own PC, using the Codex you are already signed in to. This page pairs that machine with your account.</p>
@@ -117,7 +117,7 @@ async function api(path, options) {
   if (!response.ok) throw new Error(await response.text());
   return response.json();
 }
-api("/api/identity").then((identity) => {
+api("__CLOUD__/api/identity").then((identity) => {
   el("who").innerHTML = identity.email
     ? "Signed in as <strong>" + identity.email + "</strong>. Books and machines you create belong to this address."
     : "<span class='pill warn'>Not signed in</span> Sign-in is not switched on yet, so everything here is shared. Do not put a real course through it until it is.";
@@ -126,7 +126,7 @@ api("/api/identity").then((identity) => {
 el("mint").addEventListener("click", async () => {
   el("mint").disabled = true;
   try {
-    const created = await api("/api/runner-tokens", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ label: el("label").value }) });
+    const created = await api("__CLOUD__/api/runner-tokens", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ label: el("label").value }) });
     el("token").innerHTML = "<p>Copy this now — it is not shown again.</p><pre>" + created.token + "</pre>";
     // Escaped twice on purpose. This line lives inside a template literal,
       // which eats one level of escaping: written once, the browser received a
@@ -154,7 +154,7 @@ el("check").addEventListener("click", async () => {
   el("state").textContent = "Checking…"; el("state").className = "pill";
   el("detail").innerHTML = "";
   try {
-    const status = await api("/api/runner/status");
+    const status = await api("__CLOUD__/api/runner/status");
     const machines = status.machines || (status.connected ? [status] : []);
     if (!machines.length) {
       el("state").textContent = "No machine"; el("state").className = "pill warn";
@@ -194,7 +194,7 @@ el("check").addEventListener("click", async () => {
 // is refused and the section simply never appears.
 async function loadPeople() {
   try {
-    const listing = await api("/api/users");
+    const listing = await api("__CLOUD__/api/users");
     el("people").hidden = false;
     el("roster").innerHTML = listing.users
       .sort((left, right) => left.email.localeCompare(right.email))
@@ -211,7 +211,7 @@ async function loadPeople() {
       button.addEventListener("click", async () => {
         button.disabled = true;
         try {
-          await api("/api/users/remove", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: button.dataset.email }) });
+          await api("__CLOUD__/api/users/remove", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: button.dataset.email }) });
           await loadPeople();
         } catch (error) { el("issued").innerHTML = "<p class='bad'>" + error.message + "</p>"; button.disabled = false; }
       });
@@ -225,7 +225,7 @@ el("add").addEventListener("click", async () => {
   if (!email) return;
   el("add").disabled = true;
   try {
-    const created = await api("/api/users", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email }) });
+    const created = await api("__CLOUD__/api/users", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email }) });
     el("issued").innerHTML = "<p>Give this to <strong>" + created.user.email + "</strong> in person or over chat, not by email. " +
       "It is shown once and has to be changed at their first sign-in.</p><pre>" + created.password + "</pre>";
     el("newEmail").value = "";
@@ -244,8 +244,8 @@ el("copy").addEventListener("click", async () => {
   }
 });
 el("signout").addEventListener("click", async () => {
-  try { await api("/api/logout", { method: "POST" }); } catch (error) { /* the cookie goes either way */ }
-  location.href = "/login";
+  try { await api("__CLOUD__/api/logout", { method: "POST" }); } catch (error) { /* the cookie goes either way */ }
+  location.href = "__CLOUD__/login";
 });
 </script></body></html>`;
 
@@ -298,7 +298,7 @@ const LOGIN_HTML = `<!doctype html>
 </div>
 <script>
 const el = (id) => document.getElementById(id);
-const next = new URLSearchParams(location.search).get("next") || "/connect";
+const next = new URLSearchParams(location.search).get("next") || "__CLOUD__/connect";
 async function send(path, body) {
   const response = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const text = await response.text();
@@ -310,7 +310,7 @@ el("signin").addEventListener("submit", async (event) => {
   el("go").disabled = true;
   el("note").textContent = "";
   try {
-    const result = await send("/api/login", { email: el("email").value, password: el("password").value });
+    const result = await send("__CLOUD__/api/login", { email: el("email").value, password: el("password").value });
     if (result.mustChangePassword) {
       el("title").textContent = "Choose your own password";
       el("lead").textContent = "The one you were given works once. Pick a password of at least 12 characters.";
@@ -334,7 +334,7 @@ el("change").addEventListener("submit", async (event) => {
   }
   el("save").disabled = true;
   try {
-    await send("/api/password", { currentPassword: el("password").value, newPassword: el("newPassword").value });
+    await send("__CLOUD__/api/password", { currentPassword: el("password").value, newPassword: el("newPassword").value });
     location.href = next;
   } catch (error) {
     el("note").className = "note bad";
@@ -348,7 +348,7 @@ const APP_HTML = `<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Ebook Generator</title>
+  <title>Your books</title>
   <style>
     :root {
       --legend-blue: #0d3553;
@@ -540,13 +540,13 @@ const APP_HTML = `<!doctype html>
 <body>
   <header class="topbar">
     <div>
-      <h1>Ebook Generator</h1>
-      <p>Cloud intake queue for Book Studio</p>
+      <h1>Your books</h1>
+      <p>Who is writing what, across everyone</p>
     </div>
     <div class="topbar-actions">
       <span id="who" class="who"></span>
-      <a class="secondary-link" href="https://studio.vocate.app/">Open Book Studio</a>
-      <a class="secondary-link" href="/connect">Your computer</a>
+      <a class="secondary-link" href="/">Open Book Studio</a>
+      <a class="secondary-link" href="__CLOUD__/connect">Your computer</a>
       <span id="machineState" class="who"></span>
       <button id="refreshJobs" class="secondary" type="button">Refresh</button>
       <button id="signout" class="secondary" type="button">Sign out</button>
@@ -554,74 +554,13 @@ const APP_HTML = `<!doctype html>
   </header>
   <main class="workspace">
     <section class="panel">
-      <h2>Create Book</h2>
-      <form id="bookForm">
-        <div class="field-grid">
-          <label>
-            <span>Course code</span>
-            <input name="courseCode" autocomplete="off" placeholder="HU2000">
-          </label>
-          <label>
-            <span>Book title</span>
-            <input name="title" autocomplete="off" placeholder="Critical Thinking and Problem Solving">
-          </label>
-        </div>
-        <label>
-          <span>Source files</span>
-          <input name="files" type="file" multiple required>
-        </label>
-        <label>
-          <span>Production notes</span>
-          <textarea name="specialInstructions" placeholder="Audience, tone, special requirements, chapter emphasis, or exclusions"></textarea>
-        </label>
-        <div class="controls-row">
-          <label>
-            <span>Research per chapter</span>
-            <input name="maxResearchPerChapter" type="number" min="1" max="8" value="3">
-          </label>
-          <label class="check-field">
-            <input name="skipResearch" type="checkbox">
-            <span>Skip research</span>
-          </label>
-          <label class="check-field">
-            <input name="skipOpenStaxFetch" type="checkbox">
-            <span>Offline OpenStax</span>
-          </label>
-        </div>
-        <div class="actions">
-        </div>
-        <div class="field-grid">
-          <label>Reading level
-            <select id="readingLevel">
-              <option value="6">Grade 6</option><option value="7">Grade 7</option>
-              <option value="8" selected>Grade 8 (default)</option><option value="9">Grade 9</option>
-              <option value="10">Grade 10</option><option value="11">Grade 11</option>
-              <option value="12">Grade 12</option>
-            </select>
-          </label>
-          <label>Sources to use
-            <select id="sourceMode">
-              <option value="UploadedOnly" selected>Only what I uploaded</option>
-              <option value="Assigned">The readings assigned in the document</option>
-              <option value="Discovery">Let the agent find sources</option>
-            </select>
-          </label>
-          <label>Image setting
-            <select id="imageContext">
-              <option value="Generic" selected>Generic / everyday (nonclinical)</option>
-              <option value="Healthcare">Healthcare</option>
-              <option value="Business">Business (nonclinical)</option>
-              <option value="Custom">Custom</option>
-            </select>
-          </label>
-          <label class="checkbox"><input type="checkbox" id="allowAdditionalResearch">
-            Also let the agent research beyond the document</label>
-        </div>
-        <div class="field-grid">
-          <button id="generateButton" type="submit">Create Job</button>
-          <span id="formStatus" role="status" aria-live="polite"></span>
-        </div>
-      </form>
+      <h2>Start a book in Book Studio</h2>
+      <p>This page is where books are listed, not where they are made. A book made here would be
+      written at the defaults, with none of the steps a designer needs: the analysis of a curriculum
+      draft, the review of the course objectives and learning outcomes, the production settings, the
+      format review, the quality findings. All of that is in Book Studio, which runs on your own
+      computer and is where a book that failed here would have been caught.</p>
+      <p><a class="primary-link" href="/">Open Book Studio</a></p>
     </section>
     <section class="panel">
       <div class="section-heading">
@@ -648,27 +587,12 @@ const APP_HTML = `<!doctype html>
     </article>
   </template>
   <script>
-    var form = document.querySelector("#bookForm");
-    var formStatus = document.querySelector("#formStatus");
-    var generateButton = document.querySelector("#generateButton");
     var refreshJobsButton = document.querySelector("#refreshJobs");
     var jobsList = document.querySelector("#jobsList");
     var jobCount = document.querySelector("#jobCount");
     var jobTemplate = document.querySelector("#jobTemplate");
 
-    function setStatus(message) { formStatus.textContent = message || ""; }
-    function readFileAsBase64(file) {
-      return new Promise(function(resolve, reject) {
-        var reader = new FileReader();
-        reader.onload = function() {
-          var result = String(reader.result || "");
-          var commaIndex = result.indexOf(",");
-          resolve(commaIndex >= 0 ? result.slice(commaIndex + 1) : result);
-        };
-        reader.onerror = function() { reject(reader.error); };
-        reader.readAsDataURL(file);
-      });
-    }
+    function setStatus(message) { if (message) console.warn(message); }
     async function api(path, options) {
       var response = await fetch(path, Object.assign({ headers: { "content-type": "application/json" } }, options || {}));
       if (!response.ok) {
@@ -738,7 +662,7 @@ const APP_HTML = `<!doctype html>
     }
     var scope = "mine";
     async function loadJobs() {
-      var data = await api("/api/jobs?scope=" + scope);
+      var data = await api("__CLOUD__/api/jobs?scope=" + scope);
       document.querySelector("#who").textContent = data.you ? "Signed in as " + data.you : "";
       renderJobs(data.jobs || []);
     }
@@ -751,49 +675,8 @@ const APP_HTML = `<!doctype html>
     document.querySelector("#scopeMine").addEventListener("click", function() { setScope("mine"); });
     document.querySelector("#scopeEveryone").addEventListener("click", function() { setScope("everyone"); });
     document.querySelector("#signout").addEventListener("click", async function() {
-      try { await api("/api/logout", { method: "POST" }); } catch (error) { /* the cookie goes either way */ }
-      location.href = "/login";
-    });
-    form.addEventListener("submit", async function(event) {
-      event.preventDefault();
-      generateButton.disabled = true;
-      try {
-        var formData = new FormData(form);
-        var selectedFiles = Array.from(form.elements.files.files || []);
-        if (!selectedFiles.length) throw new Error("Choose at least one source file.");
-        var files = [];
-        for (var i = 0; i < selectedFiles.length; i++) {
-          var file = selectedFiles[i];
-          setStatus("Reading " + file.name + "...");
-          files.push({ name: file.name, size: file.size, type: file.type, contentBase64: await readFileAsBase64(file) });
-        }
-        var payload = {
-          courseCode: formData.get("courseCode"),
-          title: formData.get("title"),
-          specialInstructions: formData.get("specialInstructions"),
-          maxResearchPerChapter: Number(formData.get("maxResearchPerChapter") || 3),
-          skipResearch: formData.get("skipResearch") === "on",
-          skipOpenStaxFetch: formData.get("skipOpenStaxFetch") === "on",
-          // The agent has honoured all of these from the start. The form
-          // offered none of them, so every cloud book was written at the
-          // defaults and a designer had no way to say otherwise.
-          readingLevel: Number(document.querySelector("#readingLevel").value || 8),
-          sourceMode: document.querySelector("#sourceMode").value,
-          allowAdditionalResearch: document.querySelector("#allowAdditionalResearch").checked,
-          imageSettings: { context: document.querySelector("#imageContext").value, instructions: "" },
-          files: files
-        };
-        setStatus("Creating Cloudflare job...");
-        await api("/api/jobs", { method: "POST", body: JSON.stringify(payload) });
-        form.reset();
-        form.elements.maxResearchPerChapter.value = 3;
-        setStatus("Job queued.");
-        await loadJobs();
-      } catch (error) {
-        setStatus(error.message);
-      } finally {
-        generateButton.disabled = false;
-      }
+      try { await api("__CLOUD__/api/logout", { method: "POST" }); } catch (error) { /* the cookie goes either way */ }
+      location.href = "__CLOUD__/login";
     });
     refreshJobsButton.addEventListener("click", function() { loadJobs().catch(function(error) { setStatus(error.message); }); });
     loadJobs().catch(function(error) { setStatus(error.message); });
@@ -801,6 +684,13 @@ const APP_HTML = `<!doctype html>
   </script>
 </body>
 </html>`;
+
+// The cloud pages are served under /cloud on the one site, and at the root
+// for anything that still asks for them there. They write __CLOUD__ in front
+// of their own links and calls, and it becomes whichever is right.
+function withCloudPrefix(html, prefix) {
+  return html.split("__CLOUD__").join(prefix);
+}
 
 function jsonResponse(value, init = {}) {
   return new Response(JSON.stringify(value, null, 2), {
@@ -1623,8 +1513,8 @@ function noMachineHtml(email) {
   <p>Signed in as <strong>${email}</strong>. Your books are written on your own PC, so that computer has to
   be switched on with Book Studio running before this page has anything to show.</p>
   <p>Open the minimised <code>Book Studio</code> PowerShell window on that computer, or set it up again from
-  <a href="https://ebook.vocate.app/connect">Your computer</a>.</p>
-  <p><a href="https://ebook.vocate.app/">Back to the cloud queue</a></p>
+  <a href="/cloud/connect">Your computer</a>.</p>
+  <p><a href="/cloud/">Your books</a></p>
 </div>
 </body></html>`;
 }
@@ -1639,7 +1529,7 @@ async function forwardToMachine(request, env, url) {
     // A page gets the sign-in screen; anything else gets the refusal, because
     // only a script can read one.
     return request.method === "GET" && (request.headers.get("accept") || "").includes("text/html")
-      ? new Response(null, { status: 302, headers: { location: "https://ebook.vocate.app/login?next=" + encodeURIComponent(url.pathname) } })
+      ? new Response(null, { status: 302, headers: { location: "/cloud/login?next=" + encodeURIComponent(url.pathname) } })
       : user.response;
   }
   const machine = await resolveMachineForUser(env, user.email);
@@ -1677,7 +1567,10 @@ async function forwardToMachine(request, env, url) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const pathname = url.pathname.replace(/\/+$/, "") || "/";
+    let pathname = url.pathname.replace(/\/+$/, "") || "/";
+    // What a cloud page must put in front of its own links and API calls, so
+    // the same page works under /cloud and, for an agent, at the root.
+    let cloudPrefix = "";
 
     try {
       // One hostname for the cloud, one for the designer's own machine. The
@@ -1685,24 +1578,46 @@ export default {
       // those exact names, and so does the cloud, so they cannot share a
       // hostname without one of them being rewritten. They do share the
       // sign-in cookie, which is set for the whole domain.
-      if (url.hostname === (env.STUDIO_HOSTNAME || "studio.vocate.app")) {
-        return await forwardToMachine(request, env, url);
+      // One site, two halves. Book Studio is at the root; everything the
+      // cloud owns is under /cloud, which the local app never asks for. The
+      // agent routes are shared by both, because an agent talks to whichever
+      // address it was given.
+      const studioHostnames = String(env.STUDIO_HOSTNAMES || "ebookstudio.vocate.app").split(",").map((name) => name.trim());
+      const onStudio = studioHostnames.includes(url.hostname);
+      const agentRoute = pathname.startsWith("/api/runner") || pathname.startsWith("/api/bridge") || pathname === "/setup.ps1" || pathname === "/api/health";
+      if (onStudio && !agentRoute) {
+        if (pathname === "/cloud" || pathname.startsWith("/cloud/")) {
+          // Handled below as an ordinary cloud route, with the prefix off.
+          pathname = pathname.slice("/cloud".length) || "/";
+          cloudPrefix = "/cloud";
+        } else {
+          return await forwardToMachine(request, env, url);
+        }
+      }
+
+      // The old address keeps working for agents and for anyone with a link,
+      // but a person is moved to the one site rather than left on a second
+      // copy of it.
+      if (!onStudio && !agentRoute && request.method === "GET") {
+        const studioName = studioHostnames[0];
+        const moved = pathname === "/" || pathname === "/index.html" ? "/cloud/" : "/cloud" + pathname;
+        return new Response(null, { status: 302, headers: { location: "https://" + studioName + moved + url.search } });
       }
 
       // A page asked for while signed out goes to the sign-in screen. Only the
       // API answers 401, because only the API has a caller that can read one.
       if (request.method === "GET" && (pathname === "/connect" || pathname === "/" || pathname === "/index.html")) {
         if (env.REQUIRE_ACCESS === "true" && !(await accessIdentity(request, env))) {
-          return new Response(null, { status: 302, headers: { location: "/login?next=" + encodeURIComponent(pathname) } });
+          return new Response(null, { status: 302, headers: { location: cloudPrefix + "/login?next=" + encodeURIComponent(cloudPrefix + pathname) } });
         }
       }
 
       if (request.method === "GET" && pathname === "/connect") {
-        return new Response(CONNECT_HTML, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+        return new Response(withCloudPrefix(CONNECT_HTML, cloudPrefix), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
       }
 
       if (request.method === "GET" && (pathname === "/" || pathname === "/index.html")) {
-        return new Response(APP_HTML, {
+        return new Response(withCloudPrefix(APP_HTML, cloudPrefix), {
           headers: {
             "content-type": "text/html; charset=utf-8",
             "cache-control": "no-store"
@@ -1719,7 +1634,7 @@ export default {
       }
 
       if (request.method === "GET" && pathname === "/login") {
-        return new Response(LOGIN_HTML, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+        return new Response(withCloudPrefix(LOGIN_HTML, cloudPrefix), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
       }
 
       // Signing in is the one route that cannot require being signed in.

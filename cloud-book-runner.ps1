@@ -9,7 +9,7 @@ param(
     [switch]$StartWithWindows,
     [switch]$StopStartingWithWindows,
     [string]$BaseUrl = "https://ebook-generator.gduarte-28e.workers.dev",
-    [string]$SignInUrl = "https://ebook.vocate.app/connect",
+    [string]$SignInUrl = "https://ebookstudio.vocate.app/cloud/connect",
     [int]$StudioPort = 8790,
     [string]$EnvPath = "..\.env",
     [string]$ProjectRoot = "",

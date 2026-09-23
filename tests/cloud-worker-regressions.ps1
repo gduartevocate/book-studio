@@ -50,7 +50,10 @@ Check ($connectStart -ge 0) 'The worker no longer defines a connect page.'
 $connectEnd = $worker.IndexOf('const APP_HTML')
 Check ($connectEnd -gt $connectStart) 'The connect page and the app page could not be told apart.'
 $connect = $worker.Substring($connectStart, $connectEnd - $connectStart)
-$fetched = @([regex]::Matches($connect, 'api\("(/api/[^"]+)"') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
+# The cloud pages are served under /cloud on the one site, so they write the
+# prefix marker in front of their own calls; the route they reach is what
+# follows it.
+$fetched = @([regex]::Matches($connect, 'api\("(?:__CLOUD__)?(/api/[^"]+)"') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
 Check ($fetched.Count -ge 3) "The connect page appears to call only $($fetched.Count) endpoints."
 foreach ($path in $fetched) {
     Check ($exact -contains $path) "The connect page calls $path, which the worker does not serve."

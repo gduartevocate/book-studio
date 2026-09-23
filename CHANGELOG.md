@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.23.1 (2026-09-23)
+
+- One site: Book Studio and the cloud settings live at the same address.
+
 ## v2026.09.22.9 (2026-09-22)
 
 - Each computer reports which Book Studio it runs and whether it keeps itself up to date.

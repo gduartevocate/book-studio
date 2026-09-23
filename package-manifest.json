@@ -21,7 +21,7 @@
     },
     {
         "path":  "cloud-book-runner.ps1",
-        "sha256":  "74B822891259AA68377590C35C92AB767B97C79DCCA9903AE1B917A5741AD6C1"
+        "sha256":  "24C21E833DC1CB8818E58B93227481CFDB4D1CAB5356ACDFED9B6F8679E96072"
     },
     {
         "path":  "Cloudflare Setup Notes.txt",
@@ -49,7 +49,7 @@
     },
     {
         "path":  "ID Quick Start.txt",
-        "sha256":  "D5BAFC1E5EC46C8794D266EEEB1158DF56CFB8EE32DBDEFCE7AF0207C596F653"
+        "sha256":  "9D395FAF322D6271CA96D74F23D5319447151B68BE139B8FA3C72EEB24816AB6"
     },
     {
         "path":  "Install Book Studio.cmd",
@@ -109,7 +109,7 @@
     },
     {
         "path":  "VERSION.txt",
-        "sha256":  "B47C0C727F53A0A6E67978927994E8D720768BA3EFE39208E2689C607C575569"
+        "sha256":  "83F5F2FDF6428BE0F02140DA3070C7495440CEFE1FFBCC2157E849E48668A2BE"
     },
     {
         "path":  "book-studio/app.js",
@@ -137,11 +137,11 @@
     },
     {
         "path":  "book-studio/version.json",
-        "sha256":  "C8F08FA5FA9EEAE329143F39DD31E17E3F8F84AA14F224B6A85F5A725ADE2D4B"
+        "sha256":  "2D02896EFF36A2FA0BD1D1050720FE0257B69EFFF5729B87C5625F451B064429"
     },
     {
         "path":  "cloudflare/ebook-generator-worker.js",
-        "sha256":  "F855F97E20DA1B0A8F6A42CCB5BE0F3E8F293F0B7C1EE043915FC84A9201D6C9"
+        "sha256":  "EB98395EA5219DA725A2F05893A3790C237F2CDEB899D0E5DCE1558719ECD873"
     },
     {
         "path":  "cloudflare/sme-review-worker.js",
@@ -149,7 +149,7 @@
     },
     {
         "path":  "cloudflare/wrangler.toml",
-        "sha256":  "B4E3909418CB082EFB2C2A0E12E9EB3D1D1FEE5B052CEE5613EEF2295CEA6173"
+        "sha256":  "9949AE6ADE1B27E42449C34C3FC3B62D7FF8BB97CF57D26B78005A538C7141C5"
     },
     {
         "path":  "cloudflare/.wrangler/state/v3/cache/miniflare-CacheObject/metadata.sqlite",
@@ -437,11 +437,11 @@
     },
     {
         "path":  "tests/cloud-runner-connect-regressions.ps1",
-        "sha256":  "0994D6E2B9FE84B99F5550459E62178DF69178947E2094E9628B188D025D9BAA"
+        "sha256":  "6C3CB125150979D7194FE2CC91845052EB9EC807964359BFC8300158E6E72722"
     },
     {
         "path":  "tests/cloud-worker-auth.mjs",
-        "sha256":  "6353BF6F4D147561B76064C8562661525882865C9AC2100D1DDBC27ADE48CD03"
+        "sha256":  "63E6407E32A292C80FAD4314656D74A54DEFF2ED8DC9EAEB5C0E6B1F71D8D37F"
     },
     {
         "path":  "tests/cloud-worker-auth.ps1",
@@ -449,7 +449,7 @@
     },
     {
         "path":  "tests/cloud-worker-pages.mjs",
-        "sha256":  "B9729649AE75D0C8F5A7D7CEFD166464C4464F9AE6AD705635866FD878EAE439"
+        "sha256":  "1F0616D8D9EF20A2C97AB0EA2561A7A356A934D0C9442A65579C8D5C65D7BEF7"
     },
     {
         "path":  "tests/cloud-worker-pages.ps1",
@@ -457,7 +457,7 @@
     },
     {
         "path":  "tests/cloud-worker-regressions.ps1",
-        "sha256":  "ED8AD62453FB4534D491B022ED6396724CEE6FA1ABFDF216B489C56CAA7778D6"
+        "sha256":  "98D726F8E49FA8F3A6C150170D2353AD11E6BD4D290D1F084CAE2BF1D28192C4"
     },
     {
         "path":  "tests/codex-sandbox-regressions.ps1",

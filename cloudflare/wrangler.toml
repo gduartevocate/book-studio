@@ -33,6 +33,9 @@ routes = [
   # The designer's own machine, reached through the agent. Its own hostname so
   # that the local Book Studio's own URLs -- /api/jobs, /app.js, /version.json
   # -- arrive unchanged.
+  { pattern = "ebookstudio.vocate.app", custom_domain = true },
+  # The name this was first published under. Kept so a link someone already has
+  # keeps working.
   { pattern = "studio.vocate.app", custom_domain = true }
 ]
 
@@ -73,7 +76,7 @@ REQUIRE_ACCESS = "true"
 # change their own password. Kept here rather than in the store, so losing the
 # store cannot promote anyone.
 ADMIN_EMAILS = "gduarte@vocate.org"
-STUDIO_HOSTNAME = "studio.vocate.app"
+STUDIO_HOSTNAMES = "ebookstudio.vocate.app,studio.vocate.app"
 
 # One per connected machine. The browser and the agent must see each other
 # immediately, which KV cannot promise, so the rendezvous is a Durable Object.
