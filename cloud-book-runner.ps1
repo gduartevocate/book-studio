@@ -202,7 +202,14 @@ function Invoke-LocalStudioRequest {
         }
         foreach ($name in $BridgeRequest.headers.PSObject.Properties.Name) {
             # Host and content-length describe the hop that has already ended.
-            if ($name -in @('Host', 'Content-Length', 'Content-Type')) { continue }
+            # Origin and Referer matter most here: the local Book Studio refuses
+            # any change whose Origin is not its own address. That is the right
+            # rule for a browser sitting on that PC, and the wrong one for a
+            # request that arrived through the cloud already authenticated.
+            # Forwarding the browser's Origin turned every action in Settings
+            # into "Request failed: 403". The cloud's own cookie means nothing
+            # on that machine either.
+            if ($name -in @('Host', 'Content-Length', 'Content-Type', 'Origin', 'Referer', 'Cookie')) { continue }
             $parameters.Headers[$name] = [string]$BridgeRequest.headers.$name
         }
         if ($BridgeRequest.bodyBase64) {

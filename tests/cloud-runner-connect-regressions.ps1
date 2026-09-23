@@ -321,4 +321,10 @@ Check ($runnerText -match 'Invoke-BookRunnerSelfUpdate') 'The agent must check f
 Check ($runnerText -match 'UpdateCheckMinutes') 'It must keep checking, not only at start.'
 Check ($runnerText -match 'Restart-BookRunner') 'It must restart into what it fetched, or the update does nothing until the PC is rebooted.'
 
+# The local Book Studio refuses any change whose Origin is not its own address:
+# the right rule for a browser on that PC, the wrong one for a request that
+# arrived through the cloud already authenticated. Forwarding the browser's
+# Origin made every action in Settings fail with 403.
+Check ($runnerText -match "'Origin', 'Referer', 'Cookie'") 'The bridge must not carry the browser Origin, Referer or the cloud cookie to the local server.'
+
 "PASS: $checks connection assertions (token remembered and replaced, kept in the user profile, start with Windows without an administrator)."
