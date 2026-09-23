@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.23.10 (2026-09-23)
+
+- A book that runs out of Codex quota after its chapters are written keeps its manuscript; finish the images with Generate images for saved setting once the limit resets.
+
 ## v2026.09.23.9 (2026-09-23)
 
 - Book Studio says when it has been signed out or cut off, instead of silently stopping.

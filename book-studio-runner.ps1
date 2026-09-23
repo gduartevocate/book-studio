@@ -9,6 +9,7 @@ param(
 $ErrorActionPreference = "Stop"
 . (Join-Path $ProjectRoot 'lib/EbookReadiness.ps1')
 . (Join-Path $ProjectRoot 'lib/EbookPublicationTemplate.ps1')
+. (Join-Path $ProjectRoot 'lib/BookStudioRunnerRecovery.ps1')
 
 $modulePath = Join-Path $ProjectRoot "lib\BookStudio.psm1"
 Import-Module $modulePath -Force
@@ -288,7 +289,7 @@ function Get-RunnerCodexUsageLimitMessage {
     param([AllowNull()][string]$Text)
 
     if ([string]::IsNullOrWhiteSpace($Text)) {
-        return "Codex reported a usage limit. Try again after the time shown in the log."
+        return "Codex reported a usage limit."
     }
 
     if ($Text -match '(?is)(hit your usage limit\.\s*Try again at\s*[^\r\n.]+\.?)') {
@@ -301,7 +302,7 @@ function Get-RunnerCodexUsageLimitMessage {
         return "Codex reported a usage limit. $($Matches[1].Trim())"
     }
 
-    return "Codex reported a usage limit. Try again after the time shown in the log."
+    return "Codex reported a usage limit."
 }
 
 function Backup-RunnerExistingOutputFolder {
@@ -873,7 +874,17 @@ try {
         }
         if (Test-RunnerCodexUsageLimitText -Text $failureText) {
             $usageLimitMessage = Get-RunnerCodexUsageLimitMessage -Text $failureText
-            $restoredOutputFolder = Restore-RunnerExistingOutputBackup -Backup $preRunOutputBackup
+            # Never put an older package back over chapters this run wrote, and
+            # never put back one that is not itself a finished book: see
+            # lib/BookStudioRunnerRecovery.ps1 for what this once destroyed.
+            $manuscriptKept = $availableOutputFolder -and (Test-BookStudioRunWroteManuscript -OutputFolder $availableOutputFolder.FullName -StartedAt $generatorStartedAt)
+            $restoredOutputFolder = $null
+            if (-not $manuscriptKept -and (Test-BookStudioBackupWorthRestoring -Backup $preRunOutputBackup -QaStatus { param($folder) Get-RunnerQaStatus -OutputFolder $folder })) {
+                $restoredOutputFolder = Restore-RunnerExistingOutputBackup -Backup $preRunOutputBackup
+            }
+            elseif ($preRunOutputBackup) {
+                Add-BookStudioLogEntry -DatabasePath $DatabasePath -JobId $JobId -Message "The package from before this run was not put back, so nothing this run produced is lost. The earlier copy is still at $($preRunOutputBackup.backupPath)"
+            }
             if ($restoredOutputFolder) {
                 $restoredQaStatus = Get-RunnerQaStatus -OutputFolder $restoredOutputFolder.FullName
                 if ($restoredQaStatus -eq "PASS") {
@@ -912,7 +923,7 @@ try {
                 }
             }
 
-            throw "Codex generation stopped because the Codex account is at its usage limit. $usageLimitMessage"
+            throw (Get-BookStudioUsageLimitNotice -CodexMessage $usageLimitMessage -ManuscriptKept ([bool]$manuscriptKept))
         }
 
         if ($RunMode -eq 'Full' -and $availableOutputFolder -and (Test-Path -LiteralPath (Join-Path $availableOutputFolder.FullName 'image-production-run.json'))) {

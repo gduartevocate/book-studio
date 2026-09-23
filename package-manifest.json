@@ -9,7 +9,7 @@
     },
     {
         "path":  "book-studio-runner.ps1",
-        "sha256":  "B21D255975E79F41212DCB8904095B783F8091632445E1C8D1453129FFB8C6B0"
+        "sha256":  "A6873507CFAF90891D78B96D4127E5B5A13880F4CC5A63AF40BDC51117E5F33F"
     },
     {
         "path":  "book-studio-source-runner.ps1",
@@ -49,7 +49,7 @@
     },
     {
         "path":  "ID Quick Start.txt",
-        "sha256":  "6097D8E678CA4042719EC3BFFF0B64520D8082D35572F8DF50EED3AFD556693E"
+        "sha256":  "64040A04528AD2C2FE1A522CCD28CABE862BE9A8C55120E8795EFB2024DB07F9"
     },
     {
         "path":  "Install Book Studio.cmd",
@@ -109,7 +109,7 @@
     },
     {
         "path":  "VERSION.txt",
-        "sha256":  "62F588ABC8B60D0748A55C1DB3D97CF3CDD3E0C3A89805048AD07B5447F1989E"
+        "sha256":  "25E7BFDEDB83BF63505B3CFC20324140E2EBAF6B6B0D76A49BC1CA082E2FBD19"
     },
     {
         "path":  "book-studio/app.js",
@@ -141,7 +141,7 @@
     },
     {
         "path":  "book-studio/version.json",
-        "sha256":  "795A6206C6583933A8771D86CB99B607FBE319D01BF6205987B469ECFF375EF5"
+        "sha256":  "2FA060D786BD249E01CA9452D8BDB88EC00C1F94B46A75411565802078079784"
     },
     {
         "path":  "cloudflare/ebook-generator-worker.js",
@@ -324,6 +324,10 @@
         "sha256":  "5666E3D00763ED4D5E94DE4928F53112191CB9A3DA7045511DCE3162F2DB986A"
     },
     {
+        "path":  "lib/BookStudioRunnerRecovery.ps1",
+        "sha256":  "E8A5F58E417E5BC91C94299FCAD6D4D7C7FCE7A5CD7E38A825B4F4EF89647357"
+    },
+    {
         "path":  "lib/BookStudioSetupChange.ps1",
         "sha256":  "B486654D7B46413109B4CF6D9B7E8B4C82FDA81027ED4EF5EC242AF6CC5F9F6E"
     },
@@ -438,6 +442,10 @@
     {
         "path":  "tests/book-studio-update-regressions.ps1",
         "sha256":  "7D874AE9975709092CFF4B97D5CC400949EEEC73C17A2387266852C25A65E595"
+    },
+    {
+        "path":  "tests/book-studio-usage-limit-regressions.ps1",
+        "sha256":  "88E030A887D9B12DB1C3740B7063E27C0F47486A842366259CBB511314D7E206"
     },
     {
         "path":  "tests/book-studio-workflow-regressions.ps1",
