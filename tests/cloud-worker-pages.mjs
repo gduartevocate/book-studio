@@ -255,4 +255,43 @@ const loginPage = pages["/cloud/login"];
 check(loginPage.includes("/cloud/signup") && loginPage.includes("/cloud/guide"), "The sign-in page must point a new person at the request form and the guide.");
 check(/id="note"[^>]*aria-live="polite"/.test(loginPage), "The sign-in page must announce why a sign-in failed.");
 
+// The page that stopped updating. Book Studio's refresh loop swallows its own
+// failures, so a designer signed out mid-book watched "last run 8:45" at 8:55
+// while the book was working the whole time. A signed-out refresh must say so,
+// once, and a Book Studio opened on the PC itself has nothing to say.
+const takeFunction = (name) => {
+  const start = client.indexOf((name === "api" ? "async function " : "function ") + name + "(");
+  // The body opens after the parameter list; "options = {}" is not it.
+  let depth = 0, index = client.indexOf(") {", start) + 2;
+  for (let i = index; i < client.length; i++) {
+    if (client[i] === "{") depth++;
+    if (client[i] === "}") { depth--; if (depth === 0) return client.slice(start, i + 1); }
+  }
+  throw new Error("Could not find " + name);
+};
+const noticeSource = client.slice(client.indexOf("const connectionNotices"), client.indexOf("async function api("));
+const makeNotices = (hostname, status) => {
+  const added = [];
+  const fakeElement = () => ({ attrs: {}, children: [], className: "", textContent: "", href: "",
+    setAttribute(key, value) { this.attrs[key] = value; }, append(...items) { this.children.push(...items); } });
+  const fakeDocument = { createElement: () => fakeElement(), body: { prepend: (element) => added.push(element) } };
+  const fakeLocation = { hostname, pathname: "/", search: "" };
+  const fakeFetch = async () => ({ ok: false, status, text: async () => "" });
+  const run = new Function("document", "location", "fetch",
+    noticeSource + takeFunction("reachedThroughTheCloud") + takeFunction("api") + "; return api;");
+  return { api: run(fakeDocument, fakeLocation, fakeFetch), added };
+};
+const cloudSignedOut = makeNotices("ebookstudio.vocate.app", 401);
+await cloudSignedOut.api("/api/jobs").catch(() => {});
+await cloudSignedOut.api("/api/jobs").catch(() => {});
+check(cloudSignedOut.added.length === 1, "A signed-out refresh must say so exactly once, got " + cloudSignedOut.added.length);
+check(cloudSignedOut.added[0].attrs.role === "alert", "The notice must be announced.");
+check(/\/cloud\/login\?next=/.test(cloudSignedOut.added[0].children[1].href), "The notice must lead back to signing in, to the same page.");
+const machineGone = makeNotices("ebookstudio.vocate.app", 503);
+await machineGone.api("/api/jobs").catch(() => {});
+check(machineGone.added.length === 1 && /\/cloud\/connect/.test(machineGone.added[0].children[1].href), "A computer that stops answering must be named too.");
+const onThePc = makeNotices("localhost", 401);
+await onThePc.api("/api/jobs").catch(() => {});
+check(onThePc.added.length === 0, "Book Studio opened on the PC itself has no sign-in to lose.");
+
 console.log("PASS: " + checks + " page checks (delivered scripts parse, ids exist, connect command survives minting)");

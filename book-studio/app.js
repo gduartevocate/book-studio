@@ -240,11 +240,43 @@ function readFileAsBase64(file) {
   });
 }
 
+// Said once, at the top of the page, when Book Studio reached through the web
+// can no longer reach the book: the session ended, or the computer writing the
+// books stopped answering. The refresh loop swallows its own failures, so
+// without this a designer watched a page that had quietly stopped updating --
+// "last run 8:45" at 8:55 -- while the book itself was working the whole time.
+const connectionNotices = new Set();
+function showConnectionNotice(kind) {
+  if (connectionNotices.has(kind)) return;
+  connectionNotices.add(kind);
+  const banner = document.createElement("div");
+  banner.className = "connection-notice";
+  banner.setAttribute("role", "alert");
+  const text = document.createElement("span");
+  const action = document.createElement("a");
+  if (kind === "signed-out") {
+    text.textContent = "You have been signed out, so this page has stopped updating. Your books carry on regardless. ";
+    action.href = "/cloud/login?next=" + encodeURIComponent(location.pathname + location.search);
+    action.textContent = "Sign in again";
+  } else {
+    text.textContent = "Book Studio on your computer is not answering, so this page has stopped updating. ";
+    action.href = "/cloud/connect";
+    action.textContent = "Check your computer";
+  }
+  banner.append(text, action);
+  document.body.prepend(banner);
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, {
     headers: { "content-type": "application/json" },
     ...options
   });
+
+  if (!response.ok && reachedThroughTheCloud()) {
+    if (response.status === 401) showConnectionNotice("signed-out");
+    if (response.status === 503 || response.status === 504) showConnectionNotice("machine");
+  }
 
   if (!response.ok) {
     const message = await response.text();

@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.23.9 (2026-09-23)
+
+- Book Studio says when it has been signed out or cut off, instead of silently stopping.
+
 ## v2026.09.23.8 (2026-09-23)
 
 - Security fixes from the audit; a Guide link in Book Studio; chapter links limited to web, email and in-book addresses.
