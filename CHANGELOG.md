@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.23.5 (2026-09-23)
+
+- A course document that lists its readings by week again no longer produces duplicate chapters.
+
 ## v2026.09.23.4 (2026-09-23)
 
 - A book parked at format review stops reporting itself as generating, and a refusal now says why.

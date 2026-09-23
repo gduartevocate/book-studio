@@ -140,5 +140,72 @@ if (Test-Path -LiteralPath $specSheet) {
     Check (-not ($gm1000.PSObject.Properties.Name -contains 'sourceFormat')) 'GM1000 spec sheet still uses the spec-sheet parser, not the blueprint parser.'
 }
 
+# A content document that ends with its reading list, set out under the same
+# week headings again. Those repeats were read as five more chapters, numbered
+# 1 to 5 a second time, and the book failed twenty seconds later with
+# "Citation preflight: duplicate note 'chapter-1-note-1'" -- a message about
+# a citation anchor, for a fault in the shape of the document.
+$weekLines = @(
+    'RB9999 Fixture Revenue Course',
+    'Week 1 Revenue Cycle Foundations',
+    'Course Objective',
+    '1. Explain the stages of the revenue cycle.',
+    'Lesson Objectives',
+    '1.1 Identify the stages of the revenue cycle.',
+    'Week 2 Revenue Documentation',
+    'Course Objective',
+    '2. Describe how services are documented and coded.',
+    'Lesson Objectives',
+    '2.1 Describe how services are documented.',
+    '',
+    'Week 1',
+    'Revenue Cycle Management: The Art and the Science - PMC',
+    'https://example.org/revenue-cycle-art-and-science',
+    'Week 2',
+    'Revenue Cycle Management Best Practices Guide',
+    'https://example.org/best-practices'
+)
+$repeated = & $ebook { param($t) ConvertFrom-CourseSpecText -Text $t } ($weekLines -join [Environment]::NewLine)
+Check (@($repeated.weeks).Count -eq 2) "A trailing reading list must not become more chapters (got $(@($repeated.weeks).Count) weeks)."
+Check (@($repeated.weeks | ForEach-Object { [int]$_.number }) -join ',' -eq '1,2') 'The weeks that remain are the real ones, in order.'
+Check (@($repeated.weeks)[0].title -eq 'Revenue Cycle Foundations') 'A real week keeps its own title rather than the bare label from the reading list.'
+
+# A week that genuinely appears twice with objectives under both is not a
+# reading list, and must be left alone.
+$twiceLines = @(
+    'RB9998 Fixture Split Week Course',
+    'Week 1 Revenue Cycle Foundations',
+    'Course Objective',
+    '1. Explain the stages of the revenue cycle.',
+    'Lesson Objectives',
+    '1.1 Identify the stages of the revenue cycle.',
+    'Week 1 Revenue Cycle Foundations Continued',
+    'Course Objective',
+    '2. Describe the purpose of each stage.',
+    'Lesson Objectives',
+    '2.1 Describe the purpose of each stage.'
+)
+$twice = & $ebook { param($t) ConvertFrom-CourseSpecText -Text $t } ($twiceLines -join [Environment]::NewLine)
+Check (@($twice.weeks).Count -eq 2) "A repeated week that carries its own objectives must be kept (got $(@($twice.weeks).Count))."
+
+# And whatever slips through, a plan can never carry two chapters with one
+# number: the failure has to name the document, not a citation anchor.
+$clashing = [pscustomobject]@{
+    courseCode = 'RB9997'; courseName = 'Fixture Clash'; description = 'Fixture'; sme = 'Fixture SME'
+    weeks = @(
+        [pscustomobject]@{ number = 1; title = 'Real Chapter'; modules = @(); subObjectives = @(); readings = @() },
+        [pscustomobject]@{ number = 1; title = 'Week 1'; modules = @(); subObjectives = @(); readings = @() }
+    )
+}
+try {
+    & $ebook { param($c) New-EbookPlan -Course $c } $clashing | Out-Null
+    throw 'FAIL: A plan with two Chapter 1s must be refused.'
+}
+catch {
+    Check ($_.Exception.Message -match 'more than one chapter with the same number') 'A duplicate chapter number is refused where the plan is made.'
+    Check ($_.Exception.Message -match 'Week 1' -and $_.Exception.Message -match 'Real Chapter') 'The refusal names both chapters, so a designer can find them in the document.'
+    Check ($_.Exception.Message -match 'weekly readings') 'The refusal says what usually causes it.'
+}
+
 Remove-Item -LiteralPath $fixture -Recurse -Force -ErrorAction SilentlyContinue
 Write-Output "PASS: $checks course blueprint parsing assertions (week-per-column grid, spanning cells, metadata, CO/LO identity, spec-sheet compatibility)."

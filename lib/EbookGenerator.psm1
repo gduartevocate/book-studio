@@ -1056,14 +1056,39 @@ function ConvertFrom-CourseSpecText {
             }
         }
     }
-    $weekIndexes = New-Object System.Collections.ArrayList
+    $weekCandidates = New-Object System.Collections.ArrayList
     for ($i = 0; $i -lt $lines.Count; $i++) {
         if ($lines[$i] -match "^Week\s+(\d+)\s+(.+)$" -and -not (Test-EbookAssessmentTitle -Title $Matches[2])) {
-            [void]$weekIndexes.Add([pscustomobject]@{
+            [void]$weekCandidates.Add([pscustomobject]@{
                 Index = $i
                 Number = [int]$Matches[1]
                 Title = $Matches[2]
             })
+        }
+    }
+
+    # A course document commonly ends with its reading list, set out under the
+    # same week headings again: "Week 1", then the sources assigned that week.
+    # Read as chapters, those repeats produced a second Chapter 1 through
+    # Chapter 5 with no objectives in them, and the book failed much later
+    # with "duplicate note chapter-1-note-1", which says nothing about the
+    # document. A repeat is kept only when it carries objectives of its own.
+    $weekIndexes = New-Object System.Collections.ArrayList
+    $seenWeekNumbers = @{}
+    for ($w = 0; $w -lt $weekCandidates.Count; $w++) {
+        $candidate = $weekCandidates[$w]
+        if (-not $seenWeekNumbers.ContainsKey($candidate.Number)) {
+            $seenWeekNumbers[$candidate.Number] = $true
+            [void]$weekIndexes.Add($candidate)
+            continue
+        }
+        $blockEnd = if (($w + 1) -lt $weekCandidates.Count) { $weekCandidates[$w + 1].Index - 1 } else { $lines.Count - 1 }
+        $repeatBlock = @($lines[$candidate.Index..$blockEnd] | Where-Object { $_ -notmatch "^Week\s+\d+\s+" })
+        $carriesObjectives = @($repeatBlock | Where-Object {
+            $_ -match "^\s*\d+(?:\.\d+)?[.)]?\s+\S" -or $_ -match "(?i)objective"
+        }).Count -gt 0
+        if ($carriesObjectives) {
+            [void]$weekIndexes.Add($candidate)
         }
     }
 
@@ -1409,15 +1434,38 @@ function ConvertFrom-ObjectiveListText {
     # supplied course-content DOCX files and may contain a final week whose
     # objectives are not numbered.
     if ($weeks.Count -eq 0 -and $firstWeekIndex -ge 0) {
-        $weekIndexes = New-Object System.Collections.ArrayList
+        $weekCandidates = New-Object System.Collections.ArrayList
         for ($i = $firstWeekIndex; $i -lt $lines.Count; $i++) {
             if ($lines[$i] -match "^Week\s+(\d+)\s+(.+)$" -and -not (Test-EbookAssessmentTitle -Title $Matches[2])) {
-                [void]$weekIndexes.Add([pscustomobject]@{
+                [void]$weekCandidates.Add([pscustomobject]@{
                     Index = $i
                     Number = [int]$Matches[1]
                     Title = ConvertTo-CleanText $Matches[2]
                 })
             }
+        }
+
+        # These documents usually end with the reading list, set out under the
+        # same week headings again: "Week 1", then the sources for that week.
+        # Read as weeks, those repeats became a second Chapter 1 through
+        # Chapter 5 carrying no objectives, and the book failed much later on
+        # a duplicate citation note, which says nothing about the document.
+        # A repeat counts only when it carries objectives of its own.
+        $weekIndexes = New-Object System.Collections.ArrayList
+        $seenWeekNumbers = @{}
+        for ($w = 0; $w -lt $weekCandidates.Count; $w++) {
+            $candidate = $weekCandidates[$w]
+            if (-not $seenWeekNumbers.ContainsKey($candidate.Number)) {
+                $seenWeekNumbers[$candidate.Number] = $true
+                [void]$weekIndexes.Add($candidate)
+                continue
+            }
+            $repeatEnd = if (($w + 1) -lt $weekCandidates.Count) { $weekCandidates[$w + 1].Index - 1 } else { $lines.Count - 1 }
+            $repeatBlock = @($lines[$candidate.Index..$repeatEnd] | Where-Object { $_ -notmatch "^Week\s+\d+\s+" })
+            $carriesObjectives = @($repeatBlock | Where-Object {
+                $_ -match "^\s*\d+(?:\.\d+)?[.)]?\s+\S" -or $_ -match "(?i)^\s*(course|lesson|sub)\s*objectives?\b"
+            }).Count -gt 0
+            if ($carriesObjectives) { [void]$weekIndexes.Add($candidate) }
         }
 
         for ($w = 0; $w -lt $weekIndexes.Count; $w++) {
@@ -2843,6 +2891,19 @@ function New-EbookPlan {
             researchQuery = Get-ResearchQuery -Course $Course -Week $week -ModuleText $moduleText
             requiredSections = @($requiredSections)
         })
+    }
+
+    # Two chapters with one number is not a plan. It reached a designer as
+    # "Citation preflight: duplicate note chapter-1-note-1" fifteen seconds
+    # after a run that had reported success, saying nothing about the course
+    # document that caused it. Said here, it names the chapters involved.
+    $repeated = @($chapters | Group-Object { [int]$_.number } | Where-Object { $_.Count -gt 1 })
+    if ($repeated.Count) {
+        $detail = @($repeated | ForEach-Object {
+            $titles = @($_.Group | ForEach-Object { '"' + [string]$_.title + '"' }) -join ' and '
+            "Chapter $($_.Name): $titles"
+        }) -join '; '
+        throw "The course document produced more than one chapter with the same number: $detail. That usually means the list of weekly readings at the end of the document repeats the week headings. Keep those readings under a single heading, or remove the repeated week labels, and run it again."
     }
 
     return [pscustomobject]@{
