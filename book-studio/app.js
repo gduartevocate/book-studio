@@ -3542,6 +3542,14 @@ async function showAccountRequestsWaiting() {
     const response = await fetch("/cloud/api/signups", { headers: { accept: "application/json" } });
     if (!response.ok) return;
     const waiting = ((await response.json()).requests || []).length;
+    // The menu's way to the People page, for administrators only: the web
+    // site answered this question, which it refuses anyone else.
+    const peopleLink = document.querySelector("#peopleLink");
+    if (peopleLink) {
+      peopleLink.hidden = false;
+      peopleLink.textContent = waiting ? `People (${waiting})` : "People";
+      peopleLink.setAttribute("aria-label", waiting ? `People, ${waiting} account ${waiting === 1 ? "request" : "requests"} waiting` : "People");
+    }
     if (!waiting) return;
     const banner = document.createElement("div");
     banner.className = "connection-notice requests-notice";

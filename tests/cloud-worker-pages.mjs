@@ -210,6 +210,9 @@ check(!connect.includes('id="roster"') && connect.includes('href="/cloud/admin"'
 const booksPage2 = pages["/cloud/"];
 check(booksPage2.includes('id="peopleLink" href="/cloud/admin" hidden') && booksPage2.includes("waiting for your approval"), "The books page must show an administrator the way to People and who is waiting.");
 const studioClient = readFileSync(new URL("../book-studio/app.js", import.meta.url), "utf8");
+const studioIndex = readFileSync(new URL("../book-studio/index.html", import.meta.url), "utf8");
+check(/<a id="peopleLink" class="icon-button" href="\/cloud\/admin" hidden>People<\/a>/.test(studioIndex), "Book Studio's menu must have a People link, hidden until an administrator is recognised.");
+check(/if \(!response\.ok\) return;[\s\S]{0,400}peopleLink\.hidden = false/.test(studioClient), "The People link must appear only after the site accepts the administrator's request.");
 check(studioClient.includes('fetch("/cloud/api/signups"') && studioClient.includes('review.href = "/cloud/admin"'), "Book Studio must tell an administrator when someone is waiting.");
 check(!script.includes('"""'), "The escaping helper must survive the template literal it lives in.");
 

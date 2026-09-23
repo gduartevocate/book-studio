@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.23.17 (2026-09-23)
+
+- Administrators see People in Book Studio's menu, with the number of account requests waiting.
+
 ## v2026.09.23.16 (2026-09-23)
 
 - Administrators are told in Book Studio when someone is waiting for an account, with a link to the new People and access page.
