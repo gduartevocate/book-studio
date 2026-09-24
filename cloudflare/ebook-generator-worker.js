@@ -93,8 +93,8 @@ const CONNECT_HTML = `<!doctype html>
   </ul>
   <p class="muted">Nothing here needs an administrator, and nothing is installed into Program Files.</p>
   </details>
-  <p class="muted">Already have Book Studio on that computer? Open PowerShell in its folder and the same
-  command uses the copy you have instead of fetching another.</p>
+  <p class="muted">Already have Book Studio on that computer? The command finds the copy your books are in
+  and connects that one rather than fetching another. To choose a copy yourself, open PowerShell in its folder first.</p>
 </section>
 
 <section><h2>4. Your computers</h2>
@@ -158,6 +158,30 @@ function describeAge(seenAt) {
   return new Date(seen).toLocaleString();
 }
 
+// Which Book Studio folder that computer is showing, and how many books are in
+// it. A PC can hold two copies of Book Studio -- one with the designer's books,
+// one set up later and empty -- and from here they look the same until this
+// line names the folder.
+function countBooks(count) {
+  if (count === null || count === undefined || count < 0) return "books not counted";
+  return count + (count === 1 ? " book" : " books");
+}
+function describeStudio(studio) {
+  if (!studio) return "";
+  if (studio.installPath && studio.status !== "not-running") {
+    let line = "<br>Serving " + esc(studio.installPath) + " — " + esc(countBooks(studio.bookCount));
+    if (studio.status === "other-folder") {
+      line += "<br><span class='warn'>That is not the folder this computer keeps up to date (" + esc(studio.agentPath) + ", " +
+        esc(countBooks(studio.agentBookCount)) + "). To connect the folder with your books, open PowerShell in it and run the setup command again.</span>";
+    }
+    return line;
+  }
+  if (studio.status === "not-answering") return "<br>Book Studio on that computer is busy and did not answer the last check.";
+  return studio.agentPath
+    ? "<br>Book Studio is not open on that computer; it opens from " + esc(studio.agentPath) + " (" + esc(countBooks(studio.agentBookCount)) + ")."
+    : "";
+}
+
 el("check").addEventListener("click", async () => {
   el("state").textContent = "Checking…"; el("state").className = "pill";
   el("detail").innerHTML = "";
@@ -190,7 +214,7 @@ el("check").addEventListener("click", async () => {
       return "<dt>" + esc(name) + "</dt><dd>" + esc(state) +
         (codex.version ? " - " + esc(codex.version) : "") +
         " - last heard from " + describeAge(machine.seenAt) +
-        (good ? "" : "<br>" + esc(codex.detail || "")) + updateNote + "</dd>";
+        (good ? "" : "<br>" + esc(codex.detail || "")) + updateNote + describeStudio(machine.studio) + "</dd>";
     }).join("");
   } catch (error) {
     el("state").textContent = "Error"; el("state").className = "pill bad";
@@ -1481,16 +1505,19 @@ async function requireUser(request, env) {
   return { email: "local-development" };
 }
 
+// One person, one spelling. Access passes on the address as it was typed at
+// its sign-in, capitals and all, while a password sign-in is lower case, so the
+// same designer was two owners depending on how they came in.
 async function accessIdentity(request, env) {
   const verified = await verifyAccessAssertion(request, env);
-  if (verified) return verified;
+  if (verified) return normalizeEmail(verified);
   const account = await accountIdentity(request, env);
   if (account) return account;
   // Without Access configured there is no assertion to verify. The header is
   // accepted only then, so local development works and production does not
   // silently fall back to an unverified claim.
   if (env.REQUIRE_ACCESS === "true") return "";
-  return request.headers.get("cf-access-authenticated-user-email") || "";
+  return normalizeEmail(request.headers.get("cf-access-authenticated-user-email") || "");
 }
 
 async function resolveRunner(request, env) {
@@ -1532,7 +1559,9 @@ async function sharedBookId(owner, localId) {
 
 function runnerMayTouch(runner, job) {
   if (!job || !job.owner) return false;
-  return job.owner === runner.owner;
+  // The same person, however the address was capitalised when the book or
+  // the computer's token was made.
+  return normalizeEmail(job.owner) === normalizeEmail(runner.owner);
 }
 
 function publicJob(job) {
@@ -1713,28 +1742,123 @@ function setupScript(token, origin) {
     "    return",
     "}",
     "",
-    "# 2. Book Studio itself. If this window is already standing in a copy, that",
-    "#    copy is used; otherwise one is kept in the local app data folder, which",
-    "#    needs no administrator and is never synced to OneDrive.",
-    "if (Test-Path -LiteralPath (Join-Path (Get-Location) 'cloud-book-runner.ps1')) {",
-    "    $folder = (Get-Location).Path",
-    "    Write-Host ('Using the Book Studio folder you are in: ' + $folder)",
+    "# 2. Book Studio itself. A designer's books live inside the copy of Book",
+    "#    Studio that made them (.bookstudio/book-studio-db.json), so this has to",
+    "#    connect the copy they already use. Installing a second, empty copy gave",
+    "#    a designer a Book Studio on the web with none of her books in it, while",
+    "#    the copy on her desktop had all of them. So: the copy this window is",
+    "#    standing in; otherwise one that already has books (the desktop",
+    "#    shortcut's, the usual folder, the one already connected); otherwise the",
+    "#    local app data folder, which needs no administrator and is never",
+    "#    synced to OneDrive.",
+    "function Get-BookStudioBookCount([string]$Path) {",
+    "    $database = Join-Path $Path '.bookstudio/book-studio-db.json'",
+    "    if (-not (Test-Path -LiteralPath $database)) { return 0 }",
+    "    try {",
+    "        $jobs = (Get-Content -LiteralPath $database -Raw -Encoding UTF8 | ConvertFrom-Json).jobs",
+    "        return @($jobs | Where-Object { $_ }).Count",
+    "    }",
+    "    catch { return -1 }",
     "}",
-    "else {",
-    "    $folder = Join-Path $env:LOCALAPPDATA 'Book Studio'",
-    "    if (Test-Path -LiteralPath (Join-Path $folder '.git')) {",
-    "        Write-Host ('Updating Book Studio in ' + $folder)",
-    "        git -C $folder pull --ff-only | Out-Host",
-    "        if ($LASTEXITCODE -ne 0) {",
-    "            Write-Host 'Book Studio could not be updated on this computer.' -ForegroundColor Yellow",
-    "            Write-Host 'The version check below will say whether the copy you have is new enough.'",
+    "function Get-BookStudioFolderProblem([string]$Path) {",
+    "    $ErrorActionPreference = 'Continue'",
+    "    if (-not (Test-Path -LiteralPath (Join-Path $Path '.git'))) { return 'was not installed with git, so it cannot keep itself up to date' }",
+    "    $remote = ((git -C $Path remote get-url origin 2>&1) | Out-String).Trim()",
+    "    if ($LASTEXITCODE -ne 0 -or $remote -notmatch 'gduartevocate/book-studio') { return 'does not follow the Book Studio distribution, so updating it could overwrite work' }",
+    "    $changes = ((git -C $Path status --porcelain 2>&1) | Out-String).Trim()",
+    "    if ($LASTEXITCODE -ne 0 -or $changes) { return 'has files in it that were changed by hand, and updating it would overwrite them' }",
+    "    return ''",
+    "}",
+    "function Get-BookStudioFolderCandidates {",
+    "    param([string]$Desktop = [Environment]::GetFolderPath('Desktop'), [string]$Startup = [Environment]::GetFolderPath('Startup'), [string]$UserHome = $env:USERPROFILE)",
+    "    $found = @()",
+    "    $shell = $null",
+    "    try { $shell = New-Object -ComObject WScript.Shell } catch { }",
+    "    # The desktop shortcut opens the copy the designer uses every day.",
+    "    if ($shell -and $Desktop -and (Test-Path -LiteralPath (Join-Path $Desktop 'Book Studio.lnk'))) {",
+    "        try { $found += $shell.CreateShortcut((Join-Path $Desktop 'Book Studio.lnk')).WorkingDirectory } catch { }",
+    "    }",
+    "    if ($UserHome) { $found += (Join-Path $UserHome 'book-studio') }",
+    "    # The copy an earlier setup connected, from its start-with-Windows shortcut.",
+    "    if ($shell -and $Startup -and (Test-Path -LiteralPath (Join-Path $Startup 'Book Studio cloud agent.lnk'))) {",
+    "        try { $found += $shell.CreateShortcut((Join-Path $Startup 'Book Studio cloud agent.lnk')).WorkingDirectory } catch { }",
+    "    }",
+    "    return @($found | Where-Object { $_ })",
+    "}",
+    "function Find-BookStudioFolder {",
+    "    param([string]$Current, [string[]]$Candidates = @(), [string]$Default)",
+    "    $describe = { param($count) if ($count -lt 0) { 'books that could not be counted' } elseif ($count -eq 1) { '1 book' } else { [string]$count + ' books' } }",
+    "    $keyOf = { param($path) try { [IO.Path]::GetFullPath($path).TrimEnd([IO.Path]::DirectorySeparatorChar).ToLowerInvariant() } catch { '' } }",
+    "    $currentKey = $(if ($Current) { & $keyOf $Current } else { '' })",
+    "    $defaultKey = $(if ($Default) { & $keyOf $Default } else { '' })",
+    "    $seen = @{}",
+    "    $installs = @()",
+    "    foreach ($path in @(@($Current) + @($Candidates) + @($Default))) {",
+    "        if (-not $path) { continue }",
+    "        $key = & $keyOf $path",
+    "        if (-not $key -or $seen.ContainsKey($key)) { continue }",
+    "        $seen[$key] = $true",
+    "        $full = [IO.Path]::GetFullPath($path).TrimEnd([IO.Path]::DirectorySeparatorChar)",
+    "        $isInstall = (Test-Path -LiteralPath (Join-Path $full 'cloud-book-runner.ps1')) -or (Test-Path -LiteralPath (Join-Path $full 'Start-BookStudioCompanion.ps1'))",
+    "        if (-not $isInstall) { continue }",
+    "        $installs += [pscustomobject]@{ folder = $full; books = (Get-BookStudioBookCount $full); isCurrent = ($key -eq $currentKey); isDefault = ($key -eq $defaultKey) }",
+    "    }",
+    "    $withBooks = @($installs | Where-Object { $_.books -ne 0 })",
+    "    $here = @($installs | Where-Object { $_.isCurrent })",
+    "    $choice = [pscustomobject]@{ action = ''; folder = ''; books = 0; message = ''; notes = @() }",
+    "    if ($here.Count) {",
+    "        # Standing in a copy is a choice, and it is honoured as it is: a copy",
+    "        # that cannot update itself is used without updating it.",
+    "        $choice.folder = $here[0].folder",
+    "        $choice.books = $here[0].books",
+    "        $choice.action = $(if (Get-BookStudioFolderProblem $here[0].folder) { 'use' } else { 'update' })",
+    "    }",
+    "    elseif ($withBooks.Count) {",
+    "        $picked = $withBooks[0]",
+    "        $choice.folder = $picked.folder",
+    "        $choice.books = $picked.books",
+    "        $problem = Get-BookStudioFolderProblem $picked.folder",
+    "        if ($problem -and -not $picked.isDefault) {",
+    "            # Never a second, empty copy beside the one with the books.",
+    "            $choice.action = 'stop'",
+    "            $choice.message = 'Your books are in ' + $picked.folder + ' (' + (& $describe $picked.books) + '), but that copy of Book Studio ' + $problem + '. Nothing was installed or changed, and your books are safe. Ask whoever looks after Book Studio to help you connect that folder, and do not delete it. (To connect it exactly as it is, open PowerShell in that folder and run this command again.)'",
     "        }",
+    "        else { $choice.action = 'update' }",
     "    }",
     "    else {",
-    "        Write-Host ('Installing Book Studio into ' + $folder)",
-    "        git clone --depth 1 $repository $folder | Out-Host",
+    "        $choice.folder = [IO.Path]::GetFullPath($Default)",
+    "        $choice.action = $(if (Test-Path -LiteralPath (Join-Path $Default '.git')) { 'update' } else { 'clone' })",
+    "    }",
+    "    foreach ($other in @($withBooks | Where-Object { $_.folder -ne $choice.folder })) {",
+    "        $choice.notes += ('Books were also found in ' + $other.folder + ' (' + (& $describe $other.books) + '). Book Studio on the web shows only the folder connected here.')",
+    "    }",
+    "    return $choice",
+    "}",
+    "",
+    "$choice = Find-BookStudioFolder -Current (Get-Location).Path -Candidates (Get-BookStudioFolderCandidates) -Default (Join-Path $env:LOCALAPPDATA 'Book Studio')",
+    "if ($choice.action -eq 'stop') {",
+    "    Write-Host ''",
+    "    Write-Host $choice.message -ForegroundColor Yellow",
+    "    return",
+    "}",
+    "$folder = $choice.folder",
+    "if ($choice.action -eq 'use') {",
+    "    Write-Host ('Using the Book Studio folder you are in: ' + $folder)",
+    "}",
+    "elseif ($choice.action -eq 'update') {",
+    "    if ($choice.books -ne 0) { Write-Host ('Your books are in ' + $folder + '. Connecting that copy of Book Studio.') -ForegroundColor Green }",
+    "    Write-Host ('Updating Book Studio in ' + $folder)",
+    "    git -C $folder pull --ff-only | Out-Host",
+    "    if ($LASTEXITCODE -ne 0) {",
+    "        Write-Host 'Book Studio could not be updated on this computer.' -ForegroundColor Yellow",
+    "        Write-Host 'The version check below will say whether the copy you have is new enough.'",
     "    }",
     "}",
+    "else {",
+    "    Write-Host ('Installing Book Studio into ' + $folder)",
+    "    git clone --depth 1 $repository $folder | Out-Host",
+    "}",
+    "foreach ($note in $choice.notes) { Write-Host $note -ForegroundColor Yellow }",
     "",
     "if (-not (Test-Path -LiteralPath (Join-Path $folder 'cloud-book-runner.ps1'))) {",
     "    Write-Host 'Book Studio was fetched but the agent is missing from it.' -ForegroundColor Red",
@@ -1998,11 +2122,56 @@ function latestPerComputer(machines) {
   });
 }
 
+// Which Book Studio folder a computer is showing the web site, and how many
+// books are in it, as its agent reports them. Two Book Studio folders on one
+// PC look exactly alike from here -- one with a designer's books, one empty --
+// until this says which one is answering. Every field is capped and typed:
+// it comes from another machine and is written into pages.
+function studioReport(value) {
+  if (!value || typeof value !== "object") return null;
+  const text = (item, length) => String(item == null ? "" : item).slice(0, length);
+  const count = (item) => (item === null || item === undefined || item === "" || !Number.isFinite(Number(item))) ? null : Math.max(-1, Math.trunc(Number(item)));
+  return {
+    status: text(value.status, 40),
+    installPath: text(value.installPath, 260),
+    bookCount: count(value.bookCount),
+    version: text(value.version, 40),
+    agentPath: text(value.agentPath, 260),
+    agentBookCount: count(value.agentBookCount),
+    detail: text(value.detail, 400)
+  };
+}
+
+// A person's computers, found by the owner their tokens were made under. The
+// store is keyed by that address exactly as it was when the token was made,
+// and an address typed at the Access sign-in keeps whatever capitals it was
+// typed with, while a password sign-in is always lower case. Matched on the
+// exact key alone, a computer connected under one sign-in was "not running"
+// under the other.
+async function listKeyNames(env, prefix) {
+  const names = [];
+  let cursor;
+  do {
+    const page = await env.BOOK_STUDIO_KV.list(cursor ? { prefix, cursor } : { prefix });
+    for (const key of page.keys || []) names.push(key.name);
+    cursor = page.list_complete === false ? page.cursor : undefined;
+  } while (cursor);
+  return names;
+}
+
+async function listRunnerStatusKeys(env, email) {
+  // The exact key first, which is every computer connected since sign-in
+  // stored addresses in one case; the wider search only when that finds none.
+  const exact = await listKeyNames(env, "runner:status:" + email + ":");
+  if (exact.length) return exact;
+  const wanted = "runner:status:" + normalizeEmail(email) + ":";
+  return (await listKeyNames(env, "runner:status:")).filter((name) => name.toLowerCase().startsWith(wanted));
+}
+
 async function resolveMachineForUser(env, email) {
-  const listed = await env.BOOK_STUDIO_KV.list({ prefix: "runner:status:" + email + ":" });
   const found = [];
-  for (const key of listed.keys) {
-    const record = await env.BOOK_STUDIO_KV.get(key.name, "json");
+  for (const name of await listRunnerStatusKeys(env, email)) {
+    const record = await env.BOOK_STUDIO_KV.get(name, "json");
     if (record) found.push(record);
   }
   const machines = latestPerComputer(found);
@@ -2387,7 +2556,7 @@ async function handleRequest(request, env) {
         const scope = url.searchParams.get("scope") === "everyone" ? "everyone" : "mine";
         const jobs = scope === "everyone"
           ? all
-          : all.filter((job) => !job.owner || job.owner === user.email);
+          : all.filter((job) => !job.owner || normalizeEmail(job.owner) === normalizeEmail(user.email));
         return jsonResponse({ jobs, you: user.email, scope });
       }
 
@@ -2444,6 +2613,7 @@ async function handleRequest(request, env) {
           // machine that will fail in a way nobody can explain later.
           version: String(payload.version || "").slice(0, 40),
           updates: payload.updates || null,
+          studio: studioReport(payload.studio),
           seenAt: nowIso()
         };
         // One key per machine, under its owner. A token minted before ids
@@ -2468,9 +2638,8 @@ async function handleRequest(request, env) {
         // stops being listed fifteen minutes after its agent stops talking,
         // so the list is what is actually running rather than what once ran.
         const machines = [];
-        const listed = await env.BOOK_STUDIO_KV.list({ prefix: "runner:status:" + user.email + ":" });
-        for (const key of listed.keys) {
-          const record = await env.BOOK_STUDIO_KV.get(key.name, "json");
+        for (const name of await listRunnerStatusKeys(env, user.email)) {
+          const record = await env.BOOK_STUDIO_KV.get(name, "json");
           if (record) machines.push(record);
         }
         // Tokens minted before machines had ids, and the shared token from

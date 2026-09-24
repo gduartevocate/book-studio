@@ -5154,7 +5154,22 @@ function Start-BookStudioServer {
     )
 
     $ProjectRoot = (Resolve-Path $ProjectRoot).ProviderPath
-    $DatabasePath = Initialize-BookStudioDatabase -ProjectRoot $ProjectRoot -DatabasePath $DatabasePath
+    # The port first, the database second. A second server started for a port
+    # that is already taken -- the cloud agent's page helpers used to start one
+    # whenever the running server was too busy to answer a probe -- could not
+    # listen, but it had already opened, locked and repaired the book database
+    # of whatever folder it came from. Now it stops before touching any book.
+    $listener = New-Object System.Net.HttpListener
+    $prefix = "http://localhost:$Port/"
+    $listener.Prefixes.Add($prefix)
+    $listener.Start()
+    try {
+        $DatabasePath = Initialize-BookStudioDatabase -ProjectRoot $ProjectRoot -DatabasePath $DatabasePath
+    }
+    catch {
+        $listener.Close()
+        throw
+    }
     $webRoot = Join-Path $ProjectRoot "book-studio"
     # The release this process loaded, kept apart from version.json: that file
     # is read from disk on every request, so after an update it named the new
@@ -5162,11 +5177,6 @@ function Start-BookStudioServer {
     # for an out-of-date server always saw it as current.
     $runningVersion = ''
     try { $runningVersion = [string](Get-Content -LiteralPath (Join-Path $webRoot 'version.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version } catch { }
-
-    $listener = New-Object System.Net.HttpListener
-    $prefix = "http://localhost:$Port/"
-    $listener.Prefixes.Add($prefix)
-    $listener.Start()
 
     Repair-BookStudioStaleAiRequests -DatabasePath $DatabasePath | Out-Null
     Write-Host "Book Studio is running at $prefix"
@@ -5195,6 +5205,16 @@ function Start-BookStudioServer {
 
             if ($request.HttpMethod -eq "GET" -and $path -eq "/api/health") {
                 $installStatus = Get-BookStudioInstallPathStatus -ProjectRoot $ProjectRoot
+                # Which folder's books this server holds, and how many. Every
+                # install keeps its own database, so a Book Studio started from
+                # a second, empty folder answers exactly like a healthy one;
+                # the folder and the count are what tell the two apart. A
+                # database that cannot be read still answers the health check,
+                # and says why the count is missing.
+                $bookCount = $null
+                $bookCountError = ''
+                try { $bookCount = @((Read-BookStudioDatabase -DatabasePath $DatabasePath).jobs | Where-Object { $_ }).Count }
+                catch { $bookCountError = $_.Exception.Message }
                 Send-BookStudioResponse -Context $context -Body (ConvertTo-BookStudioJson ([pscustomobject]@{
                     status = "ok"
                     service = "book-studio"
@@ -5204,6 +5224,9 @@ function Start-BookStudioServer {
                     installPathLength = $installStatus.installPathLength
                     installPathWarning = $installStatus.warning
                     suggestedPath = $installStatus.suggestedPath
+                    databasePath = $DatabasePath
+                    bookCount = $bookCount
+                    bookCountError = $bookCountError
                 }))
                 continue
             }

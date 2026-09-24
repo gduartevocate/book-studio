@@ -153,31 +153,162 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $project 'book-studio') -Force | Out-Null
     '{ "version": "2026.09.23.12" }' | Set-Content -LiteralPath (Join-Path $project 'book-studio/version.json')
     $never = { throw 'must not be asked' }
-    $idle = { param($r) '' }
-    Check ((Update-StaleLocalStudioServer -ProjectRoot $project -ServedVersion { param($p) $null } -Busy $never -FindServers $never).status -eq 'not-running') 'No server running: nothing to restart.'
-    Check ((Update-StaleLocalStudioServer -ProjectRoot $project -ServedVersion { param($p) '2026.09.23.12' } -Busy $never -FindServers $never).status -eq 'current') 'A server on the installed release is left alone.'
-    $busy = Update-StaleLocalStudioServer -ProjectRoot $project -ServedVersion { param($p) '2026.09.17.3' } -Busy { param($r) "'RB1000' is still generating." } -FindServers $never
+    $idle = { param($r, $d) '' }
+    # The server on the port, as its health check describes it. By default it
+    # is this agent's own folder's.
+    $serving = { param([string]$Version, [string]$Folder = $project, $Books = 3, [string]$Database = '') { param($p) [pscustomobject]@{ status = 'ok'; runningVersion = $Version; installPath = $Folder; bookCount = $Books; databasePath = $Database } }.GetNewClosure() }
+    Check ((Update-StaleLocalStudioServer -ProjectRoot $project -Health { param($p) $null } -Busy $never -FindServers $never).status -eq 'not-running') 'No server running: nothing to restart.'
+    Check ((Update-StaleLocalStudioServer -ProjectRoot $project -Health (& $serving '2026.09.23.12') -Busy $never -FindServers $never).status -eq 'current') 'A server on the installed release is left alone.'
+    $busy = Update-StaleLocalStudioServer -ProjectRoot $project -Health (& $serving '2026.09.17.3') -Busy { param($r, $d) "'RB1000' is still generating." } -FindServers $never
     Check ($busy.status -eq 'busy' -and $busy.detail -match 'RB1000') 'An old server is never restarted while a book is being written, and says which book it waits for.'
-    Check ((Update-StaleLocalStudioServer -ProjectRoot $project -ServedVersion { param($p) '2026.09.17.3' } -Busy { param($r) throw 'database locked' } -FindServers $never).status -eq 'busy') 'When it cannot tell whether a book is being written, it assumes one is.'
-    Check ((Update-StaleLocalStudioServer -ProjectRoot $project -ServedVersion { param($p) '2026.09.17.3' } -Busy $idle -FindServers { @() }).status -eq 'not-found') 'A server it did not start and cannot find is reported, not guessed at.'
+    Check ((Update-StaleLocalStudioServer -ProjectRoot $project -Health (& $serving '2026.09.17.3') -Busy { param($r, $d) throw 'database locked' } -FindServers $never).status -eq 'busy') 'When it cannot tell whether a book is being written, it assumes one is.'
+    Check ((Update-StaleLocalStudioServer -ProjectRoot $project -Health (& $serving '2026.09.17.3') -Busy $idle -FindServers { param($p) @() }).status -eq 'not-found') 'A server it did not start and cannot find is reported, not guessed at.'
+    # A stand-in for a server process, described the way the process scan
+    # describes one: its folder, its port, and whether an agent started it.
+    $asServer = { param($process, [string]$Folder, [bool]$ByAgent = $false, [int]$OnPort = 8790) [pscustomobject]@{ ProcessId = $process.Id; Folder = $Folder; Port = $OnPort; StartedByAgent = $ByAgent; CommandLine = '' } }
     $oldServer = Start-Process powershell -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep -Seconds 120')
-    $restart = Update-StaleLocalStudioServer -ProjectRoot $project -ServedVersion { param($p) '2026.09.17.3' } -Busy $idle -FindServers { & $asAgents $oldServer }
+    $restart = Update-StaleLocalStudioServer -ProjectRoot $project -Health (& $serving '2026.09.17.3') -Busy $idle -FindServers { param($p) & $asServer $oldServer $project $true }
     $oldServer.WaitForExit(10000) | Out-Null
-    Check ($restart.status -eq 'restarted' -and $oldServer.HasExited) 'An idle server on an older release is stopped so the current one can start.'
+    Check ($restart.status -eq 'restarted' -and $oldServer.HasExited) 'An idle server of the agent''s own folder on an older release is stopped so the current one can start.'
     Check ($restart.served -eq '2026.09.17.3' -and $restart.installed -eq '2026.09.23.12') 'And the agent is told which release it replaced with which.'
+
+    # Ann Jackson: her books were in the folder she opened from the desktop,
+    # the agent ran from the folder the setup command installed, and the agent
+    # stopped every Book Studio on the PC whenever the one answering was not on
+    # its release -- hers included -- and started its own, empty one. A server
+    # from another folder is never stopped, whatever release it runs, and the
+    # web site is carried to it.
+    $annFolder = Join-Path $fixture 'Ann books'
+    $desktopServer = Start-Process powershell -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep -Seconds 120')
+    try {
+        # Idle, so that nothing but its folder stands between it and a restart.
+        $hers = Update-StaleLocalStudioServer -ProjectRoot $project -Health (& $serving '2026.09.17.3' $annFolder 12) -Busy $idle -FindServers { param($p) & $asServer $desktopServer $annFolder $false }
+        Start-Sleep -Milliseconds 500; $desktopServer.Refresh()
+        Check (-not $desktopServer.HasExited) 'A Book Studio started from another folder must never be stopped by the agent.'
+        Check ($hers.status -eq 'other-folder' -and -not $hers.ownFolder) "It must be reported as another folder's, got '$($hers.status)'."
+        Check ($hers.installPath -eq $annFolder -and $hers.bookCount -eq 12 -and $hers.agentPath -eq $project) 'The report must name both folders and the books the web site is being shown.'
+        Check ($hers.detail -match [regex]::Escape($annFolder) -and $hers.detail -match [regex]::Escape($project)) "The agent must say which folder answers and which is its own: $($hers.detail)"
+        # Nor when an agent started it: it still has the designer's books.
+        $hersByAgent = Update-StaleLocalStudioServer -ProjectRoot $project -Health (& $serving '2026.09.17.3' $annFolder 12) -Busy $never -FindServers { param($p) & $asServer $desktopServer $annFolder $true } -FolderBookCount { param($f) 0 }
+        Start-Sleep -Milliseconds 500; $desktopServer.Refresh()
+        Check ($hersByAgent.status -eq 'other-folder' -and -not $desktopServer.HasExited) 'A Book Studio from another folder that has books is never stopped, whoever started it.'
+        # The same folder named in another case, or with a trailing separator,
+        # is the same folder.
+        $recased = Update-StaleLocalStudioServer -ProjectRoot $project -Health (& $serving '2026.09.23.12' ($project.ToUpperInvariant() + '\')) -Busy $never -FindServers $never
+        Check ($recased.status -eq 'current' -and $recased.ownFolder) 'A folder must be recognised however its path is cased or ended.'
+
+        # The agent's own out-of-date server is replaced, and only it: a
+        # designer's window from another folder on the list is left running.
+        $ownServer = Start-Process powershell -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep -Seconds 120')
+        $askedAbout = New-Object System.Collections.ArrayList
+        $own = Update-StaleLocalStudioServer -ProjectRoot $project -Health (& $serving '2026.09.17.3' $project 3 'D:\served\book-studio-db.json') `
+            -Busy { param($r, $d) [void]$askedAbout.Add($d); '' } -FindServers { param($p) @((& $asServer $ownServer $project $true), (& $asServer $desktopServer $annFolder $false)) }
+        $ownServer.WaitForExit(10000) | Out-Null
+        Start-Sleep -Milliseconds 500; $desktopServer.Refresh()
+        Check ($own.status -eq 'restarted' -and $ownServer.HasExited) 'The agent''s own out-of-date server must still be replaced.'
+        Check (-not $desktopServer.HasExited) 'Replacing its own server must not stop a Book Studio from another folder.'
+        # The "is a book being written?" question goes to the database of the
+        # server being replaced, as that server reports it.
+        Check ($askedAbout.Count -eq 1 -and $askedAbout[0] -eq 'D:\served\book-studio-db.json') "The busy check must read the served database, got '$($askedAbout -join ', ')'."
+    }
+    finally { Stop-Process -Id $desktopServer.Id -Force -ErrorAction SilentlyContinue }
+
+    # The one server from another folder that may go: the leftover of an agent
+    # replaced by setting Book Studio up again in the folder with the books.
+    # An agent started it, it holds no books, and this folder does; left
+    # running it would show the designer an empty Book Studio on the web site.
+    $emptyFolder = Join-Path $fixture 'LocalAppData\Book Studio'
+    $leftoverServer = Start-Process powershell -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep -Seconds 120')
+    try {
+        $keptBooks = Update-StaleLocalStudioServer -ProjectRoot $project -Health (& $serving '2026.09.23.12' $emptyFolder 0) -Busy $idle -FindServers { param($p) & $asServer $leftoverServer $emptyFolder $true } -FolderBookCount { param($f) 0 }
+        Check ($keptBooks.status -eq 'other-folder') 'An empty server from another folder stays when this folder has no books either.'
+        $byHand = Update-StaleLocalStudioServer -ProjectRoot $project -Health (& $serving '2026.09.23.12' $emptyFolder 0) -Busy $idle -FindServers { param($p) & $asServer $leftoverServer $emptyFolder $false } -FolderBookCount { param($f) 5 }
+        Check ($byHand.status -eq 'other-folder') 'A designer''s own window is never stopped, even an empty one.'
+        $unknown = Update-StaleLocalStudioServer -ProjectRoot $project -Health (& $serving '2026.09.23.12' $emptyFolder $null) -Busy $idle -FindServers { param($p) & $asServer $leftoverServer $emptyFolder $true } -FolderBookCount { param($f) if ($f -eq $emptyFolder) { -1 } else { 5 } }
+        Check ($unknown.status -eq 'other-folder') 'A server whose books cannot be counted is never taken for an empty one.'
+        Start-Sleep -Milliseconds 300; $leftoverServer.Refresh()
+        Check (-not $leftoverServer.HasExited) 'None of those may stop it.'
+        $replaced = Update-StaleLocalStudioServer -ProjectRoot $project -Health (& $serving '2026.09.23.12' $emptyFolder 0) -Busy $idle -FindServers { param($p) & $asServer $leftoverServer $emptyFolder $true } -FolderBookCount { param($f) 5 }
+        $leftoverServer.WaitForExit(10000) | Out-Null
+        Check ($replaced.status -eq 'replaced-empty' -and $leftoverServer.HasExited) 'The empty leftover of a replaced agent must give way to the folder with the books.'
+    }
+    finally { Stop-Process -Id $leftoverServer.Id -Force -ErrorAction SilentlyContinue }
+
+    # A server from before 2026.09.18 does not say which folder it runs from.
+    # It is the agent's only when every Book Studio on the port says so on its
+    # command line; otherwise it is someone else's and left alone.
+    $vague = { param($p) [pscustomobject]@{ status = 'ok'; runningVersion = '2026.09.17.3' } }
+    $unsaid = Start-Process powershell -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile', '-Command', 'Start-Sleep -Seconds 120')
+    try {
+        $mixed = Update-StaleLocalStudioServer -ProjectRoot $project -Health $vague -Busy $idle -FindServers { param($p) @((& $asServer $unsaid $annFolder $false)) } -FolderBookCount { param($f) 1 }
+        Start-Sleep -Milliseconds 300; $unsaid.Refresh()
+        Check ($mixed.status -eq 'other-folder' -and -not $unsaid.HasExited) 'A server that does not name its folder, started from another one, must be left alone.'
+        $mine = Update-StaleLocalStudioServer -ProjectRoot $project -Health $vague -Busy $idle -FindServers { param($p) @((& $asServer $unsaid $project $true)) } -FolderBookCount { param($f) 1 }
+        $unsaid.WaitForExit(10000) | Out-Null
+        Check ($mine.status -eq 'restarted' -and $unsaid.HasExited) 'One whose only command line names this folder is the agent''s, and is replaced when old.'
+    }
+    finally { Stop-Process -Id $unsaid.Id -Force -ErrorAction SilentlyContinue }
+
+    # Found by their command lines, for real: each way Book Studio starts a
+    # server names its folder there, and a folder whose name only begins with
+    # this one's is a different folder.
+    $scanRoot = Join-Path $fixture 'scan'
+    $scanOwn = Join-Path $scanRoot 'book-studio'
+    $scanOther = Join-Path $scanRoot 'book-studio-old'
+    New-Item -ItemType Directory -Path (Join-Path $scanOwn 'book-studio') -Force | Out-Null
+    '{ "version": "2026.09.23.12" }' | Set-Content -LiteralPath (Join-Path $scanOwn 'book-studio/version.json')
+    $agentStarted = Start-Process powershell -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile', '-Command', "Start-Sleep -Seconds 60 # Start-BookStudioServer -ProjectRoot '$scanOwn' -Port 8790")
+    $desktopStarted = Start-Process powershell -WindowStyle Hidden -PassThru -ArgumentList @('-NoProfile', '-Command', "Start-Sleep -Seconds 60 # -File `"$scanOther\book-studio.ps1`" -Port 8790")
+    try {
+        Start-Sleep -Milliseconds 800
+        $ownScan = @(Get-BookStudioServerProcesses -ProjectRoot $scanOwn)
+        $otherScan = @(Get-BookStudioServerProcesses -ProjectRoot $scanOther)
+        Check ($ownScan.ProcessId -contains $agentStarted.Id -and $ownScan.ProcessId -notcontains $desktopStarted.Id) 'Only servers started from this folder may be found as this folder''s.'
+        Check ($otherScan.ProcessId -contains $desktopStarted.Id -and $otherScan.ProcessId -notcontains $agentStarted.Id) 'A folder whose name starts the same is a different folder.'
+        Check (@($ownScan | Where-Object ProcessId -eq $agentStarted.Id)[0].StartedByAgent -and -not @($otherScan | Where-Object ProcessId -eq $desktopStarted.Id)[0].StartedByAgent) 'A server the agent started must be told from a designer''s own window.'
+        Check (@(Get-BookStudioServerProcesses -ProjectRoot $scanOwn -Port 8791).Count -eq 0) 'A server on another port is not the one the web site is carried to.'
+        # And with the real process scan: the agent's own old server goes, the
+        # other folder's stays.
+        $scanned = Update-StaleLocalStudioServer -ProjectRoot $scanOwn -Health (& $serving '2026.09.17.3' $scanOwn 2) -Busy $idle
+        $agentStarted.WaitForExit(10000) | Out-Null
+        Start-Sleep -Milliseconds 300; $desktopStarted.Refresh()
+        Check ($scanned.status -eq 'restarted' -and $agentStarted.HasExited -and -not $desktopStarted.HasExited) 'With the real process scan, only the agent''s own folder''s server may be stopped.'
+    }
+    finally { Stop-Process -Id $agentStarted.Id, $desktopStarted.Id -Force -ErrorAction SilentlyContinue }
+
+    # What the heartbeat says: the folder the web site is shown, its books, and
+    # the agent's own folder when that is another one.
+    $ownReport = Get-LocalStudioReport -ProjectRoot $project -Health (& $serving '2026.09.23.12' $project 4) -FindServers $never -FolderBookCount $never -Listening $never
+    Check ($ownReport.status -eq 'own-folder' -and $ownReport.installPath -eq $project -and $ownReport.bookCount -eq 4) 'The heartbeat must say the agent''s own folder is being served, with its books.'
+    $otherReport = Get-LocalStudioReport -ProjectRoot $project -Health (& $serving '2026.09.23.12' $annFolder 12) -FindServers $never -FolderBookCount { param($f) 0 } -Listening $never
+    Check ($otherReport.status -eq 'other-folder' -and $otherReport.installPath -eq $annFolder -and $otherReport.bookCount -eq 12 -and $otherReport.agentPath -eq $project -and $otherReport.agentBookCount -eq 0) 'The heartbeat must name both folders and both counts when they differ.'
+    $offReport = Get-LocalStudioReport -ProjectRoot $project -Health { param($p) $null } -FindServers $never -FolderBookCount { param($f) 7 } -Listening { param($p) $false }
+    Check ($offReport.status -eq 'not-running' -and $offReport.agentBookCount -eq 7 -and -not $offReport.installPath) 'With nothing running, the heartbeat must say so and name the folder that will open.'
+    $busyReport = Get-LocalStudioReport -ProjectRoot $project -Health { param($p) $null } -FindServers $never -FolderBookCount { param($f) 7 } -Listening { param($p) $true }
+    Check ($busyReport.status -eq 'not-answering') 'A server that is there but busy must not be reported as missing.'
+    $counted = Join-Path $fixture 'counted'
+    New-Item -ItemType Directory -Path (Join-Path $counted '.bookstudio') -Force | Out-Null
+    Check ((Get-BookStudioFolderBookCount -ProjectRoot $counted) -eq 0) 'A folder with no database has no books.'
+    '{ "schemaVersion": 1, "jobs": [ { "id": "a" }, { "id": "b" } ] }' | Set-Content -LiteralPath (Join-Path $counted '.bookstudio/book-studio-db.json') -Encoding UTF8
+    Check ((Get-BookStudioFolderBookCount -ProjectRoot $counted) -eq 2) 'The books in a folder must be counted from its database.'
+    'not json {' | Set-Content -LiteralPath (Join-Path $counted '.bookstudio/book-studio-db.json') -Encoding UTF8
+    Check ((Get-BookStudioFolderBookCount -ProjectRoot $counted) -eq -1) 'A database that cannot be read must never count as no books.'
 
     # The version must come from what the server loaded (its health check),
     # never from version.json, which is the file on disk. Served by a real
     # stand-in HTTP server so the default reading is the one tested.
     $healthPort = ([Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)); $healthPort.Start(); $port = $healthPort.LocalEndpoint.Port; $healthPort.Stop()
-    $standInServer = Start-Job -ArgumentList $port -ScriptBlock {
-        param($port)
+    $standInServer = Start-Job -ArgumentList $port, $project -ScriptBlock {
+        param($port, $folder)
         $listener = New-Object System.Net.HttpListener; $listener.Prefixes.Add("http://localhost:$port/"); $listener.Start()
-        $answers = @('{"status":"ok","runningVersion":"2026.09.17.3"}', '{"version":"2026.09.23.12"}', '{"status":"ok"}')
+        $answers = @(
+            (@{ status = 'ok'; runningVersion = '2026.09.17.3'; installPath = $folder; bookCount = 3 } | ConvertTo-Json -Compress),
+            (@{ status = 'ok'; installPath = $folder; bookCount = 3 } | ConvertTo-Json -Compress)
+        )
         $served = 0
         while ($served -lt 6) {
             $context = $listener.GetContext(); $served++
-            $body = if ($context.Request.Url.AbsolutePath -eq '/version.json') { '{"version":"2026.09.23.12"}' } elseif ($served -le 2) { $answers[0] } else { $answers[2] }
+            $body = if ($context.Request.Url.AbsolutePath -eq '/version.json') { '{"version":"2026.09.23.12"}' } elseif ($served -le 2) { $answers[0] } else { $answers[1] }
             $bytes = [Text.Encoding]::UTF8.GetBytes($body); $context.Response.ContentType = 'application/json'
             $context.Response.OutputStream.Write($bytes, 0, $bytes.Length); $context.Response.Close()
         }
@@ -185,12 +316,64 @@ try {
     }
     try {
         foreach ($wait in 1..40) { try { $null = Invoke-RestMethod "http://localhost:$port/version.json" -TimeoutSec 2; break } catch { Start-Sleep -Milliseconds 250 } }
-        $old = Update-StaleLocalStudioServer -ProjectRoot $project -Port $port -Busy { param($r) 'a book is being written' } -FindServers $never
+        $old = Update-StaleLocalStudioServer -ProjectRoot $project -Port $port -Busy { param($r, $d) 'a book is being written' } -FindServers $never
         Check ($old.status -eq 'busy' -and $old.served -eq '2026.09.17.3') 'An old server whose version.json names the new release must still be seen as old.'
-        $older = Update-StaleLocalStudioServer -ProjectRoot $project -Port $port -Busy { param($r) 'a book is being written' } -FindServers $never
+        Check ($old.installPath -eq $project -and $old.bookCount -eq 3) 'The folder and the books must be read from the health check itself.'
+        $older = Update-StaleLocalStudioServer -ProjectRoot $project -Port $port -Busy { param($r, $d) 'a book is being written' } -FindServers $never
         Check ($older.status -eq 'busy' -and $older.served -eq 'an earlier release') 'A server too old to report its version must be treated as out of date.'
     }
     finally { Stop-Job $standInServer -ErrorAction SilentlyContinue; Remove-Job $standInServer -Force -ErrorAction SilentlyContinue }
+
+    # The page helpers. A Book Studio busy with one request still has its port
+    # open. The helpers asked it for version.json with four seconds to spare,
+    # took a busy server for a missing one, and started another each -- which
+    # could not listen, but did open that folder's book database.
+    $busyPort = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0); $busyPort.Start()
+    try {
+        # Listening, never answering: the busy server.
+        $launches = New-Object System.Collections.ArrayList
+        $up = Start-LocalStudioServer -ProjectRoot $project -Port $busyPort.LocalEndpoint.Port -Launch { param($r, $p) [void]$launches.Add($p) } -StartWaitSeconds 2
+        Check ($up -and $launches.Count -eq 0) 'A helper must never start a second Book Studio while one is listening, however busy it is.'
+        Check (Test-LocalStudioPortListening -Port $busyPort.LocalEndpoint.Port) 'A port that is listening must be seen as listening.'
+    }
+    finally { $busyPort.Stop() }
+    $freePort = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0); $freePort.Start(); $closed = $freePort.LocalEndpoint.Port; $freePort.Stop()
+    Check (-not (Test-LocalStudioPortListening -Port $closed)) 'A port nothing listens on must be seen as free.'
+    $startState = @{ listening = $false; launches = 0 }
+    $started = Start-LocalStudioServer -ProjectRoot $project -Port $closed -LockName ('Local\BookStudioStartTest' + [guid]::NewGuid().ToString('N')) -StartWaitSeconds 5 `
+        -Listening { param($p) $startState.listening } -Launch { param($r, $p) $startState.launches++; $startState.listening = $true }
+    Check ($started -and $startState.launches -eq 1) 'With nothing on the port, the helper starts the agent''s own Book Studio, once.'
+
+    # Three helpers find the server missing at the same moment: one starts it,
+    # the others wait for it. Separate processes, as the helpers are.
+    $lockName = 'Local\BookStudioStartTest' + [guid]::NewGuid().ToString('N')
+    $sharedPort = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0); $sharedPort.Start(); $racePort = $sharedPort.LocalEndpoint.Port; $sharedPort.Stop()
+    $launchLog = Join-Path $fixture 'launches.txt'
+    $library = Join-Path $root 'lib/EbookCloudRunner.ps1'
+    $helperJobs = @(foreach ($name in 'one', 'two', 'three') {
+        Start-Job -ArgumentList $library, $racePort, $lockName, $launchLog, $name -ScriptBlock {
+            param($library, $port, $lockName, $launchLog, $name)
+            . $library
+            $result = Start-LocalStudioServer -ProjectRoot 'unused' -Port $port -LockName $lockName -StartWaitSeconds 20 -Launch {
+                param($r, $p)
+                Add-Content -LiteralPath $launchLog -Value $name
+                # A server takes a moment to open its port.
+                Start-Sleep -Seconds 3
+                $global:standIn = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $p)
+                $global:standIn.Start()
+            }
+            # Whoever started it keeps it open while the others look.
+            Start-Sleep -Seconds 8
+            $result
+        }
+    })
+    try {
+        $results = @($helperJobs | Wait-Job -Timeout 90 | Receive-Job)
+        $launched = @(Get-Content -LiteralPath $launchLog -ErrorAction SilentlyContinue)
+        Check ($launched.Count -eq 1) "Three helpers at once must start one Book Studio, not $($launched.Count)."
+        Check ($results.Count -eq 3 -and @($results | Where-Object { $_ -eq $true }).Count -eq 3) "Every helper must end up with a Book Studio to carry its page to: $($results -join ', ')"
+    }
+    finally { $helperJobs | Stop-Job -ErrorAction SilentlyContinue; $helperJobs | Remove-Job -Force -ErrorAction SilentlyContinue }
 
     # 8. And it can be taken off again by the same person, without an installer.
     Uninstall-BookRunnerStartup -StartupFolder $startup | Out-Null
@@ -353,6 +536,117 @@ if ($node) {
     Check ($setup -match '(?s)git -C \$folder pull --ff-only.*?LASTEXITCODE') 'A failed update must be reported, not passed over in silence.'
 }
 
+# 12b. Setting up connects the copy of Book Studio the designer's books are in.
+#      Each copy keeps its own books. Ann Jackson's were in the folder her
+#      desktop shortcut opens; the setup command installed a second copy under
+#      LOCALAPPDATA, the agent ran from that, and Book Studio on the web site
+#      showed an empty library while the one on her desktop had everything.
+#      The folder-finding functions are taken out of the script the worker
+#      serves and run against real folders and real git repositories.
+$gitForSetup = Get-Command git -ErrorAction SilentlyContinue
+if ($node -and $gitForSetup) {
+    $setupTokens = $null; $setupErrors = $null
+    $setupAst = [System.Management.Automation.Language.Parser]::ParseInput($setup, [ref]$setupTokens, [ref]$setupErrors)
+    $wanted = @('Get-BookStudioBookCount', 'Get-BookStudioFolderProblem', 'Get-BookStudioFolderCandidates', 'Find-BookStudioFolder')
+    $definitions = @($setupAst.FindAll({ param($item) $item -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true) | Where-Object { $wanted -contains $_.Name })
+    Check ($definitions.Count -eq 4) "The setup script must define the functions that find the folder with the books; found $(@($definitions.Name) -join ', ')"
+    foreach ($definition in $definitions) { . ([scriptblock]::Create($definition.Extent.Text)) }
+    Check ($setup -match 'Find-BookStudioFolder -Current \(Get-Location\)\.Path -Candidates \(Get-BookStudioFolderCandidates\)') 'The setup script must choose its folder with those functions.'
+    Check ($setup -match "(?s)if \(\`$choice\.action -eq 'stop'\) \{.*?return\s*\}.*?git clone") 'A refusal must stop the setup before anything is cloned.'
+
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $setupFixture = Join-Path ([IO.Path]::GetTempPath()) ('setup-folder-' + [guid]::NewGuid().ToString('N'))
+    try {
+        function New-FakeInstall([string]$Path, [int]$Books = 0, [switch]$NoGit, [string]$Origin = 'https://github.com/gduartevocate/book-studio.git') {
+            New-Item -ItemType Directory -Path $Path -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $Path 'cloud-book-runner.ps1') -Value '# agent' -Encoding UTF8
+            Set-Content -LiteralPath (Join-Path $Path 'Start-BookStudioCompanion.ps1') -Value '# launcher' -Encoding UTF8
+            Set-Content -LiteralPath (Join-Path $Path '.gitignore') -Value '.bookstudio/' -Encoding UTF8
+            if (-not $NoGit) {
+                & git init -q $Path 2>&1 | Out-Null
+                & git -C $Path remote add origin $Origin 2>&1 | Out-Null
+                & git -C $Path add -A 2>&1 | Out-Null
+                & git -C $Path -c user.email=t@t -c user.name=t commit -q -m install 2>&1 | Out-Null
+            }
+            if ($Books -gt 0) {
+                New-Item -ItemType Directory -Path (Join-Path $Path '.bookstudio') -Force | Out-Null
+                $jobs = @(1..$Books | ForEach-Object { @{ id = "book-$_"; title = "Book $_" } })
+                @{ schemaVersion = 1; jobs = $jobs } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $Path '.bookstudio/book-studio-db.json') -Encoding UTF8
+            }
+        }
+        $userHome = Join-Path $setupFixture 'home'
+        $desktop = Join-Path $setupFixture 'desktop'
+        $startupFolder = Join-Path $setupFixture 'startup'
+        $annBooks = Join-Path $setupFixture 'Ann Jackson\book studio'
+        $agentCopy = Join-Path $setupFixture 'LocalAppData\Book Studio'
+        New-Item -ItemType Directory -Path $userHome, $desktop, $startupFolder -Force | Out-Null
+        New-FakeInstall -Path $annBooks -Books 2
+        New-FakeInstall -Path $agentCopy
+        $shell = New-Object -ComObject WScript.Shell
+        $desktopLink = $shell.CreateShortcut((Join-Path $desktop 'Book Studio.lnk'))
+        $desktopLink.TargetPath = (Get-Command powershell.exe).Source; $desktopLink.WorkingDirectory = $annBooks; $desktopLink.Save()
+        $agentLink = $shell.CreateShortcut((Join-Path $startupFolder 'Book Studio cloud agent.lnk'))
+        $agentLink.TargetPath = (Get-Command powershell.exe).Source; $agentLink.WorkingDirectory = $agentCopy; $agentLink.Save()
+
+        $candidates = @(Get-BookStudioFolderCandidates -Desktop $desktop -Startup $startupFolder -UserHome $userHome)
+        Check ($candidates -contains $annBooks) "The folder the desktop shortcut opens must be looked at; saw $($candidates -join '; ')"
+        Check ($candidates -contains $agentCopy) 'The folder an earlier setup connected must be looked at.'
+        Check ($candidates -contains (Join-Path $userHome 'book-studio')) 'The usual folder under the user profile must be looked at.'
+        Check ((Get-BookStudioBookCount $annBooks) -eq 2 -and (Get-BookStudioBookCount $agentCopy) -eq 0) 'Books must be counted from each folder''s own database.'
+
+        $picked = Find-BookStudioFolder -Current $userHome -Candidates $candidates -Default $agentCopy
+        Check ($picked.action -eq 'update' -and $picked.folder -eq $annBooks -and $picked.books -eq 2) "Setup must connect the copy with the books, not an empty one; got $($picked.action) $($picked.folder)"
+        # The difference, not the selection: with no copy holding books, the
+        # same search lands on setup's own folder.
+        $withoutBooks = Find-BookStudioFolder -Current $userHome -Candidates @((Join-Path $userHome 'book-studio'), $agentCopy) -Default $agentCopy
+        Check ($withoutBooks.folder -eq $agentCopy -and $withoutBooks.action -eq 'update') 'With no copy holding books, setup must use and update its own folder.'
+        $fresh = Find-BookStudioFolder -Current $userHome -Candidates @() -Default (Join-Path $setupFixture 'nothing here\Book Studio')
+        Check ($fresh.action -eq 'clone') 'A computer with no Book Studio at all must get one.'
+        # Standing in a copy is a choice, and it is honoured; books found in
+        # another folder are mentioned rather than silently left behind.
+        $standing = Find-BookStudioFolder -Current $agentCopy -Candidates $candidates -Default $agentCopy
+        Check ($standing.folder -eq $agentCopy -and $standing.action -eq 'update') 'The copy the window is standing in must be used.'
+        Check (($standing.notes -join ' ') -match [regex]::Escape($annBooks)) 'The designer must be told their books are in another folder.'
+
+        # A copy with the books that cannot be updated safely: stop, say why,
+        # change nothing -- never a second, empty copy beside it.
+        Set-Content -LiteralPath (Join-Path $annBooks 'my notes.txt') -Value 'mine' -Encoding UTF8
+        $dirty = Find-BookStudioFolder -Current $userHome -Candidates $candidates -Default $agentCopy
+        Check ($dirty.action -eq 'stop') "A copy with the books and changed files must stop the setup; got $($dirty.action) $($dirty.folder)"
+        Check ($dirty.message -match [regex]::Escape($annBooks) -and $dirty.message -match '2 books' -and $dirty.message -match 'changed by hand') "The refusal must name the folder, its books and the reason: $($dirty.message)"
+        Check ($dirty.message -match 'Nothing was installed or changed' -and $dirty.message -match 'do not delete') 'The refusal must say nothing was touched, and not to delete the folder.'
+        Remove-Item -LiteralPath (Join-Path $annBooks 'my notes.txt') -Force
+        $zipCopy = Join-Path $setupFixture 'Downloads\BookStudio-ID'
+        New-FakeInstall -Path $zipCopy -Books 1 -NoGit
+        $zip = Find-BookStudioFolder -Current $userHome -Candidates @($zipCopy) -Default $agentCopy
+        Check ($zip.action -eq 'stop' -and $zip.message -match 'not installed with git' -and $zip.message -match '\(1 book\)') "A copy with books that cannot update itself must stop the setup: $($zip.message)"
+        $devCopy = Join-Path $setupFixture 'dev checkout'
+        New-FakeInstall -Path $devCopy -Books 3 -Origin 'https://github.com/someone/private-checkout.git'
+        $dev = Find-BookStudioFolder -Current $userHome -Candidates @($devCopy) -Default $agentCopy
+        Check ($dev.action -eq 'stop' -and $dev.message -match 'distribution') "A copy that follows another repository must never be updated by setup: $($dev.message)"
+        $devHere = Find-BookStudioFolder -Current $devCopy -Candidates @() -Default $agentCopy
+        Check ($devHere.action -eq 'use' -and $devHere.folder -eq $devCopy) 'Standing in a copy that cannot update itself connects it as it is, without updating it.'
+        # Setup's own folder keeps its old behaviour even with books and a
+        # stray file: it is updated, and the version check reports a failure.
+        New-Item -ItemType Directory -Path (Join-Path $agentCopy '.bookstudio') -Force | Out-Null
+        '{ "jobs": [ { "id": "online-1" } ] }' | Set-Content -LiteralPath (Join-Path $agentCopy '.bookstudio/book-studio-db.json') -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path $agentCopy 'stray.txt') -Value 'x' -Encoding UTF8
+        $ownCopy = Find-BookStudioFolder -Current $userHome -Candidates @($agentCopy) -Default $agentCopy
+        Check ($ownCopy.action -eq 'update' -and $ownCopy.folder -eq $agentCopy) 'The folder setup manages itself is updated as before, not refused.'
+        # Two copies with books: the one the desktop opens wins, and the other
+        # is named.
+        $both = Find-BookStudioFolder -Current $userHome -Candidates $candidates -Default $agentCopy
+        Check ($both.folder -eq $annBooks -and ($both.notes -join ' ') -match [regex]::Escape($agentCopy)) 'With books in two copies, the desktop''s is connected and the other is named.'
+    }
+    finally {
+        $ErrorActionPreference = $previousPreference
+        Get-ChildItem -LiteralPath $setupFixture -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object { try { $_.Attributes = [IO.FileAttributes]::Normal } catch { } }
+        Remove-Item -LiteralPath $setupFixture -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+else { Write-Warning 'node or git was not found; the setup script''s choice of folder was not exercised.' }
+
 # 13. Updating itself. A designer should never be asked to paste a command
 #     again to get a fix, and the two ways that can go wrong are worse than
 #     the problem: updating a folder that is not the managed install, and
@@ -445,6 +739,17 @@ Check ($runnerText.Substring($loopAt) -notmatch 'Invoke-BridgeCycle') 'The agent
 Check ($runnerText -match '-BridgeWorker -ParentProcessId \$PID' -and $runnerText -match "'-WindowStyle', 'Hidden', '-Command', \`$inner\) -WindowStyle Hidden -PassThru") 'The agent starts its helpers hidden, tied to itself.'
 Check ($runnerText -match 'Sync-LocalStudioServer\s+\$script:bridgeWorkerProcesses = @\(Start-BridgeWorkers\)') 'Helpers start as soon as the agent does, not after its first round of other work.'
 Check ($runnerText -match '\[int\]\$BridgeWorkers = 3') 'Several helpers, so one slow page does not hold up the next.'
+# The helpers use the tested way to reach the local server: one that waits for
+# a busy server and never starts a duplicate. A second copy of it in the agent
+# would quietly take precedence.
+Check ($runnerText -notmatch '(?m)^function (Start|Test)-LocalStudioServer') 'The agent must not define its own server start; the tested one in lib/EbookCloudRunner.ps1 is the one to use.'
+Check ($runnerText -match 'Start-LocalStudioServer -ProjectRoot \$ProjectRoot -Port \$Port') 'Each page must go through the tested server start.'
+# The heartbeat says which folder the web site is shown, and how many books it
+# holds, so a second, empty copy of Book Studio is visible on the web site.
+Check ($runnerText -match '\$body\.studio = \$script:studioReport') 'The heartbeat must report the Book Studio folder being served.'
+Check ($runnerText -match 'Update-LocalStudioReport\s+Publish-CodexStatus') 'The report must be brought up to date before it is sent.'
+Check ($runnerText -match "(?s)'other-folder' \{ Write-Warning") 'A Book Studio from another folder is reported, not stopped.'
+Check ($runnerText -match "(?s)'replaced-empty' \{.*?Start-LocalStudioServer") 'When the empty leftover of an old agent goes, this folder''s Book Studio starts in its place.'
 Check ($runnerText -match 'codexCheckedAt\)\.TotalMinutes -ge 8\)') 'The background Codex check must run inside the ten minutes a pass counts for.'
 
 # And for real: a helper whose agent has gone stops by itself.
@@ -490,4 +795,4 @@ $behindAt = $runnerText.IndexOf('Test-BookRunnerBehindInstall -ProjectRoot $Proj
 Check ($behindAt -gt 0 -and $runnerText.Substring($behindAt, 400) -match 'Restart-BookRunner -ProjectRoot \$ProjectRoot -Instance \$instance\s+return') 'An agent behind the files on disk must restart into them.'
 Check ($runnerText.IndexOf('$script:agentVersion = Get-BookStudioInstalledVersion') -gt 0 -and $runnerText.IndexOf('$script:agentVersion = Get-BookStudioInstalledVersion') -lt $behindAt) 'The agent must remember the release it started as.' 
 
-"PASS: $checks connection assertions (token remembered and replaced, kept in the user profile, start with Windows without an administrator, setup replaces an old agent, an old local server is restarted when idle)."
+"PASS: $checks connection assertions (token remembered and replaced, kept in the user profile, start with Windows without an administrator, setup replaces an old agent and connects the folder with the books, only the agent's own old server is restarted, helpers never start a duplicate)."

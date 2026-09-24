@@ -136,13 +136,18 @@ function Publish-CodexStatus {
     # A computer that cannot update itself must say so here rather than quietly
     # falling behind: the refusal is deliberate, but silence about it is not.
     $updatable = Test-BookStudioSelfUpdatable -ProjectRoot $ProjectRoot
+    $body = @{
+        codex = $Status
+        runnerName = $machineName
+        version = (Get-BookStudioInstalledVersion -ProjectRoot $ProjectRoot)
+        updates = @{ automatic = [bool]$updatable.updatable; reason = [string]$updatable.reason }
+    }
+    # Which folder the web site is being shown, and how many books are in it.
+    # Two Book Studio folders on one PC look identical from the web site until
+    # this says which one is answering.
+    if ($script:studioReport) { $body.studio = $script:studioReport }
     try {
-        Invoke-RunnerApi -Method Post -Path '/api/runner/status' -Body @{
-            codex = $Status
-            runnerName = $machineName
-            version = (Get-BookStudioInstalledVersion -ProjectRoot $ProjectRoot)
-            updates = @{ automatic = [bool]$updatable.updatable; reason = [string]$updatable.reason }
-        } | Out-Null
+        Invoke-RunnerApi -Method Post -Path '/api/runner/status' -Body $body | Out-Null
         # Said once, on the first success. Without it a designer has no way to
         # tell a machine that reported itself from one that quietly could not,
         # and the web page looks identical either way until they refresh it.
@@ -163,34 +168,10 @@ function Publish-CodexStatus {
 # the only place the outcome analysis, the production panel, the QA review and
 # the Codex chat exist, and it is where they should stay: a second copy of those
 # rules in the cloud would drift from this one.
-function Test-LocalStudioServer {
-    param([int]$Port)
-
-    try {
-        $response = Invoke-WebRequest -Uri "http://localhost:$Port/version.json" -TimeoutSec 4 -UseBasicParsing
-        return $response.StatusCode -eq 200
-    }
-    catch {
-        return $false
-    }
-}
-
-function Start-LocalStudioServer {
-    param([string]$ProjectRoot, [int]$Port)
-
-    if (Test-LocalStudioServer -Port $Port) { return $true }
-    # Started without book-studio.ps1, which opens a browser window: nothing
-    # should appear on a designer's screen because someone clicked in the cloud.
-    $command = "Import-Module '" + (Join-Path $ProjectRoot 'lib\BookStudio.psm1') + "' -Force -DisableNameChecking; " +
-               "Start-BookStudioServer -ProjectRoot '" + $ProjectRoot + "' -Port " + $Port
-    Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Minimized', '-Command', $command) -WindowStyle Minimized | Out-Null
-    foreach ($attempt in 1..20) {
-        Start-Sleep -Milliseconds 500
-        if (Test-LocalStudioServer -Port $Port) { return $true }
-    }
-    return $false
-}
-
+#
+# Whether that server is there, and starting it when it is not, live in
+# lib/EbookCloudRunner.ps1 (Start-LocalStudioServer): a server that is busy is
+# waited for, never duplicated, and one from another folder is used as it is.
 function Invoke-LocalStudioRequest {
     param([object]$BridgeRequest, [string]$ProjectRoot, [int]$Port)
 
@@ -670,9 +651,25 @@ function Sync-LocalStudioServer {
             Write-Host "The Book Studio server here was running $($server.served); restarting it on $($server.installed)." -ForegroundColor Green
             Start-LocalStudioServer -ProjectRoot $ProjectRoot -Port $StudioPort | Out-Null
         }
+        'replaced-empty' {
+            Write-Host $server.detail -ForegroundColor Green
+            Start-LocalStudioServer -ProjectRoot $ProjectRoot -Port $StudioPort | Out-Null
+        }
         'busy' { Write-Host "The Book Studio server here runs $($server.served), not $($server.installed). It restarts once nothing is being written: $($server.detail)" }
         'not-found' { Write-Warning "The Book Studio server here runs $($server.served), not $($server.installed). $($server.detail)" }
+        'other-folder' { Write-Warning $server.detail }
     }
+    # Whatever happened, the next report says what is answering now.
+    $script:studioCheckedAt = [datetime]::MinValue
+}
+
+# Refreshed every two minutes rather than every report: it asks the local
+# server, which answers one request at a time, and the pages come first.
+function Update-LocalStudioReport {
+    if (((Get-Date) - $script:studioCheckedAt).TotalMinutes -lt 2) { return }
+    try { $script:studioReport = Get-LocalStudioReport -ProjectRoot $ProjectRoot -Port $StudioPort }
+    catch { $script:studioReport = @{ status = 'unknown'; agentPath = $ProjectRoot; detail = "Could not check the Book Studio on this computer: $($_.Exception.Message)" } }
+    $script:studioCheckedAt = Get-Date
 }
 
 function Start-BridgeWorkers {
@@ -691,6 +688,7 @@ function Start-BridgeWorkers {
 }
 
 $script:lastUpdateCheck = [datetime]::MinValue
+$script:studioCheckedAt = [datetime]::MinValue
 # The release this agent's code is. Compared with the files on disk every
 # cycle, so any update -- downloaded here or installed from Book Studio's
 # Settings -- is running within one cycle.
@@ -711,6 +709,7 @@ do {
             $script:codexCommandPath = $script:codexStatus.commandPath
             $script:codexCheckedAt = Get-Date
         }
+        Update-LocalStudioReport
         Publish-CodexStatus -Status $script:codexStatus | Out-Null
         $queue = Invoke-RunnerApi -Method Get -Path "/api/runner/jobs"
         $jobs = @($queue.jobs)

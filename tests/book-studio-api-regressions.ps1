@@ -21,6 +21,29 @@ try{
     $health=Invoke-RestMethod "$base/api/health"
     Check ($health.status -eq 'ok' -and $health.service -eq 'book-studio') 'Book Studio health endpoint did not respond.'
     Check (@((Invoke-RestMethod "$base/api/jobs").jobs).Count -eq 0) 'Isolated database was not empty.'
+    # The health check names the folder this server runs from and how many
+    # books are in it. Two installs on one PC answer identically otherwise, and
+    # the cloud agent restarted whichever one held the port -- including a
+    # designer's own, with her books in it.
+    Check ([string]::Equals([string]$health.installPath, [IO.Path]::GetFullPath($fixture).TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) "The health check must name the folder the server runs from; got '$($health.installPath)'."
+    Check ($health.bookCount -eq 0 -and "$($health.bookCount)" -eq '0') "An empty install must report 0 books, not nothing; got '$($health.bookCount)'."
+    Check ([string]$health.databasePath -like '*.bookstudio\book-studio-db.json') "The health check must name the database the server uses; got '$($health.databasePath)'."
+
+    # A second server for a port that is already taken must stop before it
+    # touches any book database. The agent's page helpers started one whenever
+    # the running server was too busy to answer a probe; it could not listen,
+    # but it had already opened and repaired the database of its own folder.
+    $duplicateRoot=Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) ('BookStudioTests/api-duplicate-'+[guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $duplicateRoot -Force | Out-Null
+    foreach($folder in @('lib','config','book-studio')){Copy-Item -LiteralPath (Join-Path $root $folder) -Destination (Join-Path $duplicateRoot $folder) -Recurse}
+    Copy-Item -LiteralPath (Join-Path $root 'book-studio.ps1') -Destination (Join-Path $duplicateRoot 'book-studio.ps1')
+    $duplicate=Start-Process -FilePath (Join-Path $PSHOME 'powershell.exe') -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+(Join-Path $duplicateRoot 'book-studio.ps1')+'"'),'-Port',$port) -PassThru -WindowStyle Hidden -RedirectStandardOutput (Join-Path $duplicateRoot 'server.log') -RedirectStandardError (Join-Path $duplicateRoot 'server-error.log')
+    $duplicateExited=$duplicate.WaitForExit(60000)
+    if(-not $duplicateExited){$duplicate.Kill();$duplicate.WaitForExit()}
+    Check $duplicateExited 'A second Book Studio for a port already in use must give up, not keep running.'
+    Check (-not (Test-Path -LiteralPath (Join-Path $duplicateRoot '.bookstudio'))) 'A second Book Studio that could not listen must not have created or opened a book database.'
+    Check ((Invoke-RestMethod "$base/api/health" -TimeoutSec 10).installPath -eq $health.installPath) 'The first server must be unaffected by the second.'
+    Remove-Item -LiteralPath $duplicateRoot -Recurse -Force -ErrorAction SilentlyContinue
     Reject {Invoke-WebRequest -UseBasicParsing -Uri "$base/api/jobs" -Method Post -ContentType 'application/json' -Headers @{Origin='https://example.org'} -Body '{}'} 403
     Reject {Invoke-WebRequest -UseBasicParsing -Uri "$base/api/jobs" -Method Post -ContentType 'text/plain' -Body '{}'} 400
     Reject {Post '/api/jobs' @{files=@(@{name='scan.pdf';contentBase64='UERG'})}} 400
@@ -52,6 +75,9 @@ Week 2 Workflow Coordination
     # The curriculum-draft route, over real HTTP, with no Codex anywhere.
     $draft=Post '/api/jobs' @{title='Office Workflow Draft';courseCode='QA1000';files=@($file,$reading);primaryFileIndex=0;courseDocumentKind='CurriculumDraft';sourceMode='UploadedOnly';useCodexDrafting=$false;useCodexImages=$false}
     Check ($draft.workflowStage -eq 'outcomes-analysis') "A curriculum draft stops for its outcome review (got '$($draft.workflowStage)')."
+    # The count follows the books: an empty folder and one with books must not
+    # look the same from outside.
+    Check ((Invoke-RestMethod "$base/api/health" -TimeoutSec 10).bookCount -eq 2) 'The health check must count the books this server holds.'
     Reject {Post "/api/jobs/$($draft.id)/run" @{mode='Blueprint'}} 400
     $analysis=Invoke-RestMethod "$base/api/jobs/$($draft.id)/outcome-analysis"
     Check (@($analysis.courseObjectives).Count -eq 2 -and @($analysis.chapters).Count -eq 2) 'The outcome review did not return the course objectives and chapters.'

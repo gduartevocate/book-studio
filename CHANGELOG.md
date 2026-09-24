@@ -1,5 +1,9 @@
 # Book Studio ID Changelog
 
+## v2026.09.24.1 (2026-09-24)
+
+- Book Studio online stays on the folder that holds your books: the agent restarts only its own copy, never starts duplicates, setup reuses your existing install, a failed book list shows an error with Try again, and Settings shows which folder and how many books are being served.
+
 ## v2026.09.23.19 (2026-09-23)
 
 - Updates apply themselves: every computer checks every 15 minutes, and Book Studio's own Get latest updates now also restarts the connection agent into the new release.

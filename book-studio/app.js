@@ -36,6 +36,9 @@ const activeBookView = document.querySelector("#activeBookView");
 const settingsView = document.querySelector("#settingsView");
 const bookList = document.querySelector("#bookList");
 const bookListEmpty = document.querySelector("#bookListEmpty");
+const bookListError = document.querySelector("#bookListError");
+const bookListErrorText = document.querySelector("#bookListErrorText");
+const bookListRetry = document.querySelector("#bookListRetry");
 const bookCount = document.querySelector("#bookCount");
 const activeBookTitle = document.querySelector("#activeBookTitle");
 const activeBookStage = document.querySelector("#activeBookStage");
@@ -132,11 +135,55 @@ function workflowStageLabel(job) {
   return "Instructional designer review";
 }
 
+// The folder the Book Studio answering this page runs from, from its health
+// check. Reached through the web site, "No books yet" is only true of that
+// folder, and a PC can hold two copies of Book Studio: the one a designer opens
+// from the desktop, with their books, and an empty one set up later. Naming the
+// folder turns "my books have gone" into something that can be acted on.
+let servedInstallPath = "";
+function describeEmptyLibrary() {
+  if (!servedInstallPath || !reachedThroughTheCloud()) return;
+  bookListEmpty.textContent = `No books in ${servedInstallPath}. Books made in a different Book Studio folder on your computer are not shown here; Settings says which folder this is.`;
+}
+
+// What went wrong, in the words the server used. A failure reaches here as the
+// body of the reply: a JSON error from the web site or the computer, plain text
+// from Book Studio, or an HTML page that is no use as a sentence.
+function describeLoadFailure(error) {
+  const raw = String(error?.message || error || "").trim();
+  let text = raw;
+  try {
+    const parsed = JSON.parse(raw);
+    text = String(parsed?.bridgeError || parsed?.error || parsed?.message || raw);
+  } catch {
+    // Not JSON: the text is the message.
+  }
+  if (/^\s*</.test(text)) text = "";
+  text = text.replace(/\s+/g, " ").trim().slice(0, 300);
+  return text || "the request failed.";
+}
+
+// A book list that could not be loaded says so where the books would be. It
+// used to go only to the status line of the New book form, which this page
+// hides, so on the web site a list that failed to load was simply blank, and a
+// designer could not tell it from having no books.
+function showBookListError(error) {
+  const lead = allJobs.length ? "Your books could not be refreshed" : "Your books could not be loaded";
+  bookListErrorText.textContent = `${lead}: ${describeLoadFailure(error)}`;
+  bookListError.hidden = false;
+  bookListEmpty.hidden = true;
+}
+
+function clearBookListError() {
+  bookListError.hidden = true;
+}
+
 function renderBookLibrary(jobs) {
   const books = Array.isArray(jobs) ? [...jobs] : [];
   books.sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0));
   bookList.textContent = "";
   bookListEmpty.hidden = books.length > 0;
+  describeEmptyLibrary();
   bookCount.textContent = books.length ? `${books.length}` : "";
 
   for (const job of books) {
@@ -2740,10 +2787,27 @@ function renderJobs(jobs, options = {}) {
   }
 }
 
+// Every way the list can fail -- the web site, the computer, Book Studio
+// itself, or a reply that cannot be read -- ends in the same visible message
+// with a way to try again, and the caller still sees the failure.
 async function loadJobs(options = {}) {
-  const data = await api("/api/jobs");
-  renderJobs(data.jobs || [], options);
+  try {
+    const data = await api("/api/jobs");
+    renderJobs(data.jobs || [], options);
+    clearBookListError();
+  } catch (error) {
+    showBookListError(error);
+    throw error;
+  }
 }
+
+bookListRetry.addEventListener("click", () => {
+  bookListRetry.disabled = true;
+  bookListErrorText.textContent = "Trying again...";
+  loadJobs({ force: true })
+    .catch(() => { /* the message is already on the page */ })
+    .finally(() => { bookListRetry.disabled = false; });
+});
 
 function reportJobActionError(job, message) {
   // setStatus writes into the New book form, which the active-book screen
@@ -3279,6 +3343,8 @@ async function loadInstallStatus() {
     installStatus.className = `codex-status ${warning ? "warning" : "ready"}`;
     installStatus.textContent = warning || `Installed at ${health.installPath} (${health.installPathLength} characters). This location is fine.`;
     installBadge.hidden = !warning;
+    servedInstallPath = String(health.installPath || "");
+    describeEmptyLibrary();
   } catch (error) {
     installStatus.className = "codex-status";
     installStatus.textContent = `Could not read the install location: ${error.message}`;
@@ -3576,6 +3642,29 @@ function describeLastSeen(seenAt) {
   return new Date(seen).toLocaleString();
 }
 
+// Which Book Studio folder that computer is serving, and how many books are in
+// it, as its agent reports. A PC can hold two copies of Book Studio, and from
+// the web site they look alike until the folder is named.
+function countBooks(count) {
+  if (count === null || count === undefined || count < 0) return "books not counted";
+  return count + (count === 1 ? " book" : " books");
+}
+function describeServedStudio(studio) {
+  if (!studio) return "";
+  if (studio.installPath && studio.status !== "not-running") {
+    let line = "<br>Serving " + escapeHtml(studio.installPath) + " — " + escapeHtml(countBooks(studio.bookCount));
+    if (studio.status === "other-folder") {
+      line += "<br>That is not the folder this computer keeps up to date (" + escapeHtml(studio.agentPath) + ", " +
+        escapeHtml(countBooks(studio.agentBookCount)) + "). To connect the folder with your books, open PowerShell in it and run the setup command from Connect another computer again.";
+    }
+    return line;
+  }
+  if (studio.status === "not-answering") return "<br>Book Studio on that computer is busy and did not answer the last check.";
+  return studio.agentPath
+    ? "<br>Book Studio is not open on that computer; it opens from " + escapeHtml(studio.agentPath) + " (" + escapeHtml(countBooks(studio.agentBookCount)) + ")."
+    : "";
+}
+
 async function loadCloudSettings() {
   if (!cloudPanel || !reachedThroughTheCloud()) return;
   cloudPanel.hidden = false;
@@ -3604,6 +3693,7 @@ async function loadCloudSettings() {
         escapeHtml(state) + (codex.version ? " - " + escapeHtml(codex.version) : "") +
         " - last heard from " + escapeHtml(describeLastSeen(machine.seenAt)) +
         (machine.version ? "<br>Book Studio " + escapeHtml(machine.version) : "") +
+        describeServedStudio(machine.studio) +
         (ready ? "" : "<br>" + escapeHtml(codex.detail || "")) + "</dd>";
     }).join("");
   } catch (error) {

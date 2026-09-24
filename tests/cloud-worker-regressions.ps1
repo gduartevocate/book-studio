@@ -74,6 +74,21 @@ foreach ($field in @('runnerName', 'label', 'seenAt', 'connected')) {
 }
 Check ($connect -match 'status\.detail') 'A machine that has never checked in must say why, not show a blank panel.'
 
+# 4b. Which Book Studio folder a computer is showing the web site, and how many
+#     books are in it, travels from the agent through the stored record to both
+#     pages that list computers. A PC with two copies of Book Studio showed the
+#     empty one on the web site, and nothing on either page said so.
+$agentLibrary = Get-Content -LiteralPath (Join-Path $root 'lib/EbookCloudRunner.ps1') -Raw -Encoding UTF8
+$client = Get-Content -LiteralPath (Join-Path $root 'book-studio/app.js') -Raw -Encoding UTF8
+Check ($runner -match '\$body\.studio = \$script:studioReport') 'The agent does not send what it knows about the folder it serves.'
+Check ($worker -match 'studio: studioReport\(payload\.studio\)') 'The status record drops what the agent reports about the folder it serves.'
+foreach ($field in @('installPath', 'bookCount', 'agentPath', 'agentBookCount')) {
+    Check ($agentLibrary -match "(?m)^\s+$field\s+=") "The agent does not report studio.$field."
+    Check ($worker -match "value\.$field") "The worker does not keep studio.$field."
+    Check ($connect -match "studio\.$field") "The connect page does not show studio.$field."
+    Check ($client -match "studio\.$field") "Book Studio's Settings does not show studio.$field."
+}
+
 # 5. Every route that reads or changes a book must authenticate. Four routes are
 #    deliberately open: a probe, the one that tells the page whether anyone is
 #    signed in, and the two that sign a person in and out, which cannot require

@@ -452,6 +452,55 @@ check(desk.updates.automatic === true, "A machine that keeps itself current must
 check(laptop.updates.automatic === false, "A machine that has stopped updating must say so.");
 check(/unsaved changes/.test(laptop.updates.reason), "It must say why it stopped: " + laptop.updates.reason);
 
+// 21b. Which Book Studio folder each computer is showing the web site, and how
+//      many books are in it. Ann Jackson's PC had two copies of Book Studio,
+//      one with her books and one the setup command installed; the web site
+//      showed the empty one, and nothing anywhere said so.
+await report(deskToken.json.token, "DESK / gio", "Connected", {
+  version: "2026.09.24.1",
+  studio: { status: "other-folder", installPath: "C:\\Users\\ann\\book-studio", bookCount: 12, version: "2026.09.23.19",
+    agentPath: "C:\\Users\\ann\\AppData\\Local\\Book Studio", agentBookCount: 0, detail: "x".repeat(2000), injected: "<script>" }
+});
+const withStudio = (await call("GET", "/api/runner/status", { cookie: admin })).json.machines.find((machine) => machine.runnerName === "DESK / gio");
+check(withStudio.studio && withStudio.studio.installPath === "C:\\Users\\ann\\book-studio" && withStudio.studio.bookCount === 12, "The folder a computer serves, and its books, must reach the page: " + JSON.stringify(withStudio.studio));
+check(withStudio.studio.status === "other-folder" && withStudio.studio.agentPath.endsWith("Book Studio") && withStudio.studio.agentBookCount === 0, "A second folder must be reported with its own count, and a count of 0 must stay 0.");
+check(!("injected" in withStudio.studio) && withStudio.studio.detail.length <= 400, "What a computer says about itself is typed and capped before it is stored.");
+await report(deskToken.json.token, "DESK / gio", "Connected", { version: "2026.09.24.1", studio: { installPath: "C:\\x", bookCount: "lots", agentBookCount: null } });
+const oddCount = (await call("GET", "/api/runner/status", { cookie: admin })).json.machines.find((machine) => machine.runnerName === "DESK / gio");
+check(oddCount.studio.bookCount === null && oddCount.studio.agentBookCount === null, "A count that is not a number must be stored as unknown, never as 0.");
+await report(deskToken.json.token, "DESK / gio", "Connected", { version: "2026.09.24.1" });
+const noStudio = (await call("GET", "/api/runner/status", { cookie: admin })).json.machines.find((machine) => machine.runnerName === "DESK / gio");
+check(noStudio.studio === null, "An agent from before this reports nothing about its folder, and nothing is invented for it.");
+
+// 21c. One person, however their address was capitalised. A token made while
+//      signed in through Access carries the address as it was typed there;
+//      a password sign-in is always lower case. Matched exactly, that
+//      person's computer was "not running" when it was, and every page on the
+//      web site failed.
+await seedUser("ann.jackson@vocate.org", "an-ann-password-12");
+await kv.put("runner:token:ann-mixed-case", JSON.stringify({ owner: "Ann.Jackson@Vocate.org", label: "Ann PC", id: "annpc01" }));
+check((await report("ann-mixed-case", "ANN-PC / ann", "Connected", { version: "2026.09.24.1" })).status === 200, "A token made under a capitalised address must still report.");
+const ann = cookieFrom(await call("POST", "/api/login", { body: { email: "Ann.Jackson@vocate.org", password: "an-ann-password-12" } }));
+const annMachines = await call("GET", "/api/runner/status", { cookie: ann });
+check((annMachines.json.machines || []).length === 1 && annMachines.json.machines[0].runnerName === "ANN-PC / ann", "A computer connected under a capitalised address must be that person's: " + annMachines.text.slice(0, 160));
+const annPage = studioCall("/api/jobs", { cookie: ann });
+const annCollected = await call("GET", "/api/bridge/next", { headers: { "x-book-runner-token": "ann-mixed-case" } });
+check(annCollected.json.path === "/api/jobs", "Her pages must be carried to her computer, got " + annCollected.text.slice(0, 120));
+await call("POST", "/api/bridge/reply", { headers: { "x-book-runner-token": "ann-mixed-case" }, body: {
+  id: annCollected.json.id, status: 200, headers: { "content-type": "application/json" },
+  bodyBase64: Buffer.from(JSON.stringify({ jobs: ["from Ann's computer"] })).toString("base64") } });
+const annAnswer = await annPage;
+check(annAnswer.status === 200 && annAnswer.text.includes("from Ann's computer"), "And the answer must come back to her browser, got " + annAnswer.status);
+// A book made under the capitalised address is still hers, in her list and
+// for her computer to write.
+await kv.put("job:ann-queued", JSON.stringify({ id: "ann-queued", owner: "Ann.Jackson@Vocate.org", status: "Queued", title: "Ann's course", createdAt: new Date().toISOString(), log: [] }));
+await kv.put("jobs:index", JSON.stringify(["ann-queued", ...((await kv.get("jobs:index", "json")) || [])]));
+const annList = await call("GET", "/api/jobs", { cookie: ann });
+check(annList.json.jobs.some((job) => job.id === "ann-queued"), "A book made under a capitalised address must be in that person's list.");
+const annQueue = await call("GET", "/api/runner/jobs", { headers: { "x-book-runner-token": "ann-mixed-case" } });
+check(annQueue.json.jobs.some((job) => job.id === "ann-queued"), "Her computer must be allowed to write her book.");
+check(!annQueue.json.jobs.some((job) => job.owner && job.owner.toLowerCase() !== "ann.jackson@vocate.org"), "And still nobody else's.");
+
 // 22. One site. A designer changing a setting must not have to leave Book
 //     Studio for a second address: the cloud half is under /cloud on the same
 //     site, and the old address moves a person there rather than serving a

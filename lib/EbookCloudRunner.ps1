@@ -208,52 +208,383 @@ function Get-OtherBookRunnerProcesses {
 # started once and then left alone, so an agent that updated itself went on
 # forwarding the web site to a server still running the release before: the
 # page on the web was never the one just published.
+#
+# But only the agent's own. Every Book Studio folder keeps its own books in
+# .bookstudio/book-studio-db.json, and a designer can have two folders: the one
+# the desktop shortcut opens, and the one the setup command installed for the
+# agent. The agent used to stop every Book Studio server on the computer
+# whenever the one answering was not on its release, and start one from its own
+# folder. On Ann Jackson's PC that could stop the Book Studio she had opened
+# from the desktop, with her books in it, and put the agent's empty folder in
+# its place: her books were there on her PC and Book Studio on the web site
+# showed nothing. A server is now told apart by the folder it reports, and only
+# the agent's own is ever restarted.
+
+# Two paths name the same folder, however they are cased or ended.
+function Test-BookStudioSameFolder {
+    param([AllowEmptyString()][string]$Left, [AllowEmptyString()][string]$Right)
+
+    if ([string]::IsNullOrWhiteSpace($Left) -or [string]::IsNullOrWhiteSpace($Right)) { return $false }
+    $normalize = {
+        param($path)
+        $full = [string]$path
+        try { $full = [System.IO.Path]::GetFullPath($path) } catch { }
+        $full.TrimEnd('\', '/')
+    }
+    return [string]::Equals((& $normalize $Left), (& $normalize $Right), [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+# The folder a server was started from, read from its command line. Every way
+# Book Studio starts one names it there: the desktop launcher and an update
+# restart run "<folder>\book-studio.ps1", and the agent runs
+# Start-BookStudioServer -ProjectRoot '<folder>'. Nothing found means nothing
+# is known, and a server whose folder is not known is never stopped.
+function Get-BookStudioServerFolder {
+    param([AllowEmptyString()][string]$CommandLine)
+
+    foreach ($pattern in @("-ProjectRoot\s+'((?:[^']|'')+)'", '"([^"]+)[\\/]book-studio\.ps1"', "'([^']+)[\\/]book-studio\.ps1'", '([^\s"'']+)[\\/]book-studio\.ps1')) {
+        $match = [regex]::Match([string]$CommandLine, $pattern)
+        if ($match.Success) { return $match.Groups[1].Value.Replace("''", "'") }
+    }
+    return ''
+}
+
+function ConvertTo-BookStudioServerProcess {
+    param([int]$ProcessId, [AllowEmptyString()][string]$CommandLine)
+
+    $portMatch = [regex]::Match([string]$CommandLine, "-Port\s+['""]?(\d+)")
+    return [pscustomobject]@{
+        ProcessId = $ProcessId
+        CommandLine = $CommandLine
+        Folder = Get-BookStudioServerFolder -CommandLine $CommandLine
+        # A server started without -Port listens on the default.
+        Port = $(if ($portMatch.Success) { [int]$portMatch.Groups[1].Value } else { 8790 })
+        # The agent starts its server with Start-BookStudioServer; a designer's
+        # own window runs book-studio.ps1.
+        StartedByAgent = ([string]$CommandLine -match 'Start-BookStudioServer')
+    }
+}
+
+# The Book Studio servers running as this person, optionally only those from
+# one folder or on one port. A standard user can read the command lines of
+# their own processes, so none of this needs an administrator.
 function Get-BookStudioServerProcesses {
-    @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe' OR Name='pwsh.exe'" -ErrorAction SilentlyContinue |
-        Where-Object { [string]$_.CommandLine -match 'Start-BookStudioServer|book-studio\.ps1' -and $_.ProcessId -ne $PID })
+    param([string]$ProjectRoot = '', [int]$Port = 0)
+
+    $found = @()
+    foreach ($process in @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe' OR Name='pwsh.exe'" -ErrorAction SilentlyContinue)) {
+        $line = [string]$process.CommandLine
+        if ($process.ProcessId -eq $PID -or $line -notmatch 'Start-BookStudioServer|book-studio\.ps1') { continue }
+        $server = ConvertTo-BookStudioServerProcess -ProcessId ([int]$process.ProcessId) -CommandLine $line
+        if ($ProjectRoot -and -not (Test-BookStudioSameFolder $server.Folder $ProjectRoot)) { continue }
+        if ($Port -and $server.Port -ne $Port) { continue }
+        $found += $server
+    }
+    return $found
+}
+
+# How many books a Book Studio folder holds, read from its database without
+# locking it. -1 when the database is there but cannot be read, which is never
+# taken to mean "no books".
+function Get-BookStudioFolderBookCount {
+    param([Parameter(Mandatory)][string]$ProjectRoot)
+
+    $database = Join-Path $ProjectRoot '.bookstudio/book-studio-db.json'
+    if (-not (Test-Path -LiteralPath $database)) { return 0 }
+    try {
+        $stream = [System.IO.File]::Open($database, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, ([System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete))
+        $reader = New-Object System.IO.StreamReader($stream, [System.Text.Encoding]::UTF8)
+        try { $raw = $reader.ReadToEnd() } finally { $reader.Dispose(); $stream.Dispose() }
+        return @(($raw | ConvertFrom-Json).jobs | Where-Object { $_ }).Count
+    }
+    catch { return -1 }
+}
+
+# What the Book Studio on the port says about itself. Given fifteen seconds:
+# it serves one request at a time, and a busy server is not a missing one.
+function Get-LocalStudioHealth {
+    param([int]$Port, [int]$TimeoutSec = 15)
+
+    try { return Invoke-RestMethod -Uri "http://localhost:$Port/api/health" -TimeoutSec $TimeoutSec }
+    catch { return $null }
+}
+
+# Whose Book Studio is answering on the port the web site is carried to.
+function Resolve-LocalStudioServer {
+    param(
+        [Parameter(Mandatory)][string]$ProjectRoot,
+        [int]$Port = 8790,
+        [scriptblock]$Health = { param($port) Get-LocalStudioHealth -Port $port },
+        [scriptblock]$FindServers = { param($port) Get-BookStudioServerProcesses -Port $port },
+        [scriptblock]$FolderBookCount = { param($folder) Get-BookStudioFolderBookCount -ProjectRoot $folder }
+    )
+
+    # Not $health: PowerShell names are not case-sensitive, and that is the
+    # parameter.
+    $answer = & $Health $Port
+    $found = [pscustomobject]@{
+        answering = [bool]$answer
+        served = ''
+        installPath = ''
+        bookCount = $null
+        databasePath = ''
+        ownFolder = $false
+    }
+    if (-not $answer) { return $found }
+    # The release the server loaded, from its health check. version.json cannot
+    # say: it is read from disk per request, so an old server named the new
+    # release. A server from before this reports no version at all, which is
+    # itself proof it predates the files on disk.
+    $found.served = $(if ($answer.runningVersion) { [string]$answer.runningVersion } else { 'an earlier release' })
+    $found.installPath = [string]$answer.installPath
+    $found.databasePath = [string]$answer.databasePath
+    if ("$($answer.bookCount)" -match '^\d+$') { $found.bookCount = [int]$answer.bookCount }
+    if ($found.installPath) {
+        $found.ownFolder = Test-BookStudioSameFolder $found.installPath $ProjectRoot
+    }
+    else {
+        # A server from before 2026.09.18 does not say which folder it runs
+        # from. It counts as the agent's own only when every Book Studio on
+        # that port was started from the agent's folder; anything less certain
+        # is treated as someone else's and left alone.
+        $servers = @(& $FindServers $Port)
+        $others = @($servers | Where-Object { -not (Test-BookStudioSameFolder $_.Folder $ProjectRoot) })
+        if ($servers.Count -and -not $others.Count) {
+            $found.ownFolder = $true
+            $found.installPath = $ProjectRoot
+        }
+        elseif ($others.Count) {
+            $found.installPath = [string]$others[0].Folder
+        }
+    }
+    # A server from before the count was reported: count its folder instead.
+    if ($null -eq $found.bookCount -and $found.installPath) {
+        $counted = [int](& $FolderBookCount $found.installPath)
+        if ($counted -ge 0) { $found.bookCount = $counted }
+    }
+    return $found
 }
 
 function Update-StaleLocalStudioServer {
     param(
         [Parameter(Mandatory)][string]$ProjectRoot,
         [int]$Port = 8790,
-        # The three things this decides on, as parameters so the rule can be
-        # tested without a server; the agent uses the defaults.
-        # The release the server loaded, from its health check. version.json
-        # cannot say: it is read from disk per request, so an old server named
-        # the new release. A server from before this reports no version at all,
-        # which is itself proof it predates the files on disk.
-        [scriptblock]$ServedVersion = {
-            param($port)
-            try { $health = Invoke-RestMethod -Uri "http://localhost:$port/api/health" -TimeoutSec 4 } catch { return $null }
-            if ($health.runningVersion) { return [string]$health.runningVersion }
-            return 'an earlier release'
-        },
+        # What this decides on, as parameters so the rule can be tested
+        # without a server; the agent uses the defaults.
+        [scriptblock]$Health = { param($port) Get-LocalStudioHealth -Port $port },
+        # Whether a book is being written, asked of the database of the server
+        # that would be stopped. It used to be asked of the agent's own folder,
+        # which is a different database whenever the server came from another.
         [scriptblock]$Busy = {
-            param($root)
+            param($root, $databasePath)
             Import-Module (Join-Path $root 'lib/BookStudio.psm1') -DisableNameChecking -ErrorAction Stop
-            $database = Get-BookStudioDatabasePath -ProjectRoot $root
-            & (Get-Module BookStudio) { param($path) Get-BookStudioUpdateBlocker -DatabasePath $path } $database
+            & (Get-Module BookStudio) { param($path) Get-BookStudioUpdateBlocker -DatabasePath $path } $databasePath
         },
-        [scriptblock]$FindServers = { Get-BookStudioServerProcesses }
+        [scriptblock]$FindServers = { param($port) Get-BookStudioServerProcesses -Port $port },
+        [scriptblock]$FolderBookCount = { param($folder) Get-BookStudioFolderBookCount -ProjectRoot $folder }
     )
 
-    $installed = ''
-    try { $installed = [string](Get-Content -LiteralPath (Join-Path $ProjectRoot 'book-studio/version.json') -Raw | ConvertFrom-Json).version } catch { }
-    $served = [string](& $ServedVersion $Port)
-    if (-not $served) { return [pscustomobject]@{ status = 'not-running'; served = ''; installed = $installed; detail = '' } }
-    if (-not $installed -or $served -eq $installed) { return [pscustomobject]@{ status = 'current'; served = $served; installed = $installed; detail = '' } }
+    $installed = Get-BookStudioInstalledVersion -ProjectRoot $ProjectRoot
+    $server = Resolve-LocalStudioServer -ProjectRoot $ProjectRoot -Port $Port -Health $Health -FindServers $FindServers -FolderBookCount $FolderBookCount
+    $result = [pscustomobject]@{
+        status = ''
+        served = $server.served
+        installed = $installed
+        detail = ''
+        installPath = $server.installPath
+        bookCount = $server.bookCount
+        agentPath = $ProjectRoot
+        ownFolder = $server.ownFolder
+    }
+    if (-not $server.answering) { $result.status = 'not-running'; return $result }
+    $isBusy = {
+        param($databasePath)
+        # Never under a book being written or a Codex request: the same rule
+        # as the update button in Book Studio itself. Not knowing counts as busy.
+        try { return [string](& $Busy $ProjectRoot $databasePath) }
+        catch { return "Could not tell whether a book is being written: $($_.Exception.Message)" }
+    }
 
-    # Never under a book being written or a Codex request: the same rule as
-    # the update button in Book Studio itself.
-    $blocker = ''
-    try { $blocker = [string](& $Busy $ProjectRoot) } catch { $blocker = "Could not tell whether a book is being written: $($_.Exception.Message)" }
-    if ($blocker) { return [pscustomobject]@{ status = 'busy'; served = $served; installed = $installed; detail = $blocker } }
+    if ($server.ownFolder) {
+        if (-not $installed -or $server.served -eq $installed) { $result.status = 'current'; return $result }
+        $database = $(if ($server.databasePath) { $server.databasePath } else { Join-Path $ProjectRoot '.bookstudio/book-studio-db.json' })
+        $blocker = & $isBusy $database
+        if ($blocker) { $result.status = 'busy'; $result.detail = $blocker; return $result }
+        $mine = @(@(& $FindServers $Port) | Where-Object { Test-BookStudioSameFolder $_.Folder $ProjectRoot })
+        if (-not $mine.Count) {
+            $result.status = 'not-found'
+            $result.detail = 'The Book Studio server running here was not started in a way this agent recognises; restart it by hand.'
+            return $result
+        }
+        foreach ($process in $mine) { try { Stop-Process -Id $process.ProcessId -Force -ErrorAction Stop } catch { } }
+        $result.status = 'restarted'
+        return $result
+    }
 
-    $servers = @(& $FindServers)
-    if (-not $servers.Count) { return [pscustomobject]@{ status = 'not-found'; served = $served; installed = $installed; detail = 'The Book Studio server running here was not started in a way this agent recognises; restart it by hand.' } }
-    foreach ($server in $servers) { try { Stop-Process -Id $server.ProcessId -Force -ErrorAction Stop } catch { } }
-    return [pscustomobject]@{ status = 'restarted'; served = $served; installed = $installed; detail = '' }
+    # Another folder's Book Studio holds the port: most often the designer's
+    # own, opened from the desktop, with their books in it. It is never
+    # stopped, whatever release it runs. The web site is carried to it, which
+    # shows the designer the books they see on that computer, and the agent
+    # reports both folders so the difference can be seen on the web site.
+    $where = $(if ($server.installPath) { $server.installPath } else { 'a folder this agent cannot identify' })
+    $result.status = 'other-folder'
+    $result.detail = "The Book Studio answering on port $Port runs from $where, not from this agent's folder ($ProjectRoot). It is left running, and the web site shows its books."
+
+    # One exception: the leftover of an agent that was replaced by setting
+    # Book Studio up again in the folder that has the books. It was started by
+    # an agent -- never a designer's own window -- it holds no books, and this
+    # folder does. Left running, it would show the designer an empty Book
+    # Studio on the web site until the computer restarted.
+    if (-not $server.installPath -or $server.bookCount -ne 0) { return $result }
+    if ([int](& $FolderBookCount $ProjectRoot) -le 0) { return $result }
+    $fromThere = @(@(& $FindServers $Port) | Where-Object { Test-BookStudioSameFolder $_.Folder $server.installPath })
+    $leftover = @($fromThere | Where-Object { $_.StartedByAgent })
+    if (-not $leftover.Count -or $leftover.Count -ne $fromThere.Count) { return $result }
+    $database = $(if ($server.databasePath) { $server.databasePath } else { Join-Path $server.installPath '.bookstudio/book-studio-db.json' })
+    if (& $isBusy $database) { return $result }
+    foreach ($process in $leftover) { try { Stop-Process -Id $process.ProcessId -Force -ErrorAction Stop } catch { } }
+    $result.status = 'replaced-empty'
+    $result.detail = "Stopped the empty Book Studio an earlier agent started from $($server.installPath), so this folder's, which has the books, can answer instead."
+    return $result
+}
+
+# What the web site is being shown from this computer, for the agent's
+# heartbeat: the folder the Book Studio answering here runs from and how many
+# books it holds, and the agent's own folder when that is a different one. A
+# designer whose books are "missing" on the web site can then see at once that
+# it is showing another folder than the one they open on the desktop.
+function Get-LocalStudioReport {
+    param(
+        [Parameter(Mandatory)][string]$ProjectRoot,
+        [int]$Port = 8790,
+        [scriptblock]$Health = { param($port) Get-LocalStudioHealth -Port $port },
+        [scriptblock]$FindServers = { param($port) Get-BookStudioServerProcesses -Port $port },
+        [scriptblock]$FolderBookCount = { param($folder) Get-BookStudioFolderBookCount -ProjectRoot $folder },
+        [scriptblock]$Listening = { param($port) Test-LocalStudioPortListening -Port $port }
+    )
+
+    $server = Resolve-LocalStudioServer -ProjectRoot $ProjectRoot -Port $Port -Health $Health -FindServers $FindServers -FolderBookCount $FolderBookCount
+    $report = [pscustomobject]@{
+        status = ''
+        installPath = [string]$server.installPath
+        bookCount = $server.bookCount
+        version = [string]$server.served
+        agentPath = $ProjectRoot
+        agentBookCount = $null
+        detail = ''
+    }
+    if ($server.answering -and $server.ownFolder) {
+        $report.status = 'own-folder'
+        $report.agentBookCount = $server.bookCount
+        return $report
+    }
+    $own = [int](& $FolderBookCount $ProjectRoot)
+    if ($own -ge 0) { $report.agentBookCount = $own }
+    if ($server.answering) {
+        $report.status = 'other-folder'
+        $report.detail = 'The Book Studio answering on this computer was started from another folder than the one this computer keeps up to date.'
+    }
+    elseif (& $Listening $Port) {
+        $report.status = 'not-answering'
+        $report.detail = 'A Book Studio is running on this computer but did not answer in time.'
+    }
+    else {
+        $report.status = 'not-running'
+    }
+    return $report
+}
+
+# The bridge's way to the local Book Studio.
+#
+# Whether anything is listening on the port: a TCP connection and nothing more.
+# A Book Studio busy with one request -- a Codex test inside a request can take
+# forty seconds -- still has its port open; it just cannot answer yet. The page
+# helpers used to ask it for version.json with four seconds to spare, took a
+# busy server for a missing one, and each started another, which could not
+# listen but did open that folder's book database.
+function Test-LocalStudioPortListening {
+    param([int]$Port, [int]$TimeoutMilliseconds = 1500)
+
+    foreach ($address in @([System.Net.IPAddress]::Loopback, [System.Net.IPAddress]::IPv6Loopback)) {
+        $client = $null
+        try {
+            $client = [System.Net.Sockets.TcpClient]::new($address.AddressFamily)
+            $attempt = $client.BeginConnect($address, $Port, $null, $null)
+            if ($attempt.AsyncWaitHandle.WaitOne($TimeoutMilliseconds) -and $client.Connected) {
+                $client.EndConnect($attempt)
+                return $true
+            }
+        }
+        catch { }
+        finally { if ($client) { $client.Close() } }
+    }
+    return $false
+}
+
+# Starts this agent's own Book Studio when nothing at all is on the port, and
+# never otherwise. Whatever is already there -- busy, still starting, or a
+# designer's own window from another folder -- is what the page is carried to.
+function Start-LocalStudioServer {
+    param(
+        [Parameter(Mandatory)][string]$ProjectRoot,
+        [int]$Port = 8790,
+        # As parameters so the rule can be tested without a server.
+        [scriptblock]$Listening = { param($port) Test-LocalStudioPortListening -Port $port },
+        [scriptblock]$Launch = {
+            param($root, $port)
+            # Started without book-studio.ps1, which opens a browser window:
+            # nothing should appear on a designer's screen because someone
+            # clicked in the cloud.
+            $command = "Import-Module '" + (Join-Path $root 'lib\BookStudio.psm1').Replace("'", "''") + "' -Force -DisableNameChecking; " +
+                       "Start-BookStudioServer -ProjectRoot '" + $root.Replace("'", "''") + "' -Port " + $port
+            Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Minimized', '-Command', $command) -WindowStyle Minimized | Out-Null
+        },
+        [string]$LockName = '',
+        [int]$StartWaitSeconds = 30
+    )
+
+    if (& $Listening $Port) { return $true }
+
+    # One start at a time. Three helpers carry pages side by side, and all
+    # three used to find the server missing at the same moment and start one
+    # each.
+    $name = $(if ($LockName) { $LockName } else { "Local\BookStudioServerStart-$Port" })
+    $mutex = $null
+    $owned = $false
+    try {
+        $mutex = New-Object System.Threading.Mutex($false, $name)
+        try { $owned = $mutex.WaitOne(($StartWaitSeconds + 15) * 1000) }
+        catch {
+            # A helper that stopped while starting the server leaves the lock
+            # abandoned, which still hands it over.
+            $inner = $_.Exception
+            while ($inner -and -not ($inner -is [System.Threading.AbandonedMutexException])) { $inner = $inner.InnerException }
+            $owned = [bool]$inner
+        }
+    }
+    catch {
+        # No lock to be had is not a reason to leave the page unanswered.
+        $mutex = $null
+        $owned = $true
+    }
+    try {
+        # Another helper started it while this one waited for the lock.
+        if (& $Listening $Port) { return $true }
+        if (-not $owned) { return $false }
+        & $Launch $ProjectRoot $Port | Out-Null
+        $deadline = (Get-Date).AddSeconds($StartWaitSeconds)
+        while ((Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 500
+            if (& $Listening $Port) { return $true }
+        }
+        return $false
+    }
+    finally {
+        if ($mutex) {
+            if ($owned) { try { $mutex.ReleaseMutex() } catch { } }
+            $mutex.Dispose()
+        }
+    }
 }
 
 # Keeping itself up to date.
