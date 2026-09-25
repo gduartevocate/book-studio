@@ -1,4 +1,4 @@
-Book Studio ID v2026.09.24.1
+Book Studio ID v2026.09.25.1
 
 1. Preferred: install with git so updates are one click. In PowerShell: git clone https://github.com/gduartevocate/book-studio
    If you received this as a ZIP instead, unzip it; ZIP installs are updated by replacing the folder.
@@ -10,7 +10,7 @@ Book Studio ID v2026.09.24.1
 Version check and updates:
 - The Book Studio header shows the installed Book Studio ID version and an Update available badge when a newer release exists.
 - Settings > Updates > Get latest updates downloads the release and restarts Book Studio. Books, uploads, and settings stay in place.
-- When troubleshooting, report this exact version: v2026.09.24.1.
+- When troubleshooting, report this exact version: v2026.09.25.1.
 
 Codex assistant and AI generation:
 - AI drafting and real chapter-image generation are enabled by default. All chapter images must pass generation and Word/HTML checks; disabled or partial image runs remain incomplete.

@@ -1,5 +1,12 @@
 # Book Studio ID Changelog
 
+## v2026.09.25.1 (2026-09-25)
+
+- Study diagrams and quick checks are redrawn so they are easy to read in Word and HTML: text is larger (nothing prints under 10 pt), and the planning note that appeared under each diagram title is gone.
+- Diagram alt text now describes what the diagram shows.
+- Fixed the black wedges in the decision tree and the missing arrowheads between steps.
+- Rebuild Package redraws the diagrams of existing books. A diagram that was edited after generation is kept as it is and listed in the progress log; replaced files are backed up in manuscript-backups.
+
 ## v2026.09.24.1 (2026-09-24)
 
 - Book Studio online stays on the folder that holds your books: the agent restarts only its own copy, never starts duplicates, setup reuses your existing install, a failed book list shows an error with Try again, and Settings shows which folder and how many books are being served.
